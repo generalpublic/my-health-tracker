@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+*.json
+*.log
+.DS_Store
+Thumbs.db
+data/
+reference/books/
+reference/exports/
+reference/transcripts/
+analysis_output/
+reference/
+dashboard/dashboard_data.json
+*.db

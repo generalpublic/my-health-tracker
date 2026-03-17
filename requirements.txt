@@ -1,0 +1,9 @@
+# NS Habit Tracker — Python dependencies
+# Install with: pip install -r requirements.txt
+# Compatible with Python 3.10+ on Windows, macOS, and Linux
+
+garminconnect>=0.2.38
+gspread>=6.2.1
+google-auth>=2.49.0
+python-dotenv>=0.21.0
+keyring>=24.3.1
