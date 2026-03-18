@@ -1,5 +1,5 @@
 """
-NS Habit Tracker — Setup Wizard
+Health Tracker — Setup Wizard
 Cross-platform interactive setup for non-technical users.
 """
 
@@ -60,7 +60,7 @@ def print_banner():
     print(f"""
 {BOLD}{CYAN}
   ╔══════════════════════════════════════════════╗
-  ║         NS HABIT TRACKER SETUP WIZARD        ║
+  ║           HEALTH TRACKER SETUP WIZARD         ║
   ║                                              ║
   ║  This wizard will set up everything for you  ║
   ║  step by step. It takes about 10 minutes.    ║
@@ -332,7 +332,7 @@ def step4_google_sheets():
     print()
     print_info(" 1. Your browser will open Google Sheets.")
     print_info(" 2. Click the big '+' button to create a blank spreadsheet.")
-    print_info(" 3. Give it a name like 'NS Habit Tracker'.")
+    print_info(" 3. Give it a name like 'Health Tracker'.")
     print_info(" 4. Look at the URL in your browser — it looks like:")
     print_info("      docs.google.com/spreadsheets/d/[COPY THIS PART]/edit")
     print_info("    Copy that long ID from the URL.")
@@ -422,7 +422,7 @@ def step5_configure_env():
     config["json_filename"] = json_filename
 
     env_contents = (
-        f"# NS Habit Tracker — Configuration\n"
+        f"# Health Tracker — Configuration\n"
         f"# This file is NOT sensitive — no passwords are stored here.\n"
         f"\n"
         f"GARMIN_EMAIL={garmin_email}\n"
@@ -637,7 +637,7 @@ def step8_schedule():
 def _schedule_windows():
     script_path = str(GARMIN_SCRIPT)
     python_path = sys.executable
-    task_name = "NS Habit Tracker - Daily Sync"
+    task_name = "Health Tracker - Daily Sync"
     cmd = (
         f'schtasks /create /tn "{task_name}" '
         f'/tr "\\"{python_path}\\" \\"{script_path}\\"" '
@@ -669,7 +669,7 @@ def _schedule_windows():
         return False
 
 def _schedule_macos():
-    plist_label = "com.nshabit.garmin_sync"
+    plist_label = "com.healthtracker.garmin_sync"
     plist_path = Path.home() / "Library" / "LaunchAgents" / f"{plist_label}.plist"
     python_path = sys.executable
     script_path = str(GARMIN_SCRIPT)

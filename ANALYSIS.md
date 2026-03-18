@@ -1,4 +1,4 @@
-# NS Habit Tracker — Analytics & Insights Hub
+# Health Tracker — Analytics & Insights Hub
 
 This document is the living record of all analytics work: what we've found, what we're investigating, and what statistical models are in progress or planned.
 

@@ -1,9 +1,9 @@
 @echo off
-title NS Habit Tracker — Setup Wizard
+title Health Tracker — Setup Wizard
 color 0A
 echo.
 echo  ==========================================
-echo   NS Habit Tracker — Setup Wizard
+echo   Health Tracker — Setup Wizard
 echo  ==========================================
 echo.
 

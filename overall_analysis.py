@@ -2393,6 +2393,24 @@ def write_analysis(wb, target_date, score, label, sleep_context, training_status
     from sheets_formatting import auto_resize_rows
     auto_resize_rows(wb, "Overall Analysis")
 
+    # Mirror to SQLite
+    try:
+        from sqlite_backup import get_db, upsert_overall_analysis
+        db = get_db()
+        upsert_overall_analysis(db, str(target_date), {
+            "readiness_score": score,
+            "readiness_label": label,
+            "confidence": confidence,
+            "cognitive_energy_assessment": cognitive_assessment,
+            "sleep_context": sleep_context,
+            "key_insights": insights_text,
+            "recommendations": recs_text,
+            "training_load_status": training_status,
+        })
+        db.commit()
+    except Exception as e:
+        print(f"  SQLite mirror (overall_analysis): {e}")
+
 
 def _sort_analysis_tab(sheet):
     """Sort Overall Analysis data rows by date descending, preserving legend."""
@@ -2577,6 +2595,10 @@ def run_analysis(wb, target_date):
         "cognitive_assessment": cognitive_assessment,
         "sleep_context": sleep_context,
         "sleep_verdict": sleep_verdict,
+        "sleep_trend": sleep_trend,
+        "sleep_debt": sleep_debt,
+        "bed_variability": sleep_row.get("Bedtime Variability (7d)", "") if sleep_row else "",
+        "wake_variability": sleep_row.get("Wake Variability (7d)", "") if sleep_row else "",
     }
 
 

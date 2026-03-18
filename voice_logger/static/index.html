@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f1a">
+<link rel="manifest" href="/manifest.json">
+<title>Health Tracker Voice Logger</title>
+<style>
+  :root {
+    --bg: #0f0f1a;
+    --surface: #1a1a2e;
+    --surface2: #222240;
+    --border: #2a2a4a;
+    --text: #e0e0f0;
+    --text-dim: #8888aa;
+    --text-muted: #555577;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f59e0b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    text-align: center;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+
+  /* ── Auth Screen ── */
+  .auth-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    gap: 16px;
+  }
+  .auth-screen h2 { font-size: 20px; margin-bottom: 8px; }
+  .auth-screen p { color: var(--text-dim); font-size: 14px; text-align: center; }
+  .totp-input {
+    font-size: 32px;
+    letter-spacing: 12px;
+    text-align: center;
+    width: 220px;
+    padding: 12px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    outline: none;
+  }
+  .totp-input:focus { border-color: var(--accent); }
+  .auth-error { color: var(--red); font-size: 14px; min-height: 20px; }
+
+  /* ── Main App ── */
+  .app { flex: 1; display: flex; flex-direction: column; padding: 16px 20px; gap: 16px; }
+  .hidden { display: none !important; }
+
+  /* ── Mode Toggle ── */
+  .mode-toggle {
+    display: flex;
+    gap: 8px;
+    background: var(--surface);
+    padding: 4px;
+    border-radius: 12px;
+  }
+  .mode-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ── Record Button ── */
+  .record-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 200px;
+  }
+  .record-btn {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 4px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 48px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .record-btn:active, .record-btn.recording {
+    border-color: var(--red);
+    background: rgba(239, 68, 68, 0.15);
+    transform: scale(1.05);
+  }
+  .record-btn.recording { animation: pulse 1.5s infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+  }
+  .record-hint { color: var(--text-dim); font-size: 14px; }
+
+  /* ── Text Input Fallback ── */
+  .text-input-area { display: flex; gap: 8px; }
+  .text-input {
+    flex: 1;
+    padding: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+    resize: none;
+  }
+  .text-input:focus { border-color: var(--accent); }
+  .send-btn {
+    padding: 12px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  /* ── Results Panel ── */
+  .results {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+  }
+  .result-label { color: var(--text-dim); }
+  .result-value { font-weight: 600; }
+
+  .transcription {
+    background: var(--surface2);
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  .macro-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    text-align: center;
+  }
+  .macro-item {
+    background: var(--surface2);
+    padding: 10px 8px;
+    border-radius: 8px;
+  }
+  .macro-value { font-size: 20px; font-weight: 700; }
+  .macro-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  /* ── Workout Results ── */
+  .workout-sets {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .set-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .set-exercise { font-weight: 600; }
+  .set-detail { color: var(--text-dim); }
+
+  /* ── Action Buttons ── */
+  .actions {
+    display: flex;
+    gap: 12px;
+    padding-bottom: 20px;
+  }
+  .action-btn {
+    flex: 1;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-confirm {
+    background: var(--green);
+    color: white;
+  }
+  .btn-cancel {
+    background: var(--surface2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+
+  /* ── Status Messages ── */
+  .status {
+    text-align: center;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .status.success { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+  .status.error { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+  .status.loading { background: rgba(99, 102, 241, 0.15); color: var(--accent); }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Meal Type Selector ── */
+  .meal-override {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .meal-chip {
+    padding: 6px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .meal-chip.active {
+    border-color: var(--accent);
+    color: var(--text);
+    background: rgba(99, 102, 241, 0.2);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Health Tracker Voice Logger</h1>
+</div>
+
+<!-- Auth Screen -->
+<div id="authScreen" class="auth-screen">
+  <h2>Enter Code</h2>
+  <p>Open your authenticator app<br>and enter the 6-digit code</p>
+  <input type="text" id="totpInput" class="totp-input" maxlength="6"
+         inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" autofocus>
+  <div id="authError" class="auth-error"></div>
+</div>
+
+<!-- Main App (hidden until authenticated) -->
+<div id="mainApp" class="app hidden">
+
+  <!-- Mode Toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="nutrition" onclick="setMode('nutrition')">Nutrition</button>
+    <button class="mode-btn" data-mode="workout" onclick="setMode('workout')">Workout</button>
+  </div>
+
+  <!-- Record Area -->
+  <div class="record-area" id="recordArea">
+    <button class="record-btn" id="recordBtn" onclick="toggleRecord()">
+      <span id="micIcon">&#127908;</span>
+    </button>
+    <span class="record-hint" id="recordHint">Tap to record</span>
+    <!-- Text input fallback -->
+    <div class="text-input-area" id="textInputArea" style="width:100%;">
+      <textarea class="text-input" id="textInput" rows="2"
+                placeholder="Or type here..."></textarea>
+      <button class="send-btn" onclick="submitText()">&#9654;</button>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div id="statusArea" class="hidden"></div>
+
+  <!-- Results (shown after parsing) -->
+  <div id="resultsPanel" class="results hidden">
+    <div class="transcription" id="transcription"></div>
+
+    <!-- Nutrition results -->
+    <div id="nutritionResults" class="hidden">
+      <div class="result-row">
+        <span class="result-label">Meal type</span>
+        <div class="meal-override" id="mealTypeChips"></div>
+      </div>
+      <div class="result-row">
+        <span class="result-label">Description</span>
+        <span class="result-value" id="mealDesc"></span>
+      </div>
+      <div class="macro-grid" id="macroGrid">
+        <div class="macro-item"><div class="macro-value" id="calVal">—</div><div class="macro-label">Calories</div></div>
+        <div class="macro-item"><div class="macro-value" id="proVal">—</div><div class="macro-label">Protein</div></div>
+        <div class="macro-item"><div class="macro-value" id="carbVal">—</div><div class="macro-label">Carbs</div></div>
+        <div class="macro-item"><div class="macro-value" id="fatVal">—</div><div class="macro-label">Fat</div></div>
+      </div>
+    </div>
+
+    <!-- Workout results -->
+    <div id="workoutResults" class="hidden">
+      <div class="workout-sets" id="workoutSets"></div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div id="actionBtns" class="actions hidden">
+    <button class="action-btn btn-cancel" onclick="resetUI()">Cancel</button>
+    <button class="action-btn btn-confirm" onclick="confirmLog()">Log It</button>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let currentMode = 'nutrition';
+let sessionToken = null;
+let recognition = null;
+let isRecording = false;
+let parsedData = null;
+let lookupData = null;
+
+const API_BASE = '';  // Same origin on Vercel
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const totpInput = document.getElementById('totpInput');
+const authError = document.getElementById('authError');
+
+// Check for existing session
+sessionToken = sessionStorage.getItem('voice_logger_token');
+if (sessionToken) {
+  showApp();
+}
+
+totpInput.addEventListener('input', async function() {
+  authError.textContent = '';
+  if (this.value.length === 6) {
+    try {
+      const resp = await fetch(API_BASE + '/api/health', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({totp_code: this.value}),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.session_token) {
+        sessionToken = data.session_token;
+        sessionStorage.setItem('voice_logger_token', sessionToken);
+        showApp();
+      } else {
+        authError.textContent = data.error || 'Invalid code';
+        this.value = '';
+        this.focus();
+      }
+    } catch (e) {
+      authError.textContent = 'Connection error';
+      this.value = '';
+    }
+  }
+});
+
+function showApp() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  initSpeechRecognition();
+}
+
+// ── API Helpers ──────────────────────────────────────────────────────────────
+async function api(endpoint, body) {
+  const resp = await fetch(API_BASE + endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + sessionToken,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (resp.status === 401) {
+    // Session expired
+    sessionStorage.removeItem('voice_logger_token');
+    sessionToken = null;
+    document.getElementById('mainApp').classList.add('hidden');
+    document.getElementById('authScreen').classList.remove('hidden');
+    totpInput.value = '';
+    totpInput.focus();
+    throw new Error('Session expired');
+  }
+
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ── Mode Toggle ──────────────────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  resetUI();
+}
+
+// ── Speech Recognition ───────────────────────────────────────────────────────
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    document.getElementById('recordBtn').style.display = 'none';
+    document.getElementById('recordHint').textContent = 'Speech not supported — type below';
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  let finalTranscript = '';
+  let interimTranscript = '';
+
+  recognition.onresult = (event) => {
+    interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+    document.getElementById('recordHint').textContent =
+      finalTranscript + interimTranscript || 'Listening...';
+  };
+
+  recognition.onend = () => {
+    if (isRecording) {
+      // Auto-stopped — process the result
+      isRecording = false;
+      document.getElementById('recordBtn').classList.remove('recording');
+      if (finalTranscript.trim()) {
+        processText(finalTranscript.trim());
+      } else {
+        document.getElementById('recordHint').textContent = 'No speech detected — try again';
+      }
+      finalTranscript = '';
+    }
+  };
+
+  recognition.onerror = (event) => {
+    isRecording = false;
+    document.getElementById('recordBtn').classList.remove('recording');
+    if (event.error === 'not-allowed') {
+      document.getElementById('recordHint').textContent = 'Mic permission denied';
+    } else {
+      document.getElementById('recordHint').textContent = 'Error: ' + event.error;
+    }
+  };
+}
+
+function toggleRecord() {
+  if (!recognition) return;
+
+  if (isRecording) {
+    recognition.stop();
+    isRecording = false;
+    document.getElementById('recordBtn').classList.remove('recording');
+  } else {
+    isRecording = true;
+    document.getElementById('recordBtn').classList.add('recording');
+    document.getElementById('recordHint').textContent = 'Listening...';
+    recognition.start();
+
+    // Auto-stop after 30 seconds
+    setTimeout(() => {
+      if (isRecording) recognition.stop();
+    }, 30000);
+  }
+}
+
+function submitText() {
+  const text = document.getElementById('textInput').value.trim();
+  if (text) {
+    processText(text);
+    document.getElementById('textInput').value = '';
+  }
+}
+
+// Handle Enter key in text input
+document.getElementById('textInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitText();
+  }
+});
+
+// ── Processing Pipeline ──────────────────────────────────────────────────────
+async function processText(text) {
+  showStatus('loading', '<span class="spinner"></span> Parsing...');
+  document.getElementById('recordArea').classList.add('hidden');
+
+  try {
+    // Step 1: Parse with Claude
+    parsedData = await api('/api/parse', {text, mode: currentMode});
+    document.getElementById('transcription').textContent = '"' + text + '"';
+
+    if (currentMode === 'nutrition') {
+      // Step 2: Look up nutrition
+      showStatus('loading', '<span class="spinner"></span> Looking up nutrition...');
+      try {
+        lookupData = await api('/api/lookup', {
+          nutritionix_query: parsedData.nutritionix_query,
+        });
+      } catch (e) {
+        // Fallback: no nutrition data, user can still log with description only
+        lookupData = null;
+        showStatus('error', 'Nutrition lookup failed — you can still log the description');
+      }
+      showNutritionResults();
+    } else {
+      showWorkoutResults();
+    }
+
+    hideStatus();
+    document.getElementById('resultsPanel').classList.remove('hidden');
+    document.getElementById('actionBtns').classList.remove('hidden');
+
+  } catch (e) {
+    showStatus('error', 'Error: ' + e.message);
+    document.getElementById('recordArea').classList.remove('hidden');
+  }
+}
+
+// ── Display Results ──────────────────────────────────────────────────────────
+function showNutritionResults() {
+  document.getElementById('nutritionResults').classList.remove('hidden');
+  document.getElementById('workoutResults').classList.add('hidden');
+
+  // Meal type chips
+  const chips = document.getElementById('mealTypeChips');
+  chips.innerHTML = '';
+  ['Breakfast', 'Lunch', 'Dinner', 'Snacks'].forEach(type => {
+    const chip = document.createElement('span');
+    chip.className = 'meal-chip' + (type === parsedData.meal_type ? ' active' : '');
+    chip.textContent = type;
+    chip.onclick = () => {
+      parsedData.meal_type = type;
+      chips.querySelectorAll('.meal-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    };
+    chips.appendChild(chip);
+  });
+
+  document.getElementById('mealDesc').textContent = parsedData.meal_description || '';
+
+  if (lookupData && lookupData.totals) {
+    document.getElementById('calVal').textContent = lookupData.totals.calories;
+    document.getElementById('proVal').textContent = lookupData.totals.protein + 'g';
+    document.getElementById('carbVal').textContent = lookupData.totals.carbs + 'g';
+    document.getElementById('fatVal').textContent = lookupData.totals.fat + 'g';
+  } else {
+    document.getElementById('calVal').textContent = '?';
+    document.getElementById('proVal').textContent = '?';
+    document.getElementById('carbVal').textContent = '?';
+    document.getElementById('fatVal').textContent = '?';
+  }
+}
+
+function showWorkoutResults() {
+  document.getElementById('workoutResults').classList.remove('hidden');
+  document.getElementById('nutritionResults').classList.add('hidden');
+
+  const container = document.getElementById('workoutSets');
+  container.innerHTML = '';
+  (parsedData.exercises || []).forEach((ex, i) => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    row.innerHTML = `
+      <span class="set-exercise">${ex.exercise}</span>
+      <span class="set-detail">${ex.weight_lbs} lbs x ${ex.reps} @ RPE ${ex.rpe}</span>
+    `;
+    container.appendChild(row);
+  });
+
+  if (parsedData.session_notes) {
+    const note = document.createElement('div');
+    note.className = 'set-row';
+    note.innerHTML = `<span class="set-detail" style="color:var(--text)">${parsedData.session_notes}</span>`;
+    container.appendChild(note);
+  }
+}
+
+// ── Confirm & Log ────────────────────────────────────────────────────────────
+async function confirmLog() {
+  showStatus('loading', '<span class="spinner"></span> Logging...');
+  document.getElementById('actionBtns').classList.add('hidden');
+
+  try {
+    let payload;
+    if (currentMode === 'nutrition') {
+      const totals = (lookupData && lookupData.totals) || {};
+      payload = {
+        mode: 'nutrition',
+        date: new Date().toISOString().split('T')[0],
+        meal_type: parsedData.meal_type,
+        meal_description: parsedData.meal_description,
+        calories: totals.calories || 0,
+        protein: totals.protein || 0,
+        carbs: totals.carbs || 0,
+        fat: totals.fat || 0,
+        notes: parsedData.notes || '',
+      };
+    } else {
+      payload = {
+        mode: 'workout',
+        date: new Date().toISOString().split('T')[0],
+        exercises: parsedData.exercises,
+        session_notes: parsedData.session_notes || '',
+      };
+    }
+
+    const result = await api('/api/log', payload);
+    showStatus('success', result.message);
+
+    // Reset after 2 seconds
+    setTimeout(resetUI, 2000);
+
+  } catch (e) {
+    showStatus('error', 'Failed to log: ' + e.message);
+    document.getElementById('actionBtns').classList.remove('hidden');
+  }
+}
+
+// ── UI Helpers ───────────────────────────────────────────────────────────────
+function showStatus(type, html) {
+  const area = document.getElementById('statusArea');
+  area.className = 'status ' + type;
+  area.innerHTML = html;
+  area.classList.remove('hidden');
+}
+
+function hideStatus() {
+  document.getElementById('statusArea').classList.add('hidden');
+}
+
+function resetUI() {
+  parsedData = null;
+  lookupData = null;
+  document.getElementById('recordArea').classList.remove('hidden');
+  document.getElementById('resultsPanel').classList.add('hidden');
+  document.getElementById('actionBtns').classList.add('hidden');
+  document.getElementById('nutritionResults').classList.add('hidden');
+  document.getElementById('workoutResults').classList.add('hidden');
+  hideStatus();
+  document.getElementById('recordHint').textContent = 'Tap to record';
+}
+</script>
+</body>
+</html>

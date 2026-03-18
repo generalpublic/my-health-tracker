@@ -12,12 +12,11 @@ Usage:
 
 from pathlib import Path
 from dotenv import load_dotenv
-from garmin_sync import (
-    get_workbook, HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, ARCHIVE_HEADERS,
-    STRENGTH_LOG_HEADERS,
+from utils import get_workbook
+from schema import (
+    HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, ARCHIVE_HEADERS,
+    STRENGTH_LOG_HEADERS, DAILY_LOG_HEADERS, SESSION_LOG_HEADERS,
 )
-from setup_daily_log import DAILY_LOG_HEADERS
-from verify_sheets import SESSION_LOG_HEADERS
 
 load_dotenv(Path(__file__).parent / ".env")
 

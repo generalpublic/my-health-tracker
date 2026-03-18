@@ -8,7 +8,7 @@ Rules:
   - Strength Log:   multiple entries per date allowed -- report only, never delete
 """
 
-from garmin_sync import get_workbook
+from utils import get_workbook
 
 EXPECTED_COLS = {
     "Garmin": 37,  # 36 original + Day column

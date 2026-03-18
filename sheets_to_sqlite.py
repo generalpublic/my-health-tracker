@@ -10,23 +10,24 @@ import sys
 import sqlite3
 from datetime import datetime
 
-from garmin_sync import get_workbook
+from utils import get_workbook
 from sqlite_backup import (
     get_db, close_db,
     upsert_garmin_row, upsert_sleep_row, upsert_nutrition_row,
     upsert_session_log_row, upsert_daily_log_row, upsert_strength_log_row,
-    upsert_archive_row,
+    upsert_overall_analysis_row, upsert_archive_row,
 )
 
 # Tab name -> (upsert function, min expected columns)
 TAB_CONFIG = {
     "Garmin":            (upsert_garmin_row,      37),
-    "Sleep":             (upsert_sleep_row,        25),
+    "Sleep":             (upsert_sleep_row,        23),
     "Nutrition":         (upsert_nutrition_row,    16),
     "Session Log":       (upsert_session_log_row,  23),
     "Daily Log":         (upsert_daily_log_row,    22),
     "Strength Log":      (upsert_strength_log_row,  8),
-    "Raw Data Archive":  (upsert_archive_row,      49),
+    "Overall Analysis":  (upsert_overall_analysis_row, 12),
+    "Raw Data Archive":  (upsert_archive_row,      52),
 }
 
 # Tab name -> SQLite table name (for verification)
@@ -37,6 +38,7 @@ TAB_TO_TABLE = {
     "Session Log":      "session_log",
     "Daily Log":        "daily_log",
     "Strength Log":     "strength_log",
+    "Overall Analysis": "overall_analysis",
     "Raw Data Archive": "raw_data_archive",
 }
 
@@ -103,7 +105,7 @@ def main():
 
     label = "Snapshot" if is_snapshot else "Migration"
     print(f"\n{'[DRY RUN] ' if dry_run else ''}{label}: Google Sheets -> SQLite")
-    print(f"  Database: ns_habit_tracker.db")
+    print(f"  Database: health_tracker.db")
     print(f"  Tabs: {', '.join(tabs.keys())}\n")
 
     wb = get_workbook()

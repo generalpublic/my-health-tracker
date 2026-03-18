@@ -8,7 +8,7 @@ Usage:
     python setup_analysis.py
 """
 
-from garmin_sync import get_workbook
+from utils import get_workbook
 
 
 def setup_analysis_tab(wb):
@@ -100,7 +100,7 @@ def setup_analysis_tab(wb):
 
     # Section: Workout vs Recovery
     # Session Log cols shifted +1: B=Date, C=Session Type, E=Post-Workout Energy,
-    # N=Anaerobic TE, M=Aerobic TE, L=Calories, W=Next Morning Feel
+    # N=Anaerobic TE, M=Aerobic TE, L=Calories
     sheet.update("A55", [["WORKOUT vs RECOVERY (next-morning HRV)"]])
     sheet.update("A56", [
         ["Metric", "Avg HRV (ms)"],
@@ -118,10 +118,6 @@ def setup_analysis_tab(wb):
          '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Session Log\'!C2:C1000="Strength",\'Session Log\'!E2:E1000,""))),"No data yet")'],
         ["Avg post-workout fatigue -> Cardio",
          '=IFERROR(AVERAGE(ARRAYFORMULA(IF((\'Session Log\'!C2:C1000="Run")+(\'Session Log\'!C2:C1000="Cycle")+(\'Session Log\'!C2:C1000="Swim"),\'Session Log\'!E2:E1000,""))),"No data yet")'],
-        ["Avg next morning feel -> Strength",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Session Log\'!C2:C1000="Strength",\'Session Log\'!W2:W1000,""))),"No data yet")'],
-        ["Avg next morning feel -> Cardio",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF((\'Session Log\'!C2:C1000="Run")+(\'Session Log\'!C2:C1000="Cycle")+(\'Session Log\'!C2:C1000="Swim"),\'Session Log\'!W2:W1000,""))),"No data yet")'],
     ])
 
     # Format headers bold
@@ -137,7 +133,7 @@ def setup_session_log_tab(wb):
     try:
         sheet = wb.worksheet("Session Log")
     except Exception:
-        sheet = wb.add_worksheet(title="Session Log", rows=1000, cols=23)
+        sheet = wb.add_worksheet(title="Session Log", rows=1000, cols=22)
 
     headers = [
         "Day",                         # A
@@ -162,10 +158,9 @@ def setup_session_log_tab(wb):
         "Zone Ranges",                 # T
         "Source",                      # U
         "Elevation (m)",               # V
-        "Next Morning Feel (1-10)",    # W
     ]
     sheet.update(range_name="A1", values=[headers])
-    sheet.format("A1:W1", {"textFormat": {"bold": True}})
+    sheet.format("A1:V1", {"textFormat": {"bold": True}})
 
     # Add Perceived Effort dropdown to column D (rows 2-1000)
     wb.batch_update({"requests": [{
@@ -197,6 +192,8 @@ def setup_session_log_tab(wb):
 
 
 def setup_strength_log_tab(wb):
+    from utils import date_to_day
+
     try:
         sheet = wb.worksheet("Strength Log")
     except Exception:
@@ -207,6 +204,27 @@ def setup_strength_log_tab(wb):
     sheet.format("A1:H1", {"textFormat": {"bold": True}})
     print("  Strength Log tab headers updated.")
 
+    # Backfill Day column from Date column for any rows where Day is blank
+    all_rows = sheet.get_all_values()
+    updates = []
+    skipped = 0
+    for i, row in enumerate(all_rows[1:], start=2):  # skip header, 1-based
+        date_val = row[1] if len(row) > 1 else ""
+        day_val = row[0] if len(row) > 0 else ""
+        if date_val and not day_val:
+            day_str = date_to_day(date_val)
+            if day_str:
+                updates.append({"range": f"A{i}", "values": [[day_str]]})
+            else:
+                skipped += 1
+    if updates:
+        sheet.batch_update(updates, value_input_option="RAW")
+        print(f"  Backfilled Day column for {len(updates)} Strength Log rows.")
+    elif skipped:
+        print(f"  WARNING: {skipped} rows have unparseable dates in column B — Day not backfilled.")
+    else:
+        print("  Strength Log Day column: all rows populated.")
+
 
 def setup_sleep_tab(wb):
     try:
@@ -214,7 +232,7 @@ def setup_sleep_tab(wb):
     except Exception:
         sheet = wb.add_worksheet(title="Sleep", rows=1000, cols=25)
 
-    from garmin_sync import SLEEP_HEADERS
+    from schema import SLEEP_HEADERS
     sheet.update(range_name="A1", values=[SLEEP_HEADERS])
     sheet.format(f"A1:{chr(64+len(SLEEP_HEADERS))}1", {"textFormat": {"bold": True}})
     print("  Sleep tab headers updated.")

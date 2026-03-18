@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Health Calendar</title>
+<style>
+  :root {
+    --bg: #0f0f1a;
+    --surface: #1a1a2e;
+    --surface2: #222240;
+    --border: #2a2a4a;
+    --text: #e0e0f0;
+    --text-dim: #8888aa;
+    --text-muted: #555577;
+    --cell-empty: #1e1e32;
+    --cell-nodata: #16162a;
+    --cell-size: 22px;
+    --cell-gap: 3px;
+    --cell-radius: 4px;
+    --red: hsl(0, 65%, 42%);
+    --yellow: hsl(45, 70%, 50%);
+    --green: hsl(140, 55%, 38%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .metric-select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    outline: none;
+  }
+  .metric-select:hover { border-color: #4a4a7a; }
+  .year-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .year-nav button {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .year-nav button:hover { background: var(--border); }
+  .year-label {
+    font-size: 18px;
+    font-weight: 600;
+    min-width: 52px;
+    text-align: center;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 24px;
+    padding: 12px 32px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .stat-item span { color: var(--text); font-weight: 600; }
+
+  /* ── Calendar grid ── */
+  .calendar-container {
+    padding: 24px 32px;
+    padding-bottom: 24px;
+    transition: padding-bottom 0.3s ease;
+  }
+  .calendar-container.panel-open {
+    padding-bottom: 420px;
+  }
+
+  /* Day numbers header */
+  .day-numbers {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .month-label-spacer {
+    width: 48px;
+    flex-shrink: 0;
+  }
+  .day-number {
+    width: var(--cell-size);
+    margin-right: var(--cell-gap);
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .month-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--cell-gap);
+  }
+  .month-label {
+    width: 48px;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+  }
+  .month-cells {
+    display: flex;
+    gap: var(--cell-gap);
+  }
+
+  /* ── Day cells ── */
+  .day-cell {
+    width: var(--cell-size);
+    height: var(--cell-size);
+    border-radius: var(--cell-radius);
+    background: var(--cell-nodata);
+    transition: background-color 0.3s ease, transform 0.15s ease;
+    cursor: pointer;
+    position: relative;
+  }
+  .day-cell.has-data:hover {
+    transform: scale(1.4);
+    z-index: 10;
+    box-shadow: 0 0 8px rgba(255,255,255,0.15);
+  }
+  .day-cell.no-day {
+    visibility: hidden;
+  }
+  .day-cell.today {
+    outline: 2px solid rgba(255,255,255,0.7);
+    outline-offset: 1px;
+  }
+  .day-cell.selected {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  /* ── Tooltip ── */
+  .tooltip {
+    position: fixed;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 100;
+    white-space: nowrap;
+  }
+  .tooltip.visible { opacity: 1; }
+  .tooltip .tt-date { color: var(--text-dim); font-size: 11px; }
+  .tooltip .tt-value { color: var(--text); font-weight: 600; }
+
+  /* ── Detail panel ── */
+  .detail-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform 0.25s ease-out;
+    z-index: 50;
+    max-height: 400px;
+    overflow-y: auto;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+  }
+  .detail-panel.open {
+    transform: translateY(0);
+  }
+  .detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+  }
+  .detail-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .detail-header .date-sub {
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 400;
+    margin-left: 12px;
+  }
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .close-btn:hover {
+    color: var(--text);
+    background: var(--surface2);
+  }
+
+  .detail-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    padding: 16px 24px 24px;
+  }
+  .detail-card {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+  }
+  .detail-card h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 13px;
+  }
+  .detail-row .label { color: var(--text-dim); }
+  .detail-row .value { font-weight: 500; }
+  .detail-row .value.good { color: #6fcf6f; }
+  .detail-row .value.fair { color: #e8c84a; }
+  .detail-row .value.poor { color: #e06060; }
+
+  .detail-notes {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-style: italic;
+    line-height: 1.4;
+  }
+
+  .habits-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .habit-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .habit-dot.done { background: #2d6a2d; color: #6fcf6f; }
+  .habit-dot.miss { background: #4a2020; color: #aa5555; }
+
+  .hr-zones-bar {
+    display: flex;
+    height: 10px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .hr-zones-bar .zone { transition: width 0.3s; }
+  .hr-zones-bar .z1 { background: #6688cc; }
+  .hr-zones-bar .z2 { background: #55aa55; }
+  .hr-zones-bar .z3 { background: #cccc44; }
+  .hr-zones-bar .z4 { background: #dd8833; }
+  .hr-zones-bar .z5 { background: #dd4444; }
+
+  .no-data-msg {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  /* ── Activity dots ── */
+  .activity-marker {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+    pointer-events: none;
+    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .activity-marker.run { color: #5599ee; }
+  .activity-marker.cycle { color: #ee8833; }
+  .activity-marker.swim { color: #44ccbb; }
+  .activity-marker.strength { color: #bb66dd; }
+  .activity-marker.other { color: #cccccc; }
+  .activity-marker.multi { color: #ffffff; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 32px 0;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .legend-gradient {
+    width: 120px;
+    height: 10px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--red), var(--yellow), var(--green));
+  }
+  .legend-thresholds {
+    margin-left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 11px;
+  }
+  .legend-thresholds .thresh {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .thresh-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .thresh-dot.red { background: var(--red); }
+  .thresh-dot.yellow { background: var(--yellow); }
+  .thresh-dot.green { background: var(--green); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Health Calendar</h1>
+  <div class="header-controls">
+    <select class="metric-select" id="metricSelect"></select>
+    <div class="year-nav">
+      <button id="prevYear">&lt;</button>
+      <span class="year-label" id="yearLabel"></span>
+      <button id="nextYear">&gt;</button>
+    </div>
+  </div>
+</div>
+
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="legend" id="legendBar">
+  <span id="legendWorseLabel">Worse</span>
+  <div class="legend-gradient"></div>
+  <span id="legendBetterLabel">Better</span>
+  <span class="legend-thresholds" id="legendThresholds"></span>
+  <span style="margin-left:12px; display:flex; align-items:center; gap:4px;">
+    <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--cell-nodata)"></span> No data
+  </span>
+  <span style="margin-left:16px; display:flex; align-items:center; gap:10px; font-size:11px; color:var(--text-muted);">
+    <span style="display:flex;align-items:center;gap:2px;"><span style="font-weight:900;color:#5599ee;">+</span>Run</span>
+    <span style="display:flex;align-items:center;gap:2px;"><span style="font-weight:900;color:#ee8833;">+</span>Cycle</span>
+    <span style="display:flex;align-items:center;gap:2px;"><span style="font-weight:900;color:#44ccbb;">+</span>Swim</span>
+    <span style="display:flex;align-items:center;gap:2px;"><span style="font-weight:900;color:#bb66dd;">+</span>Strength</span>
+  </span>
+</div>
+
+<div class="calendar-container" id="calendarContainer">
+  <div class="day-numbers" id="dayNumbers"></div>
+  <div id="calendarGrid"></div>
+</div>
+
+<div class="tooltip" id="tooltip">
+  <div class="tt-date"></div>
+  <div class="tt-value"></div>
+</div>
+
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <h2 id="detailTitle"></h2>
+    <button class="close-btn" id="closePanel">&times;</button>
+  </div>
+  <div class="detail-cards" id="detailCards"></div>
+</div>
+
+<script>
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS_IN_MONTH = [31,28,31,30,31,30,31,31,30,31,30,31];
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const HABIT_LABELS = ['Wake 9:30','No AM Screen','Creatine','Walk+Breath','Exercise','No PM Screen','Bed 10pm'];
+const HABIT_KEYS = ['wake_at_930','no_morning_screens','creatine_hydrate','walk_breathing','physical_activity','no_screens_before_bed','bed_at_10pm'];
+
+/*__DASHBOARD_DATA__*/
+let currentYear = new Date().getFullYear();
+let currentMetric = 'sleep_analysis_score';
+let selectedDate = null;
+let cellElements = {};
+
+// ── Color interpolation ──
+function hsl(h, s, l) { return `hsl(${h}, ${s}%, ${l}%)`; }
+
+function getColor(value, metric) {
+  if (value === null || value === undefined || value === '') return null;
+  const m = DATA.metrics[metric];
+  if (!m) return null;
+
+  let ratio;
+  if (m.type === 'higher_better') {
+    if (value <= m.red) ratio = 0;
+    else if (value >= m.green) ratio = 1;
+    else if (value <= m.yellow) ratio = (value - m.red) / (m.yellow - m.red) * 0.5;
+    else ratio = 0.5 + (value - m.yellow) / (m.green - m.yellow) * 0.5;
+  } else if (m.type === 'lower_better') {
+    if (value >= m.red) ratio = 0;
+    else if (value <= m.green) ratio = 1;
+    else if (value >= m.yellow) ratio = (m.red - value) / (m.red - m.yellow) * 0.5;
+    else ratio = 0.5 + (m.yellow - value) / (m.yellow - m.green) * 0.5;
+  } else if (m.type === 'time_earlier_better') {
+    // Use bedtime_minutes from sleep data
+    return null; // handled separately
+  }
+
+  ratio = Math.max(0, Math.min(1, ratio));
+  // Red(0) -> Yellow(0.5) -> Green(1)
+  let h_val, s_val, l_val;
+  if (ratio <= 0.5) {
+    const t = ratio / 0.5;
+    h_val = 0 + t * 45;
+    s_val = 65 + t * 5;
+    l_val = 38 + t * 8;
+  } else {
+    const t = (ratio - 0.5) / 0.5;
+    h_val = 45 + t * 95;
+    s_val = 70 - t * 15;
+    l_val = 46 - t * 8;
+  }
+  return hsl(h_val, s_val, l_val);
+}
+
+function getBedtimeColor(minutes) {
+  if (minutes === null || minutes === undefined) return null;
+  // green=300 (11pm), yellow=390 (12:30am), red=480 (2:00am) — matches Sheets bands
+  const green = 300, yellow = 390, red = 480;
+  let ratio;
+  if (minutes <= green) ratio = 1;
+  else if (minutes >= red) ratio = 0;
+  else if (minutes <= yellow) ratio = 1 - (minutes - green) / (yellow - green) * 0.5;
+  else ratio = 0.5 - (minutes - yellow) / (red - yellow) * 0.5;
+
+  ratio = Math.max(0, Math.min(1, ratio));
+  let h_val, s_val, l_val;
+  if (ratio <= 0.5) {
+    const t = ratio / 0.5;
+    h_val = t * 45; s_val = 65 + t * 5; l_val = 38 + t * 8;
+  } else {
+    const t = (ratio - 0.5) / 0.5;
+    h_val = 45 + t * 95; s_val = 70 - t * 15; l_val = 46 - t * 8;
+  }
+  return hsl(h_val, s_val, l_val);
+}
+
+function toNum(v) {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') { const n = parseFloat(v.replace(/,/g, '')); return isNaN(n) ? null : n; }
+  return null;
+}
+
+function getSessionAggregate(sessions, field, agg) {
+  if (!sessions || sessions.length === 0) return null;
+  const vals = sessions.map(s => toNum(s[field])).filter(v => v !== null);
+  if (vals.length === 0) return null;
+  if (agg === 'sum') return vals.reduce((a, b) => a + b, 0);
+  if (agg === 'max') return Math.max(...vals);
+  return vals[0];
+}
+
+function getMetricValue(dayData, metric) {
+  if (!dayData) return null;
+  const m = DATA.metrics[metric];
+  if (!m) return null;
+
+  if (m.source === 'sessions') {
+    return getSessionAggregate(dayData.sessions, m.field, m.agg || 'sum');
+  }
+
+  const section = dayData[m.source];
+  if (!section) return null;
+
+  if (metric === 'bedtime') {
+    return section.bedtime_minutes;
+  }
+  return toNum(section[metric]);
+}
+
+function getDisplayValue(dayData, metric) {
+  if (!dayData) return null;
+  const m = DATA.metrics[metric];
+  if (!m) return null;
+
+  if (m.source === 'sessions') {
+    const val = getSessionAggregate(dayData.sessions, m.field, m.agg || 'sum');
+    if (val === null) return null;
+    if (m.unit) return `${Math.round(val * 10) / 10} ${m.unit}`;
+    return typeof val === 'number' ? (Number.isInteger(val) ? val.toString() : val.toFixed(1)) : val;
+  }
+
+  const section = dayData[m.source];
+  if (!section) return null;
+
+  if (metric === 'bedtime') return section.bedtime || null;
+
+  let val = section[metric];
+  if (val === null || val === undefined || val === '') return null;
+
+  if (m.unit) return `${Math.round(val * 10) / 10} ${m.unit}`;
+  if (metric === 'total_sleep_hrs') return `${val.toFixed(1)} hrs`;
+  if (metric === 'habits_total') return `${val}/7`;
+  return typeof val === 'number' ? (Number.isInteger(val) ? val.toString() : val.toFixed(1)) : val;
+}
+
+function getCellColor(dayData, metric) {
+  if (metric === 'bedtime') {
+    const s = dayData?.sleep;
+    return s ? getBedtimeColor(s.bedtime_minutes) : null;
+  }
+  const val = getMetricValue(dayData, metric);
+  return getColor(val, metric);
+}
+
+// ── Calendar rendering ──
+function isLeapYear(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function daysInMonth(m, y) { return m === 1 && isLeapYear(y) ? 29 : DAYS_IN_MONTH[m]; }
+
+function dateStr(y, m, d) {
+  return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function renderCalendar() {
+  const grid = document.getElementById('calendarGrid');
+  const dayNums = document.getElementById('dayNumbers');
+  grid.innerHTML = '';
+  dayNums.innerHTML = '<div class="month-label-spacer"></div>';
+  cellElements = {};
+
+  // Day numbers 1-31
+  for (let d = 1; d <= 31; d++) {
+    const el = document.createElement('div');
+    el.className = 'day-number';
+    el.textContent = d;
+    dayNums.appendChild(el);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (let m = 0; m < 12; m++) {
+    const row = document.createElement('div');
+    row.className = 'month-row';
+
+    const label = document.createElement('div');
+    label.className = 'month-label';
+    label.textContent = MONTHS[m];
+    row.appendChild(label);
+
+    const cells = document.createElement('div');
+    cells.className = 'month-cells';
+
+    const dim = daysInMonth(m, currentYear);
+    for (let d = 1; d <= 31; d++) {
+      const cell = document.createElement('div');
+      cell.className = 'day-cell';
+
+      if (d > dim) {
+        cell.classList.add('no-day');
+      } else {
+        const ds = dateStr(currentYear, m, d);
+        const dayData = DATA.days[ds];
+        cell.dataset.date = ds;
+
+        if (dayData) {
+          cell.classList.add('has-data');
+          const color = getCellColor(dayData, currentMetric);
+          if (color) cell.style.backgroundColor = color;
+          else cell.style.backgroundColor = 'var(--cell-nodata)';
+
+          // Activity marker (+)
+          const sess = dayData.sessions;
+          if (sess && sess.length > 0) {
+            const marker = document.createElement('div');
+            const types = [...new Set(sess.map(s => (s.session_type || 'Other').toLowerCase()))];
+            const cls = types.length > 1 ? 'multi' : types[0];
+            marker.className = 'activity-marker ' + cls;
+            marker.textContent = '+';
+            marker.title = sess.map(s => s.activity_name || s.session_type).join(', ');
+            cell.appendChild(marker);
+          }
+        }
+
+        if (ds === today) cell.classList.add('today');
+        if (ds === selectedDate) cell.classList.add('selected');
+
+        cell.addEventListener('mouseenter', onCellHover);
+        cell.addEventListener('mouseleave', onCellLeave);
+        cell.addEventListener('click', onCellClick);
+        cellElements[ds] = cell;
+      }
+      cells.appendChild(cell);
+    }
+    row.appendChild(cells);
+    grid.appendChild(row);
+  }
+  updateStats();
+  updateLegend();
+}
+
+function recolorCells() {
+  for (const [ds, cell] of Object.entries(cellElements)) {
+    const dayData = DATA.days[ds];
+    if (dayData) {
+      const color = getCellColor(dayData, currentMetric);
+      cell.style.backgroundColor = color || 'var(--cell-nodata)';
+    }
+  }
+  updateStats();
+  updateLegend();
+}
+
+// ── Stats bar ──
+function updateStats() {
+  const bar = document.getElementById('statsBar');
+  const m = DATA.metrics[currentMetric];
+  let values = [];
+
+  for (const [ds, cell] of Object.entries(cellElements)) {
+    const dayData = DATA.days[ds];
+    if (!dayData) continue;
+    const val = getMetricValue(dayData, currentMetric);
+    if (val !== null && val !== undefined && val !== '') values.push(val);
+  }
+
+  if (values.length === 0) {
+    bar.innerHTML = '<div class="stat-item">No data for this year</div>';
+    return;
+  }
+
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const greenCount = values.filter(v => {
+    if (m.type === 'higher_better') return v >= m.green;
+    if (m.type === 'lower_better') return v <= m.green;
+    return false;
+  }).length;
+  const redCount = values.filter(v => {
+    if (m.type === 'higher_better') return v <= m.red;
+    if (m.type === 'lower_better') return v >= m.red;
+    return false;
+  }).length;
+
+  if (currentMetric === 'bedtime') {
+    bar.innerHTML = `
+      <div class="stat-item">Days tracked: <span>${values.length}</span></div>
+      <div class="stat-item">Green days: <span>${greenCount}</span></div>
+      <div class="stat-item">Red days: <span>${redCount}</span></div>
+    `;
+  } else {
+    bar.innerHTML = `
+      <div class="stat-item">Days: <span>${values.length}</span></div>
+      <div class="stat-item">Avg: <span>${avg.toFixed(1)}</span></div>
+      <div class="stat-item">Best: <span>${m.type === 'lower_better' ? min.toFixed(1) : max.toFixed(1)}</span></div>
+      <div class="stat-item">Green days: <span>${greenCount}</span> (${(greenCount/values.length*100).toFixed(0)}%)</div>
+      <div class="stat-item">Red days: <span>${redCount}</span> (${(redCount/values.length*100).toFixed(0)}%)</div>
+    `;
+  }
+}
+
+// ── Legend thresholds ──
+function updateLegend() {
+  const m = DATA.metrics[currentMetric];
+  const el = document.getElementById('legendThresholds');
+  if (!m) { el.innerHTML = ''; return; }
+
+  const fmt = (v) => {
+    if (typeof v === 'number') {
+      return v >= 1000 ? v.toLocaleString() : v.toString();
+    }
+    return v;
+  };
+  const unit = m.unit ? ' ' + m.unit : '';
+
+  if (m.type === 'higher_better') {
+    el.innerHTML =
+      `<span class="thresh"><span class="thresh-dot red"></span> &le; ${fmt(m.red)}${unit}</span>` +
+      `<span class="thresh"><span class="thresh-dot yellow"></span> ${fmt(m.yellow)}${unit}</span>` +
+      `<span class="thresh"><span class="thresh-dot green"></span> &ge; ${fmt(m.green)}${unit}</span>`;
+  } else if (m.type === 'lower_better') {
+    el.innerHTML =
+      `<span class="thresh"><span class="thresh-dot green"></span> &le; ${fmt(m.green)}${unit}</span>` +
+      `<span class="thresh"><span class="thresh-dot yellow"></span> ${fmt(m.yellow)}${unit}</span>` +
+      `<span class="thresh"><span class="thresh-dot red"></span> &ge; ${fmt(m.red)}${unit}</span>`;
+  } else if (m.type === 'time_earlier_better') {
+    el.innerHTML =
+      `<span class="thresh"><span class="thresh-dot green"></span> &le; ${m.green}</span>` +
+      `<span class="thresh"><span class="thresh-dot yellow"></span> ${m.yellow}</span>` +
+      `<span class="thresh"><span class="thresh-dot red"></span> &ge; ${m.red}</span>`;
+  }
+}
+
+// ── Tooltip ──
+const tooltip = document.getElementById('tooltip');
+
+function onCellHover(e) {
+  const ds = e.target.dataset.date;
+  if (!ds) return;
+  const dayData = DATA.days[ds];
+  const display = getDisplayValue(dayData, currentMetric);
+
+  const d = new Date(ds + 'T12:00:00');
+  tooltip.querySelector('.tt-date').textContent = `${DAY_NAMES[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  tooltip.querySelector('.tt-value').textContent = display !== null ? display : 'No data';
+
+  const rect = e.target.getBoundingClientRect();
+  tooltip.style.left = rect.left + rect.width / 2 + 'px';
+  tooltip.style.top = rect.top - 44 + 'px';
+  tooltip.classList.add('visible');
+}
+
+function onCellLeave() {
+  tooltip.classList.remove('visible');
+}
+
+// ── Detail panel ──
+function onCellClick(e) {
+  const ds = e.target.dataset.date;
+  if (!ds) return;
+
+  // Deselect previous
+  if (selectedDate && cellElements[selectedDate]) {
+    cellElements[selectedDate].classList.remove('selected');
+  }
+  selectedDate = ds;
+  e.target.classList.add('selected');
+
+  const dayData = DATA.days[ds] || {};
+  const d = new Date(ds + 'T12:00:00');
+  const title = document.getElementById('detailTitle');
+  title.innerHTML = `${DAY_NAMES[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}<span class="date-sub">${ds}</span>`;
+
+  renderDetailCards(dayData);
+
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('calendarContainer').classList.add('panel-open');
+}
+
+function closeDetailPanel() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.getElementById('calendarContainer').classList.remove('panel-open');
+  if (selectedDate && cellElements[selectedDate]) {
+    cellElements[selectedDate].classList.remove('selected');
+  }
+  selectedDate = null;
+}
+
+function row(label, value, gradeClass) {
+  if (value === null || value === undefined || value === '' || value === 0) return '';
+  const cls = gradeClass ? ` class="value ${gradeClass}"` : ' class="value"';
+  return `<div class="detail-row"><span class="label">${label}</span><span${cls}>${value}</span></div>`;
+}
+
+function grade(val, green, red, higherBetter) {
+  if (val === null || val === undefined) return '';
+  if (higherBetter) {
+    if (val >= green) return 'good';
+    if (val <= red) return 'poor';
+    return 'fair';
+  } else {
+    if (val <= green) return 'good';
+    if (val >= red) return 'poor';
+    return 'fair';
+  }
+}
+
+function renderDetailCards(dayData) {
+  const cards = document.getElementById('detailCards');
+  let html = '';
+
+  // Sleep card
+  const s = dayData.sleep;
+  if (s) {
+    html += `<div class="detail-card"><h3>Sleep</h3>`;
+    html += row('Sleep Score', s.sleep_analysis_score, grade(s.sleep_analysis_score, 85, 65, true));
+    html += row('Duration', s.total_sleep_hrs ? s.total_sleep_hrs.toFixed(1) + ' hrs' : null, grade(s.total_sleep_hrs, 8, 5, true));
+    html += row('Bedtime', s.bedtime);
+    html += row('Wake Time', s.wake_time);
+    html += row('HRV', s.overnight_hrv_ms ? s.overnight_hrv_ms + ' ms' : null, grade(s.overnight_hrv_ms, 48, 30, true));
+    html += row('Deep', s.deep_pct ? s.deep_pct + '%' : null, grade(s.deep_pct, 22, 12, true));
+    html += row('REM', s.rem_pct ? s.rem_pct + '%' : null, grade(s.rem_pct, 22, 12, true));
+    html += row('Cycles', s.sleep_cycles);
+    html += row('Awakenings', s.awakenings, grade(s.awakenings, 1, 6, false));
+    html += row('BB Gained', s.body_battery_gained, grade(s.body_battery_gained, 65, 15, true));
+    html += row('Bedtime Var', s.bedtime_variability_7d ? Math.round(s.bedtime_variability_7d) + ' min' : null, grade(s.bedtime_variability_7d, 15, 60, false));
+    html += row('Wake Var', s.wake_variability_7d ? Math.round(s.wake_variability_7d) + ' min' : null, grade(s.wake_variability_7d, 15, 60, false));
+    if (s.sleep_feedback) html += `<div class="detail-notes">${s.sleep_feedback}</div>`;
+    html += `</div>`;
+  }
+
+  // Overall Analysis card
+  const oa = dayData.overall_analysis;
+  if (oa) {
+    html += `<div class="detail-card"><h3>Readiness</h3>`;
+    html += row('Score', oa.readiness_score, grade(oa.readiness_score, 7, 4, true));
+    html += row('Label', oa.readiness_label);
+    html += row('Confidence', oa.confidence);
+    html += row('Cognition', oa.cognition, grade(oa.cognition, 7, 3, true));
+    if (oa.cognitive_energy_assessment) html += `<div class="detail-notes">${oa.cognitive_energy_assessment}</div>`;
+    if (oa.sleep_context) html += `<div class="detail-notes">Sleep: ${oa.sleep_context}</div>`;
+    if (oa.training_load_status) html += `<div class="detail-notes">Training: ${oa.training_load_status}</div>`;
+    if (oa.key_insights) html += `<div class="detail-notes">${oa.key_insights}</div>`;
+    if (oa.recommendations) html += `<div class="detail-notes">${oa.recommendations}</div>`;
+    html += `</div>`;
+  }
+
+  // Activity card
+  const sessions = dayData.sessions;
+  if (sessions && sessions.length > 0) {
+    html += `<div class="detail-card"><h3>Activity</h3>`;
+    for (const sess of sessions) {
+      html += row('Activity', sess.activity_name);
+      html += row('Duration', sess.duration_min ? Math.round(sess.duration_min) + ' min' : null);
+      html += row('Distance', sess.distance_mi ? sess.distance_mi.toFixed(1) + ' mi' : null);
+      html += row('Avg HR', sess.avg_hr ? Math.round(sess.avg_hr) + ' bpm' : null);
+      html += row('Max HR', sess.max_hr ? Math.round(sess.max_hr) + ' bpm' : null);
+      html += row('Calories', sess.calories ? Math.round(sess.calories) : null);
+      html += row('Aerobic TE', sess.aerobic_te);
+      html += row('Anaerobic TE', sess.anaerobic_te);
+      // HR zones bar
+      const z = [sess.zone_1_min||0, sess.zone_2_min||0, sess.zone_3_min||0, sess.zone_4_min||0, sess.zone_5_min||0];
+      const total = z.reduce((a,b) => a+b, 0);
+      if (total > 0) {
+        html += `<div class="hr-zones-bar">`;
+        html += z.map((v, i) => `<div class="zone z${i+1}" style="width:${(v/total*100).toFixed(1)}%" title="Z${i+1}: ${v.toFixed(0)}min"></div>`).join('');
+        html += `</div>`;
+      }
+      if (sess.notes) html += `<div class="detail-notes">${sess.notes}</div>`;
+      if (sessions.indexOf(sess) < sessions.length - 1) html += `<hr style="border-color:var(--border);margin:10px 0">`;
+    }
+    html += `</div>`;
+  }
+
+  // Body card
+  const g = dayData.garmin;
+  if (g) {
+    html += `<div class="detail-card"><h3>Body</h3>`;
+    html += row('Body Battery', g.body_battery, grade(g.body_battery, 80, 20, true));
+    html += row('BB at Wake', g.body_battery_at_wake);
+    html += row('BB High', g.body_battery_high);
+    html += row('BB Low', g.body_battery_low);
+    html += row('Resting HR', g.resting_hr ? g.resting_hr + ' bpm' : null, grade(g.resting_hr, 48, 65, false));
+    html += row('Steps', g.steps ? g.steps.toLocaleString() : null);
+    html += row('Floors', g.floors_ascended);
+    html += row('Calories', g.total_calories_burned ? Math.round(g.total_calories_burned).toLocaleString() : null);
+    html += row('Active Cal', g.active_calories_burned ? Math.round(g.active_calories_burned) : null);
+    html += row('Stress', g.avg_stress_level, grade(g.avg_stress_level, 15, 50, false));
+    html += row('Mod Intensity', g.moderate_intensity_min ? Math.round(g.moderate_intensity_min) + ' min' : null);
+    html += row('Vig Intensity', g.vigorous_intensity_min ? Math.round(g.vigorous_intensity_min) + ' min' : null);
+    html += `</div>`;
+  }
+
+  // Subjective / Daily Log card
+  const dl = dayData.daily_log;
+  if (dl) {
+    html += `<div class="detail-card"><h3>Subjective</h3>`;
+    html += row('Morning Energy', dl.morning_energy, grade(dl.morning_energy, 8, 3, true));
+    html += row('Midday Energy', dl.midday_energy, grade(dl.midday_energy, 8, 3, true));
+    html += row('Midday Focus', dl.midday_focus, grade(dl.midday_focus, 8, 3, true));
+    html += row('Midday Mood', dl.midday_mood, grade(dl.midday_mood, 8, 3, true));
+    html += row('Evening Energy', dl.evening_energy, grade(dl.evening_energy, 8, 3, true));
+    html += row('Evening Mood', dl.evening_mood, grade(dl.evening_mood, 8, 3, true));
+    html += row('Stress', dl.perceived_stress, grade(dl.perceived_stress, 2, 8, false));
+    html += row('Day Rating', dl.day_rating, grade(dl.day_rating, 8, 3, true));
+
+    // Habits
+    html += `<div style="margin-top:8px"><span class="label" style="font-size:12px;color:var(--text-dim)">Habits: ${dl.habits_total || 0}/7</span></div>`;
+    html += `<div class="habits-row">`;
+    for (let i = 0; i < HABIT_KEYS.length; i++) {
+      const done = dl[HABIT_KEYS[i]];
+      html += `<div class="habit-dot ${done ? 'done' : 'miss'}" title="${HABIT_LABELS[i]}">${done ? '\u2713' : '\u00d7'}</div>`;
+    }
+    html += `</div>`;
+
+    if (dl.midday_notes) html += `<div class="detail-notes">Midday: ${dl.midday_notes}</div>`;
+    if (dl.evening_notes) html += `<div class="detail-notes">Evening: ${dl.evening_notes}</div>`;
+    html += `</div>`;
+  }
+
+  // Nutrition card
+  const n = dayData.nutrition;
+  if (n && (n.breakfast || n.lunch || n.dinner || n.snacks || n.total_calories_consumed)) {
+    html += `<div class="detail-card"><h3>Nutrition</h3>`;
+    html += row('Breakfast', n.breakfast);
+    html += row('Lunch', n.lunch);
+    html += row('Dinner', n.dinner);
+    html += row('Snacks', n.snacks);
+    html += row('Calories In', n.total_calories_consumed);
+    html += row('Calories Out', n.total_calories_burned ? Math.round(n.total_calories_burned) : null);
+    html += row('Balance', n.calorie_balance ? Math.round(n.calorie_balance) : null);
+    html += row('Protein', n.protein_g ? n.protein_g + 'g' : null);
+    html += row('Carbs', n.carbs_g ? n.carbs_g + 'g' : null);
+    html += row('Fats', n.fats_g ? n.fats_g + 'g' : null);
+    html += row('Water', n.water_l ? n.water_l + 'L' : null);
+    if (n.notes) html += `<div class="detail-notes">${n.notes}</div>`;
+    html += `</div>`;
+  }
+
+  // Strength card
+  const str = dayData.strength;
+  if (str && str.length > 0) {
+    html += `<div class="detail-card"><h3>Strength</h3>`;
+    for (const ex of str) {
+      html += row(ex.exercise || ex.muscle_group, `${ex.weight_lbs || '?'}lb x ${ex.reps || '?'}`);
+      if (ex.rpe) html += row('RPE', ex.rpe);
+    }
+    html += `</div>`;
+  }
+
+  // No data at all
+  if (!s && !sessions && !g && !dl && !n && !str) {
+    html = `<div class="detail-card"><div class="no-data-msg">No data recorded for this day.</div></div>`;
+  }
+
+  cards.innerHTML = html;
+}
+
+// ── Init ──
+function init() {
+  if (!DATA) {
+    document.body.innerHTML = '<div style="padding:40px;color:#e06060;font-size:16px">No data embedded. Run: <code>python dashboard/export_dashboard_data.py</code></div>';
+    return;
+  }
+
+  // Populate metric dropdown
+  const select = document.getElementById('metricSelect');
+  for (const [key, m] of Object.entries(DATA.metrics)) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = m.label;
+    if (key === currentMetric) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  // Determine available years
+  const years = [...new Set(Object.keys(DATA.days).map(d => parseInt(d.slice(0, 4))))].sort();
+  currentYear = years[years.length - 1] || new Date().getFullYear();
+  document.getElementById('yearLabel').textContent = currentYear;
+
+  // Events
+  select.addEventListener('change', e => {
+    currentMetric = e.target.value;
+    recolorCells();
+  });
+  document.getElementById('prevYear').addEventListener('click', () => {
+    currentYear--;
+    document.getElementById('yearLabel').textContent = currentYear;
+    renderCalendar();
+  });
+  document.getElementById('nextYear').addEventListener('click', () => {
+    currentYear++;
+    document.getElementById('yearLabel').textContent = currentYear;
+    renderCalendar();
+  });
+  document.getElementById('closePanel').addEventListener('click', closeDetailPanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeDetailPanel();
+  });
+
+  renderCalendar();
+}
+
+init();
+</script>
+</body>
+</html>

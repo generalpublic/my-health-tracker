@@ -12,12 +12,13 @@ Usage:
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import date as _date
-from garmin_sync import (
-    get_workbook, HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, STRENGTH_LOG_HEADERS,
-    apply_sleep_color_grading, apply_sleep_verdict_formatting,
+from utils import get_workbook
+from schema import (
+    HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, STRENGTH_LOG_HEADERS,
+    SESSION_LOG_HEADERS, DAILY_LOG_HEADERS, OVERALL_ANALYSIS_HEADERS,
 )
-from setup_daily_log import DAILY_LOG_HEADERS
-from verify_sheets import SESSION_LOG_HEADERS
+from sheets_formatting import (apply_sleep_color_grading, apply_sleep_verdict_formatting,
+                               apply_session_log_color_grading)
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -47,6 +48,8 @@ TAB_STYLES = {
                      "tab": {"red": 0.176, "green": 0.647, "blue": 0.749}},                  # #2DA5BE
     "Strength Log": {"bg": {"red": 0.918, "green": 0.600, "blue": 0.600}, "fg": BLACK_TEXT,  # #EA9999 salmon pink
                      "tab": {"red": 0.847, "green": 0.278, "blue": 0.278}},                  # #D84747
+    "Overall Analysis": {"bg": {"red": 0.580, "green": 0.510, "blue": 0.690}, "fg": WHITE_TEXT,  # #9482B0 muted purple
+                         "tab": {"red": 0.478, "green": 0.380, "blue": 0.620}},                  # #7A619E
 }
 
 THIN = {"style": "SOLID", "width": 1, "color": BORDER_C}
@@ -57,24 +60,30 @@ DATA_H   = 24   # px — slightly taller than default 21
 # manual_cols: list of (start_col, end_col) 0-indexed ranges to highlight cream
 TABS = [
     ("Garmin",           HEADERS,             []),
-    ("Sleep",            SLEEP_HEADERS,       [(6, 9)]),                   # G: Notes, H: Cognition, I: Cognition Notes
+    ("Sleep",            SLEEP_HEADERS,       [(6, 7)]),                   # G: Notes
     ("Nutrition",        NUTRITION_HEADERS,   [(5, 14), (15, 16)]),        # F-N, P
-    ("Session Log",      SESSION_LOG_HEADERS, [(3, 6), (22, 23)]),         # D-F, W
+    ("Session Log",      SESSION_LOG_HEADERS, [(3, 6)]),                    # D-F
     ("Daily Log",        DAILY_LOG_HEADERS,   [(2, 22)]),                  # C-V (all manual)
     ("Strength Log",     STRENGTH_LOG_HEADERS,[]),
+    ("Overall Analysis", OVERALL_ANALYSIS_HEADERS, [(7, 9)]),  # H-I: Cognition, Cognition Notes
 ]
 
 # Explicit width overrides (tab_name -> {col_index: px}). Applied AFTER auto-sizing.
 # Use for columns where analysis text or notes need a fixed wide column.
 WIDTH_OVERRIDES = {
-    "Sleep": {5: 350, 8: 250},  # F: Sleep Analysis, I: Cognition Notes — wide for free text
-    "Garmin": {20: 200},        # U: Activity Name — longer text
+    "Sleep": {5: 350, 22: 130},          # F: Sleep Analysis, W: Overnight HRV (ms)
+    "Garmin": {20: 200},                # U: Activity Name — longer text
+    "Session Log": {5: 250},            # F: Notes — free text needs room
+    "Nutrition": {6: 200, 7: 200, 8: 200},  # G: Lunch, H: Dinner, I: Snacks — meal descriptions
+    "Daily Log": {15: 300, 21: 300},    # P: Midday Notes, V: Evening Notes — free text
+    "Overall Analysis": {5: 300, 6: 250, 9: 300, 10: 300, 11: 250},  # F,G,J,K,L: long-text cols
 }
 
 # Columns that must always be CENTER-aligned regardless of auto-detection.
 # {tab_name: set of col_indices}
 FORCE_CENTER_COLS = {
-    "Sleep": {7, 9, 10},         # H: Cognition (1-10), J: Bedtime, K: Wake Time
+    "Sleep": {7, 8, 22},          # H: Bedtime, I: Wake Time, W: Overnight HRV (ms)
+    "Overall Analysis": {0, 1, 2, 3, 4},  # A-E: Day, Date, Readiness Score, Label, Confidence
 }
 
 # ── Column intelligence ───────────────────────────────────────────────────────
@@ -166,30 +175,23 @@ def _compute_week_colors(all_rows):
 
     Returns a list of colors (one per data row), alternating white/gray per week.
     Date is in column B (index 1).
+    Uses absolute week parity (week_num % 2) so colors are stable regardless of
+    which rows exist or what order they appear in.
     """
     colors = []
-    current_week = None
-    week_parity = 0  # 0 = white, 1 = gray
+    last_color = BAND_ODD  # fallback for non-date rows
 
     for row in all_rows[1:]:  # skip header
         date_str = row[1].strip() if len(row) > 1 else ""
         try:
             d = _date.fromisoformat(date_str)
-            # Week number: days since a reference Sunday, integer-divided by 7
-            # weekday(): Monday=0..Sunday=6, so Sunday = 6
-            # We want Sunday-Saturday weeks, so use isocalendar or manual calc
-            # days_since_epoch_sunday groups by Sun-Sat week
             days_since_ref = (d - _date(2000, 1, 2)).days  # 2000-01-02 was a Sunday
             week_num = days_since_ref // 7
+            last_color = BAND_EVEN if (week_num % 2) == 1 else BAND_ODD
         except (ValueError, TypeError):
-            week_num = current_week  # keep same week for non-date rows
+            pass  # keep last_color for non-date rows
 
-        if week_num is not None and week_num != current_week:
-            if current_week is not None:
-                week_parity = 1 - week_parity
-            current_week = week_num
-
-        colors.append(BAND_ODD if week_parity == 0 else BAND_EVEN)
+        colors.append(last_color)
 
     return colors
 
@@ -227,14 +229,14 @@ def build_requests(sheet_id, n_cols, data_end, manual_col_ranges,
                   "verticalAlignment,wrapStrategy,textFormat)",
     }})
 
-    # 2. Clear explicit backgrounds on data rows so banding shows through
+    # 2. Reset data rows to white (empty {} defaults to black RGB 0,0,0)
     requests.append({"repeatCell": {
         "range": {
             "sheetId": sheet_id,
             "startRowIndex": 1, "endRowIndex": data_end,
             "startColumnIndex": 0, "endColumnIndex": n_cols,
         },
-        "cell": {"userEnteredFormat": {"backgroundColor": {}}},
+        "cell": {"userEnteredFormat": {"backgroundColor": BAND_ODD}},
         "fields": "userEnteredFormat.backgroundColor",
     }})
 
@@ -400,6 +402,78 @@ def build_column_format_requests(sheet_id, data_end, col_widths, overrides=None,
     return requests
 
 
+# ── Standalone banding for garmin_sync integration ────────────────────────────
+
+# Lookup: tab name -> list of (start_col, end_col) manual (cream) column ranges
+_MANUAL_COLS_BY_TAB = {name: cols for name, _hdrs, cols in TABS}
+
+
+def apply_weekly_banding_to_tab(wb, tab_name):
+    """Apply weekly white/grey banding to a single tab (lightweight, safe to call every sync).
+
+    Skips manual-entry (cream) columns so their yellow background is preserved.
+    """
+    try:
+        sheet = wb.worksheet(tab_name)
+    except Exception:
+        return
+
+    all_rows = sheet.get_all_values()
+    if len(all_rows) < 2:
+        return
+
+    week_colors = _compute_week_colors(all_rows)
+    if not week_colors:
+        return
+
+    n_cols = len(all_rows[0])
+    manual_ranges = _MANUAL_COLS_BY_TAB.get(tab_name, [])
+
+    # Build set of column indices to skip (manual-entry cream columns)
+    skip_cols = set()
+    for start, end in manual_ranges:
+        for c in range(start, end):
+            skip_cols.add(c)
+
+    # Determine non-skip column ranges (contiguous runs of non-manual columns)
+    col_runs = []
+    c = 0
+    while c < n_cols:
+        if c in skip_cols:
+            c += 1
+            continue
+        run_start = c
+        while c < n_cols and c not in skip_cols:
+            c += 1
+        col_runs.append((run_start, c))
+
+    requests = []
+    # Group contiguous same-color rows into batch requests, per column run
+    i = 0
+    while i < len(week_colors):
+        color = week_colors[i]
+        start = i
+        while i < len(week_colors) and week_colors[i] == color:
+            i += 1
+        for col_start, col_end in col_runs:
+            requests.append({"repeatCell": {
+                "range": {
+                    "sheetId": sheet.id,
+                    "startRowIndex": start + 1,
+                    "endRowIndex": i + 1,
+                    "startColumnIndex": col_start,
+                    "endColumnIndex": col_end,
+                },
+                "cell": {"userEnteredFormat": {"backgroundColor": color}},
+                "fields": "userEnteredFormat.backgroundColor",
+            }})
+
+    if requests:
+        # Batch in chunks of 500 to stay within API limits
+        for chunk_start in range(0, len(requests), 500):
+            wb.batch_update({"requests": requests[chunk_start:chunk_start + 500]})
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -460,8 +534,8 @@ def main():
         reqs.extend(build_column_format_requests(sheet.id, data_end, col_widths, overrides,
                                                   force_center=fc))
 
-        # Sleep tab: auto-resize rows to fit long wrapped analysis text
-        if tab_name == "Sleep":
+        # Auto-resize rows to fit wrapped text on tabs with free-text columns
+        if tab_name in ("Sleep", "Nutrition", "Daily Log", "Session Log", "Overall Analysis"):
             reqs.append({"autoResizeDimensions": {
                 "dimensions": {
                     "sheetId": sheet.id,
@@ -484,9 +558,20 @@ def main():
     print("\nApplying Sleep color grading...")
     apply_sleep_color_grading(wb)
 
+    # Apply Session Log activity-specific color grading
+    print("Applying Session Log color grading...")
+    apply_session_log_color_grading(wb)
+
     # Apply Sleep Analysis verdict + action rich text formatting
     print("Applying Sleep verdict formatting...")
     apply_sleep_verdict_formatting(wb)
+
+    # Verify all conditional formatting is intact after full reformat
+    try:
+        from verify_formatting import verify_and_repair
+        verify_and_repair(wb)
+    except Exception as e:
+        print(f"\n  Formatting verification skipped (non-fatal): {e}")
 
     print("\nDone. Style applied:")
     print("  Headers:    per-tab colors, 11pt bold, centered, 40px tall")

@@ -1,9 +1,9 @@
 #!/bin/bash
-# NS Habit Tracker — Setup Wizard (macOS launcher)
+# Health Tracker — Setup Wizard (macOS launcher)
 #
 # To use this file on macOS:
 #   1. Open Terminal
-#   2. Run: chmod +x "/path/to/NS Habit tracker/scripts/Setup Wizard.command"
+#   2. Run: chmod +x "/path/to/Health Tracker/scripts/Setup Wizard.command"
 #   3. Then double-click this file in Finder to launch it
 #      (If macOS says it can't be opened, right-click > Open > Open)
 
@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 echo ""
 echo " =========================================="
-echo "  NS Habit Tracker — Setup Wizard"
+echo "  Health Tracker — Setup Wizard"
 echo " =========================================="
 echo ""
 

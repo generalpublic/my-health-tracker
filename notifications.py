@@ -81,19 +81,89 @@ def _format_date_nice(date_str):
             return date_str
 
 
-def _briefing_expect(cognitive_assessment):
-    """Build the EXPECT line from cognitive assessment."""
+def _briefing_expect(cognitive_assessment, sleep_data=None):
+    """Build the EXPECT block from cognitive assessment + downstream effects.
+
+    Maps physiological factors to what you'll actually feel:
+    cognition, emotional regulation, and energy.
+    """
     if not cognitive_assessment:
         return "EXPECT: Baseline capacity expected."
-    if cognitive_assessment.lower().startswith("no notable"):
+    if cognitive_assessment.lower().startswith("no notable") or \
+       cognitive_assessment.lower().startswith("above baseline"):
         return "EXPECT: Baseline capacity -- good day for demanding work or hard training."
-    first = cognitive_assessment.split(". ")[0]
-    if len(first) > 130:
-        first = first[:127] + "..."
-    return f"EXPECT: {first}."
+
+    # Parse the assessment: "Level. factor1, factor2, factor3."
+    parts = cognitive_assessment.split(". ", 1)
+    level = parts[0].strip()  # e.g. "Mildly affected", "Significant reduction"
+    factors_text = parts[1].strip().rstrip(".") if len(parts) > 1 else ""
+    factors = [f.strip() for f in factors_text.split(", ")] if factors_text else []
+
+    # Map factors to downstream effects on cognition, emotion, energy
+    cognition_effects = []
+    emotion_effects = []
+    energy_effects = []
+
+    for f in factors:
+        fl = f.lower()
+        if "sleep debt" in fl:
+            cognition_effects.append("attention and word recall reduced")
+            energy_effects.append("fatigue compounds through the day")
+        elif "hrv suppressed" in fl or "hrv below baseline" in fl:
+            energy_effects.append("autonomic recovery incomplete")
+            if "declining" in fl:
+                emotion_effects.append("stress resilience lower than usual")
+        elif "low deep sleep" in fl:
+            cognition_effects.append("memory consolidation impaired overnight")
+        elif "low rem" in fl:
+            emotion_effects.append("emotional reactivity higher than usual")
+        elif "stress elevated" in fl:
+            cognition_effects.append("executive function taxed")
+            emotion_effects.append("lower frustration tolerance")
+        elif "compounding stressors" in fl:
+            cognition_effects.append("multiple stressors stacking")
+        elif "body battery low" in fl:
+            energy_effects.append("physical reserves depleted")
+        elif "alcohol" in fl:
+            cognition_effects.append("processing speed reduced")
+            energy_effects.append("recovery disrupted")
+        elif "heavy session" in fl:
+            energy_effects.append("still recovering from hard training")
+
+    # Also check sleep architecture from raw data if available
+    if sleep_data:
+        deep_pct = _safe_float(sleep_data.get("sleep_deep_pct"))
+        rem_pct = _safe_float(sleep_data.get("sleep_rem_pct"))
+        duration = _safe_float(sleep_data.get("sleep_duration"))
+        if deep_pct is not None and deep_pct < 15 and \
+                "memory consolidation" not in " ".join(cognition_effects):
+            cognition_effects.append("low deep sleep -> memory consolidation impaired")
+        if rem_pct is not None and rem_pct < 15 and \
+                "emotional" not in " ".join(emotion_effects):
+            emotion_effects.append("low REM -> emotional processing incomplete")
+        if duration is not None and duration < 6 and \
+                not energy_effects:
+            energy_effects.append("short sleep -> energy drops likely by afternoon")
+
+    # Build the EXPECT block
+    lines = [f"EXPECT: {level}."]
+
+    if cognition_effects:
+        lines.append(f"  Mind: {'; '.join(cognition_effects[:2])}")
+    if emotion_effects:
+        lines.append(f"  Mood: {'; '.join(emotion_effects[:2])}")
+    if energy_effects:
+        lines.append(f"  Energy: {'; '.join(energy_effects[:2])}")
+
+    # If no specific effects mapped, just show the factors
+    if not cognition_effects and not emotion_effects and not energy_effects and factors:
+        lines[0] = f"EXPECT: {level}. {', '.join(factors[:2])}."
+
+    return "\n".join(lines)
 
 
-def _briefing_sleep(sleep_data, sleep_verdict):
+def _briefing_sleep(sleep_data, sleep_verdict, sleep_debt=None,
+                    bed_var=None, wake_var=None):
     """Build the SLEEP summary from raw Garmin metrics."""
     duration = _safe_float(sleep_data.get("sleep_duration"))
     deep_pct = _safe_float(sleep_data.get("sleep_deep_pct"))
@@ -125,6 +195,22 @@ def _briefing_sleep(sleep_data, sleep_verdict):
             parts.append(f"Bed {bt}")
 
     line = "SLEEP: " + " | ".join(parts)
+
+    # Sleep consistency (7-day variability) and debt
+    extras = []
+    bed_v = _safe_float(bed_var)
+    wake_v = _safe_float(wake_var)
+    if bed_v is not None or wake_v is not None:
+        var_parts = []
+        if bed_v is not None:
+            var_parts.append(f"Bed +-{bed_v:.0f}min")
+        if wake_v is not None:
+            var_parts.append(f"Wake +-{wake_v:.0f}min")
+        extras.append("7d: " + " | ".join(var_parts))
+    if sleep_debt is not None and sleep_debt > 0.5:
+        extras.append(f"debt {sleep_debt:.1f}h")
+    if extras:
+        line += "\n" + " | ".join(extras)
 
     # Add 1-line interpretation with downstream consequences
     notes = []
@@ -163,33 +249,106 @@ def _briefing_sleep(sleep_data, sleep_verdict):
     return line
 
 
+def _compress_insight(text):
+    """Compress a single insight to notification-friendly length."""
+    compressed = _strip_citations(text)
+    compressed = re.sub(r'Cognitive impact:.*?(?=Energy:|$)', '', compressed, flags=re.DOTALL).strip()
+    compressed = re.sub(r'Energy:.*', '', compressed, flags=re.DOTALL).strip()
+    compressed = re.sub(r'  +', ' ', compressed).strip().rstrip(".")
+
+    if len(compressed) > 120:
+        sentences = [s.strip() for s in compressed.split(". ") if s.strip()]
+        compressed = ". ".join(sentences[:2])
+        if len(compressed) > 120:
+            compressed = sentences[0]
+
+    return compressed
+
+
 def _briefing_flags(insights):
-    """Extract actionable flags from insights, compressed for notification."""
-    flags = []
-    skip_patterns = ["well above baseline", "strong parasympathetic", "LAST NIGHT:",
-                     "target met", "exceeds target", "well-recovered", "good day for",
-                     "habit avg"]
+    """Extract actionable flags from insights, prioritizing profile-driven ones.
+
+    Priority order:
+      1. Profile-driven (pattern match, good day forensics, food-cognition,
+         stress budget, cardiac guardrails, deep/REM thresholds)
+      2. Safety (training spikes, cardiac HR alerts)
+      3. Generic (habit misses, screen time, bedtime, steps, etc.)
+
+    Profile insights are picked first, then remaining slots filled with generic.
+    Max 4 items total.
+    """
+    skip_patterns = ["well above baseline", "strong parasympathetic",
+                     "Sleep Review:", "LAST NIGHT:",
+                     "target met", "exceeds target", "habit avg",
+                     "Note: ", "EXTREME VALUE", "BASELINE ACCURACY"]
+
+    # Profile-driven insight markers (generated by profile-aware helpers)
+    profile_markers = [
+        "PATTERN MATCH",            # if-then decision rules
+        "GOOD DAY FORENSICS",       # what predicted a sharp day
+        "Food-cognition pattern",   # sugar/carb -> next-day fog
+        "Stress budget",            # personalized stress ceiling
+        "cardiac profile",          # ARVC exercise guardrails
+        "cardiac management",       # max HR alerts
+        "primary concern",          # deep sleep memory threshold
+        "cognitive recovery",       # REM emotional pipeline
+        "neurological profile",     # HRV reframe
+        "stress-sensitive profile", # stress reframe
+    ]
+
+    # Safety markers
+    safety_markers = ["SPIKE", "ACWR", "Max HR"]
+
+    # Knowledge-base triggered insights (from health_knowledge.json)
+    knowledge_markers = ["[Training]", "[Sleep]", "[Nutrition]", "[Recovery]",
+                         "depression", "dementia"]
+
+    profile_flags = []
+    safety_flags = []
+    knowledge_flags = []
+    generic_flags = []
+
+    # Merge consecutive habit misses into one line
+    habit_misses = []
 
     for insight in insights:
         if any(p in insight for p in skip_patterns):
             continue
 
-        compressed = _strip_citations(insight)
-        compressed = re.sub(r'Cognitive impact:.*?(?=Energy:|$)', '', compressed, flags=re.DOTALL).strip()
-        compressed = re.sub(r'Energy:.*', '', compressed, flags=re.DOTALL).strip()
-        compressed = re.sub(r'  +', ' ', compressed).strip().rstrip(".")
+        # Collect habit misses for merging
+        miss_match = re.match(r'^(.+?)\s+missed\s+(\d+/\d+)', insight)
+        if miss_match and "Consistency with this habit" in insight:
+            habit_misses.append(miss_match.group(1).strip())
+            continue
 
-        if len(compressed) > 100:
-            sentences = [s.strip() for s in compressed.split(". ") if s.strip()]
-            compressed = ". ".join(sentences[:2])
-            if len(compressed) > 100:
-                compressed = sentences[0]
+        compressed = _compress_insight(insight)
+        if not compressed or len(compressed) <= 10:
+            continue
 
-        if compressed and len(compressed) > 10:
-            flags.append(compressed)
+        if any(m in insight for m in profile_markers):
+            profile_flags.append(compressed)
+        elif any(m in insight for m in safety_markers):
+            safety_flags.append(compressed)
+        elif any(m in insight for m in knowledge_markers):
+            knowledge_flags.append(compressed)
+        else:
+            generic_flags.append(compressed)
 
-        if len(flags) >= 3:
-            break
+    # Merge habit misses into one flag if any
+    if habit_misses:
+        if len(habit_misses) >= 3:
+            habit_line = f"Habits missed: {', '.join(habit_misses[:5])}"
+        else:
+            habit_line = " / ".join(f"{h} missed" for h in habit_misses)
+        generic_flags.append(habit_line)
+
+    # Assemble: profile first, then safety, knowledge, generic. Max 4 total.
+    flags = []
+    for pool in (profile_flags, safety_flags, knowledge_flags, generic_flags):
+        for f in pool:
+            if len(flags) >= 4:
+                break
+            flags.append(f)
 
     return flags
 
@@ -201,6 +360,10 @@ def _briefing_actions(recommendations):
         clean = _strip_citations(rec)
         clean = re.sub(r'Cognitive impact:.*', '', clean, flags=re.DOTALL).strip()
         clean = re.sub(r'Energy:.*', '', clean, flags=re.DOTALL).strip()
+        # Strip markdown bold and numbered list prefixes
+        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', clean)
+        clean = re.sub(r'^DO THIS FIRST:\s*', '', clean)
+        clean = re.sub(r'^\d+\.\s*', '', clean)
         clean = re.sub(r'^Today \([A-Za-z]+\):\s*', '', clean)
 
         sentences = [s.strip().rstrip(".") for s in clean.split(". ") if s.strip()]
@@ -209,8 +372,8 @@ def _briefing_actions(recommendations):
             first += "."
         if first:
             first = first[0].upper() + first[1:]
-        if len(first) > 120:
-            first = first[:117] + "..."
+        if len(first) > 150:
+            first = first[:147] + "..."
         if first:
             actions.append(first)
 
@@ -240,10 +403,14 @@ def compose_briefing_notification(date_str, result, sleep_data):
 
     body_parts = []
 
-    expect = _briefing_expect(result.get("cognitive_assessment", ""))
+    expect = _briefing_expect(result.get("cognitive_assessment", ""), sleep_data)
     body_parts.append(expect)
 
-    sleep_line = _briefing_sleep(sleep_data, sleep_verdict)
+    sleep_debt = result.get("sleep_debt")
+    bed_var = result.get("bed_variability")
+    wake_var = result.get("wake_variability")
+    sleep_line = _briefing_sleep(sleep_data, sleep_verdict, sleep_debt,
+                                 bed_var=bed_var, wake_var=wake_var)
     body_parts.append("")
     body_parts.append(sleep_line)
 

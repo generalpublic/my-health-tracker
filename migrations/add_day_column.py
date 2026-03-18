@@ -15,7 +15,7 @@ Usage:
 
 import sys
 from datetime import date as _date
-from garmin_sync import get_workbook, date_to_day
+from utils import get_workbook, date_to_day
 
 # All tabs that need the Day column inserted
 TABS = [
@@ -97,7 +97,7 @@ def migrate_tab(wb, tab_name, dry_run=False):
 def main():
     dry_run = "--dry-run" in sys.argv
 
-    print("NS Habit Tracker — Add Day Column Migration")
+    print("Health Tracker — Add Day Column Migration")
     if dry_run:
         print("[DRY RUN] No changes will be made.\n")
     else:

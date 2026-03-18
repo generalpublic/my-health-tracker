@@ -1,5 +1,5 @@
 """
-backfill_history.py — One-time historical data backfill for NS Habit Tracker
+backfill_history.py — One-time historical data backfill for Health Tracker
 
 Pulls all available Garmin data from START_DATE to yesterday and writes it
 to Google Sheets (Garmin, Sleep, Session Log, Nutrition tabs).
@@ -20,14 +20,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # Reuse all logic from garmin_sync.py
-from garmin_sync import (
-    get_workbook, get_sheet,
+from utils import get_workbook, get_sheet
+from schema import SESSION_MANUAL_COLS, SLEEP_MANUAL_COLS, NUTRITION_MANUAL_COLS, ARCHIVE_KEYS
+from writers import (
     setup_headers, upsert_row, build_garmin_row,
     write_to_session_log, write_to_sleep_log, write_to_nutrition_log,
-    bold_headers, apply_yellow_columns, sort_sheet_by_date_desc,
-    SESSION_MANUAL_COLS, SLEEP_MANUAL_COLS, NUTRITION_MANUAL_COLS,
-    ARCHIVE_KEYS, get_or_create_archive_sheet, write_to_archive,
+    get_or_create_archive_sheet, write_to_archive,
 )
+from sheets_formatting import bold_headers, apply_yellow_columns, sort_sheet_by_date_desc
 
 
 def _write_date_to_all_tabs(wb, sheet, target_date, data):
@@ -140,7 +140,7 @@ def main():
     restore    = args["restore"]
 
     # Connect to Google Sheets once (needed for all modes)
-    print("\nNS Habit Tracker — Historical Backfill")
+    print("\nHealth Tracker — Historical Backfill")
     print("Connecting to Google Sheets...")
     wb    = get_workbook()
     sheet = get_sheet(wb)

@@ -1,0 +1,4 @@
+gspread>=6.2.1
+google-auth>=2.49.0
+requests>=2.31.0
+pyotp>=2.9.0

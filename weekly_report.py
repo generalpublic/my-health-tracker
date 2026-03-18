@@ -1,5 +1,5 @@
 """
-weekly_report.py — Sleep Intelligence Engine for NS Habit Tracker.
+weekly_report.py — Sleep Intelligence Engine for Health Tracker.
 
 Generates a plain-English weekly report analyzing sleep quality, trends,
 anomalies, and cognition correlations from Google Sheets data.
@@ -19,7 +19,11 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from garmin_sync import get_workbook
+from utils import get_workbook
+from profile_loader import (
+    load_profile, get_accommodations, get_relevant_conditions,
+    format_recommendation
+)
 
 load_dotenv(Path(__file__).parent / ".env")
 warnings.filterwarnings("ignore")
@@ -496,7 +500,231 @@ def anomaly_detection(sleep_all, sleep_week):
     return "\n".join(lines)
 
 
-def actionable_recommendation(sleep_week, sleep_all):
+def prepare_daily_log_df(wb):
+    """Load and prepare Daily Log tab with proper types."""
+    df = load_tab(wb, "Daily Log")
+    if df.empty:
+        return df
+
+    df["date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+
+    numeric_cols = [
+        "Morning Energy (1-10)", "Midday Energy (1-10)", "Midday Focus (1-10)",
+        "Midday Mood (1-10)", "Midday Body Feel (1-10)",
+        "Evening Energy (1-10)", "Evening Focus (1-10)", "Evening Mood (1-10)",
+        "Perceived Stress (1-10)", "Day Rating (1-10)", "Habits Total (0-7)",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Convert habit checkboxes to boolean
+    habit_cols = ["Wake at 9:30 AM", "No Morning Screens", "Creatine & Hydrate",
+                  "20 Min Walk + Breathing", "Physical Activity",
+                  "No Screens Before Bed", "Bed at 10 PM"]
+    for col in habit_cols:
+        if col in df.columns:
+            df[col] = df[col].map({"TRUE": True, "FALSE": False})
+
+    return df
+
+
+def prepare_nutrition_df(wb):
+    """Load and prepare Nutrition tab with proper types."""
+    df = load_tab(wb, "Nutrition")
+    if df.empty:
+        return df
+
+    df["date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+
+    numeric_cols = [
+        "Total Calories Consumed", "Protein (g)", "Carbs (g)",
+        "Fats (g)", "Water (L)", "Calorie Balance",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    return df
+
+
+def habit_compliance_section(daily_week, daily_prior, profile=None):
+    """Generate habit compliance section: per-habit hit rate for the week."""
+    lines = []
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("SECTION 6: HABIT COMPLIANCE")
+    lines.append("=" * 60)
+
+    if daily_week.empty or len(daily_week) < 1:
+        lines.append("  No Daily Log data for this period.")
+        return "\n".join(lines)
+
+    habit_cols = [
+        ("Wake at 9:30 AM",          "Wake 9:30"),
+        ("No Morning Screens",       "No AM Screens"),
+        ("Creatine & Hydrate",       "Creatine/Hydrate"),
+        ("20 Min Walk + Breathing",  "Walk + Breathing"),
+        ("Physical Activity",        "Physical Activity"),
+        ("No Screens Before Bed",    "No PM Screens"),
+        ("Bed at 10 PM",             "Bed at 10 PM"),
+    ]
+
+    n_days = len(daily_week)
+    lines.append(f"  Days logged: {n_days}")
+    lines.append("")
+
+    for col, label in habit_cols:
+        if col not in daily_week.columns:
+            continue
+        hits = daily_week[col].sum()
+        total = daily_week[col].notna().sum()
+        if total == 0:
+            continue
+        pct = hits / total * 100
+        bar = "#" * int(pct / 5)
+        # Compare to prior period
+        trend = ""
+        if not daily_prior.empty and col in daily_prior.columns:
+            prev_total = daily_prior[col].notna().sum()
+            if prev_total > 0:
+                prev_pct = daily_prior[col].sum() / prev_total * 100
+                diff = pct - prev_pct
+                if abs(diff) > 5:
+                    trend = f"  ({'v' if diff < 0 else '^'} {diff:+.0f}%)"
+        lines.append(f"  {label:.<25} {pct:5.0f}%  ({hits:.0f}/{total:.0f})  {bar}{trend}")
+
+    # Habits Total average
+    if "Habits Total (0-7)" in daily_week.columns:
+        ht = daily_week["Habits Total (0-7)"].dropna()
+        if len(ht) > 0:
+            lines.append(f"\n  {'Avg Habits Total':.<25} {ht.mean():.1f}/7")
+
+    # Profile-aware reframing: ADHD executive function context
+    if profile:
+        adhd_conditions = get_relevant_conditions(profile, "habit_consistency")
+        if adhd_conditions:
+            # Calculate overall compliance rate
+            total_hits = 0
+            total_possible = 0
+            for col, _ in habit_cols:
+                if col in daily_week.columns:
+                    total_hits += daily_week[col].sum()
+                    total_possible += daily_week[col].notna().sum()
+            if total_possible > 0:
+                compliance_rate = total_hits / total_possible
+                if compliance_rate < 0.6:
+                    lines.append("")
+                    lines.append("  Note: With your cognitive profile, habit inconsistency reflects")
+                    lines.append("  executive function variability, not effort deficit. Consider:")
+                    lines.append("  visual timers, phone alarms for each habit, or habit stacking")
+                    lines.append("  (anchoring new habits to existing routines).")
+
+    return "\n".join(lines)
+
+
+def nutrition_section(nut_week, nut_prior):
+    """Generate nutrition summary section."""
+    lines = []
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("SECTION 7: NUTRITION SUMMARY")
+    lines.append("=" * 60)
+
+    if nut_week.empty or len(nut_week) < 1:
+        lines.append("  No Nutrition data for this period.")
+        return "\n".join(lines)
+
+    metrics = [
+        ("Total Calories Consumed", "Avg Calories",   ".0f", "kcal"),
+        ("Protein (g)",             "Avg Protein",     ".0f", "g"),
+        ("Water (L)",               "Avg Water",       ".1f", "L"),
+        ("Calorie Balance",         "Avg Cal Balance", "+.0f", "kcal"),
+    ]
+
+    n_days = nut_week[["Total Calories Consumed", "Protein (g)", "Water (L)"]].dropna(how="all").shape[0]
+    lines.append(f"  Days with nutrition data: {n_days}")
+    if n_days == 0:
+        lines.append("  No nutrition entries this period.")
+        return "\n".join(lines)
+    lines.append("")
+
+    for col, label, fmt, unit in metrics:
+        if col not in nut_week.columns:
+            continue
+        vals = nut_week[col].dropna()
+        if len(vals) == 0:
+            continue
+        avg = vals.mean()
+        trend = ""
+        if not nut_prior.empty and col in nut_prior.columns:
+            prev_vals = nut_prior[col].dropna()
+            if len(prev_vals) >= 2:
+                prev_avg = prev_vals.mean()
+                diff_pct = ((avg - prev_avg) / abs(prev_avg) * 100) if prev_avg != 0 else 0
+                if abs(diff_pct) > 5:
+                    trend = f"  ({'v' if diff_pct < 0 else '^'} {diff_pct:+.0f}%)"
+        lines.append(f"  {label:.<25} {avg:{fmt}} {unit}  (range: {vals.min():{fmt}} - {vals.max():{fmt}}){trend}")
+
+    # Deficit days
+    if "Calorie Balance" in nut_week.columns:
+        deficit = nut_week["Calorie Balance"].dropna()
+        deficit_days = (deficit < -500).sum()
+        if deficit_days > 0:
+            lines.append(f"\n  WARNING: {deficit_days} day(s) with >500 kcal deficit this week")
+
+    return "\n".join(lines)
+
+
+def recovery_section(daily_week, daily_prior):
+    """Generate recovery and subjective wellness section."""
+    lines = []
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("SECTION 8: RECOVERY & SUBJECTIVE WELLNESS")
+    lines.append("=" * 60)
+
+    if daily_week.empty or len(daily_week) < 1:
+        lines.append("  No Daily Log data for this period.")
+        return "\n".join(lines)
+
+    metrics = [
+        ("Morning Energy (1-10)",    "Morning Energy",  ".1f", "/10"),
+        ("Midday Energy (1-10)",     "Midday Energy",   ".1f", "/10"),
+        ("Midday Focus (1-10)",      "Midday Focus",    ".1f", "/10"),
+        ("Midday Mood (1-10)",       "Midday Mood",     ".1f", "/10"),
+        ("Midday Body Feel (1-10)",  "Body Feel",       ".1f", "/10"),
+        ("Evening Mood (1-10)",      "Evening Mood",    ".1f", "/10"),
+        ("Perceived Stress (1-10)",  "Perceived Stress",".1f", "/10"),
+        ("Day Rating (1-10)",        "Day Rating",      ".1f", "/10"),
+    ]
+
+    n_days = len(daily_week)
+    lines.append(f"  Days logged: {n_days}")
+    lines.append("")
+
+    for col, label, fmt, unit in metrics:
+        if col not in daily_week.columns:
+            continue
+        vals = daily_week[col].dropna()
+        if len(vals) == 0:
+            continue
+        avg = vals.mean()
+        trend = ""
+        if not daily_prior.empty and col in daily_prior.columns:
+            prev_vals = daily_prior[col].dropna()
+            if len(prev_vals) >= 2:
+                diff = avg - prev_vals.mean()
+                if abs(diff) > 0.3:
+                    trend = f"  ({'^' if diff > 0 else 'v'} {diff:+.1f})"
+        lines.append(f"  {label:.<25} {avg:{fmt}}{unit}  (range: {vals.min():{fmt}} - {vals.max():{fmt}}){trend}")
+
+    return "\n".join(lines)
+
+
+def actionable_recommendation(sleep_week, sleep_all, profile=None):
     """Generate Section 5: One Actionable Recommendation."""
     lines = []
     lines.append("")
@@ -564,9 +792,24 @@ def actionable_recommendation(sleep_week, sleep_all):
                          f"7+ hours, and minimize awakenings. Your brain needs deep + REM to function."))
 
     if recs:
-        # Pick the strongest recommendation
-        recs.sort(key=lambda x: x[0], reverse=True)
-        lines.append(f"  -> {recs[0][1]}")
+        # Filter through profile contraindications
+        if profile:
+            accommodations = get_accommodations(profile)
+            contraindications = accommodations.get("contraindications", [])
+            if contraindications:
+                recs = [(score, text) for score, text in recs
+                        if not any(c.lower() in text.lower() for c in contraindications)]
+
+        if recs:
+            recs.sort(key=lambda x: x[0], reverse=True)
+            rec_text = recs[0][1]
+            # Apply accommodation formatting if profile exists
+            if profile:
+                accommodations = get_accommodations(profile)
+                rec_text = format_recommendation(rec_text, accommodations)
+            lines.append(f"  -> {rec_text}")
+        else:
+            lines.append("  Your sleep this week looks solid. Maintain your current routine.")
     else:
         lines.append("  Your sleep this week looks solid. Maintain your current routine.")
 
@@ -575,11 +818,15 @@ def actionable_recommendation(sleep_week, sleep_all):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def generate_report(wb, weeks=1):
-    """Generate the full weekly sleep intelligence report."""
+def generate_report(wb, weeks=1, profile=None):
+    """Generate the full weekly health intelligence report."""
+    if profile is None:
+        profile = load_profile()
     print("Loading data...")
     sleep_all = prepare_sleep_df(wb)
     garmin_all = prepare_garmin_df(wb)
+    daily_all = prepare_daily_log_df(wb)
+    nut_all = prepare_nutrition_df(wb)
 
     if sleep_all.empty:
         return "ERROR: No sleep data found in Google Sheets."
@@ -592,13 +839,17 @@ def generate_report(wb, weeks=1):
     sleep_prior = sleep_all[(sleep_all["date"] > prior_start) & (sleep_all["date"] <= week_start)].copy()
     garmin_week = garmin_all[garmin_all["date"] > week_start].copy() if not garmin_all.empty else pd.DataFrame()
     garmin_prior = garmin_all[(garmin_all["date"] > prior_start) & (garmin_all["date"] <= week_start)].copy() if not garmin_all.empty else pd.DataFrame()
+    daily_week = daily_all[daily_all["date"] > week_start].copy() if not daily_all.empty else pd.DataFrame()
+    daily_prior = daily_all[(daily_all["date"] > prior_start) & (daily_all["date"] <= week_start)].copy() if not daily_all.empty else pd.DataFrame()
+    nut_week = nut_all[nut_all["date"] > week_start].copy() if not nut_all.empty else pd.DataFrame()
+    nut_prior = nut_all[(nut_all["date"] > prior_start) & (nut_all["date"] <= week_start)].copy() if not nut_all.empty else pd.DataFrame()
 
     period_label = f"Last {7 * weeks} days" if weeks == 1 else f"Last {weeks} weeks"
 
     report_parts = []
     report_parts.append("")
     report_parts.append("#" * 60)
-    report_parts.append(f"  NS HABIT TRACKER — WEEKLY SLEEP REPORT")
+    report_parts.append(f"  HEALTH TRACKER — WEEKLY REPORT")
     report_parts.append(f"  Generated: {date.today().isoformat()}")
     report_parts.append(f"  Period: {period_label} ({week_start.strftime('%m/%d')} - {today.strftime('%m/%d')})")
     report_parts.append("#" * 60)
@@ -607,12 +858,17 @@ def generate_report(wb, weeks=1):
     report_parts.append(patterns_detected(sleep_week, garmin_week))
     report_parts.append(trend_analysis(sleep_week, sleep_prior, garmin_week, garmin_prior))
     report_parts.append(anomaly_detection(sleep_all, sleep_week))
-    report_parts.append(actionable_recommendation(sleep_week, sleep_all))
+    report_parts.append(actionable_recommendation(sleep_week, sleep_all, profile=profile))
+    report_parts.append(habit_compliance_section(daily_week, daily_prior, profile=profile))
+    report_parts.append(nutrition_section(nut_week, nut_prior))
+    report_parts.append(recovery_section(daily_week, daily_prior))
 
     report_parts.append("")
     report_parts.append("=" * 60)
     report_parts.append(f"  Data: {len(sleep_all)} total days in Sleep tab")
     report_parts.append(f"  Cognition entries: {sleep_all['Cognition (1-10)'].dropna().shape[0]}" if "Cognition (1-10)" in sleep_all.columns else "  Cognition: no entries yet")
+    report_parts.append(f"  Daily Log entries: {len(daily_all)}" if not daily_all.empty else "  Daily Log: no entries yet")
+    report_parts.append(f"  Nutrition entries: {len(nut_all)}" if not nut_all.empty else "  Nutrition: no entries yet")
     report_parts.append("=" * 60)
 
     return "\n".join(report_parts)

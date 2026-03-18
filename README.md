@@ -1,153 +1,222 @@
-# NS Habit Tracker — Project Overview
+# Health Tracker
 
-A personal health tracking system that automatically pulls Garmin data into Google Sheets daily, combined with manual habit logging and subjective daily ratings. Built to answer one question: **what actually improves your HRV, sleep, and wellbeing?**
+Automated daily health tracking with Garmin Connect sync, Google Sheets storage, and scientific readiness analysis.
+
+Pulls sleep, HRV, activity, stress, and body battery data from Garmin Connect every day, writes it to Google Sheets across multiple tabs, computes a composite Readiness Score using individual rolling baselines, and sends a morning briefing via push notification.
 
 ---
 
 ## What It Does
 
-1. **Auto-syncs Garmin data** every evening at 8 PM — sleep, HRV, steps, body battery, workouts, stress, calories — all written to Google Sheets automatically
-2. **Auto-backfills gaps** — if the scheduler misses a day (reboot, network issue), the next run detects and backfills any missing dates from the last 7 days
-3. **Tracks 7 daily habits** in the Daily Log tab
-4. **Daily subjective check-ins** (midday + evening) capture what Garmin can't — mood, brain fog, stress, overall day quality
-5. **Analysis tab** runs live correlations between habits and health metrics
+- **Daily Garmin sync** -- pulls 50+ metrics from Garmin Connect API (sleep stages, HRV, resting HR, body battery, steps, activities, HR zones, training effect)
+- **Multi-tab Google Sheets** -- Garmin, Sleep, Session Log, Nutrition, Daily Log, Overall Analysis tabs with auto-formatting and color grading
+- **Readiness scoring** -- composite score (1-10) using sigmoid-mapped z-scores against your own 30-day rolling baselines
+- **Sleep analysis** -- independent sleep quality score with research-based thresholds for deep/REM/duration/timing
+- **Morning briefing** -- push notification via Pushover with sleep summary, readiness flags, and action items
+- **Weekly reports** -- 7-day trend summaries with correlation analysis
+- **SQLite backup** -- parallel local database for offline analytics
+- **Historical import** -- bulk import from Garmin Connect data export files
+- **Auto-backfill** -- detects and backfills missed days from the last 7 days
 
 ---
 
-## Stack
+## Quick Start
 
-| Layer | Tool | Purpose |
-|---|---|---|
-| Wearable | Garmin watch | Collects all biometric data |
-| Sync script | `garmin_sync.py` (Python) | Pulls from Garmin Connect API, writes to Sheets |
-| Storage | Google Sheets | All data lives here — cloud, accessible anywhere |
-| Manual input | Google Sheets (Daily Log + Nutrition tabs) | Habits, mood, brain fog, day ratings, food |
-| Scheduler | Windows Task Scheduler (PC) / launchd (Mac) | Runs sync script at 8 PM daily |
-| Credentials | Windows Credential Manager / macOS Keychain | Garmin password stored securely, never in files |
+### Prerequisites
+- Python 3.10+
+- A Garmin Connect account with a Garmin wearable
+- A Google Cloud service account with Sheets API enabled
+- (Optional) Pushover account for push notifications
+
+### Installation
+
+```bash
+git clone <repo-url> && cd health-tracker
+pip install -r requirements.txt
+```
+
+### Configuration
+
+1. Copy `.env.example` to `.env` and fill in your values:
+   ```
+   SHEET_ID=your_google_sheet_id
+   JSON_KEY_FILE=your_service_account_key.json
+   GARMIN_EMAIL=your@email.com
+   ```
+
+2. Store your Garmin password in the system keyring (never in a file):
+   ```bash
+   python -c "import keyring; keyring.set_password('garmin_connect', 'your@email.com', 'YOUR_PASSWORD')"
+   ```
+
+3. Place your Google service account JSON key file in the project folder.
+
+4. Run the setup wizard to create all Google Sheets tabs:
+   ```bash
+   python setup_wizard.py
+   ```
+
+5. Test the sync:
+   ```bash
+   python garmin_sync.py --today
+   ```
+
+### Automate with a Scheduler
+
+| Platform | Scheduler | Setup |
+|----------|-----------|-------|
+| Windows  | Task Scheduler | Run `scripts/create_schedule.bat` as Administrator |
+| macOS    | launchd | Plist in `~/Library/LaunchAgents/` |
+| Linux    | cron | `0 20 * * * python3 /path/to/garmin_sync.py` |
 
 ---
 
-## Google Sheets — Tab Guide
+## Daily Usage
 
-| Tab | Auto or Manual | What's In It |
-|---|---|---|
-| **Garmin** | Auto | One row per day. Sleep score, HRV, resting HR, sleep duration, body battery, steps, stress, calories, workout summary |
-| **Sleep** | Auto | Detailed nightly sleep: stages (deep/light/REM), bedtime, wake time, HRV overnight, score, feedback |
-| **Nutrition** | Auto + Manual | Calories burned (auto). Manual: food eaten, macros, water |
-| **Session Log** | Auto + Manual | One row per workout. Duration, HR zones, training effect. Manual: effort rating, fatigue, notes |
-| **Daily Log** | Manual | 7 daily habit checkboxes + morning energy + midday/evening ratings (energy, focus, mood, stress, day rating, notes) |
-| **Strength Log** | Manual | Exercise, sets, reps, weight, RPE |
-| **Analysis** | Formula-driven | Live averages, habit completion rates, habit vs HRV correlations |
-| **Charts** | Auto | Visual trends for HRV, sleep, body battery, steps |
-| **Raw Data Archive** | Auto | Backup copy of every Garmin record. Used to restore any tab if corrupted |
+**Garmin data syncs automatically** at 8 PM. Nothing to do.
+
+**Manual entries (Google Sheets):**
+
+| When | Tab | What to enter |
+|------|-----|---------------|
+| Morning | Daily Log | Habit checkboxes, morning energy score |
+| Midday | Daily Log | Energy, focus, mood, body feel, notes |
+| Evening | Daily Log | Energy, focus, mood, stress, day rating, notes |
+| After workouts | Session Log | Perceived effort, fatigue, notes |
+| Anytime | Nutrition | Meals, macros, water |
 
 ---
 
-## Daily Workflow
+## Google Sheets Tabs
 
-**Nothing you need to do for Garmin data** — it syncs automatically at 8 PM.
+| Tab | Auto/Manual | Contents |
+|-----|-------------|----------|
+| **Garmin** | Auto | Daily metrics: sleep score, HRV, resting HR, body battery, steps, stress, calories, workout summary |
+| **Sleep** | Auto | Nightly detail: stages, bedtime/wake, cycles, awakenings, respiration, sleep analysis score |
+| **Session Log** | Auto + Manual | Per-workout: duration, HR zones, training effect. Manual: effort, energy, notes |
+| **Nutrition** | Auto + Manual | Calories burned (auto). Manual: meals, macros, water |
+| **Daily Log** | Manual | 7 habits + subjective ratings (energy, focus, mood, stress, day rating) |
+| **Overall Analysis** | Auto | Readiness Score, label, insights, recommendations, confidence rating |
+| **Raw Data Archive** | Auto | Backup of every Garmin record for disaster recovery |
 
-**What to fill in manually:**
+---
 
-| Time | Tab | What to enter |
-|---|---|---|
-| Morning | Daily Log | Check off each habit you completed, morning energy score |
-| 12:00 - 1:00 PM | Daily Log | Midday: energy, focus/clarity, mood, body feel, notes |
-| 9:00 - 9:30 PM | Daily Log | Evening: energy, focus, mood, stress, day rating, notes |
-| After workouts | Session Log | Perceived effort, fatigue rating, notes |
-| Anytime | Nutrition | Food, macros, water |
+## How Scoring Works
+
+### Readiness Score (1-10)
+
+Composite score using 4 weighted components, each measured against your own 30-day rolling baseline:
+
+| Component | Weight | Source | Method |
+|-----------|--------|--------|--------|
+| HRV | 35% | Overnight HRV | z-score vs baseline, trend-aware |
+| Sleep | 30% | 5-day weighted avg | Van Dongen et al. 2003 cumulative debt model |
+| Resting HR | 20% | RHR | z-score, inverted (lower = better) |
+| Subjective | 15% | Morning energy | Reduced 50% when sleep debt > 0.75h |
+
+Z-scores are mapped through a sigmoid function to 0-10, then weighted-summed. See `reference/METHODOLOGY.md` for full citations.
+
+### Sleep Analysis Score
+
+Independent nightly score based on:
+- Duration: 7-9h optimal (Walker 2017)
+- Deep sleep: 15-25% target
+- REM sleep: 20-25% target
+- Bedtime: before 11 PM optimal
+- Awakenings and sleep efficiency
+
+---
+
+## Scripts Reference
+
+### Core (daily use)
+| Script | Purpose |
+|--------|---------|
+| `garmin_sync.py` | Main orchestrator -- fetches data, writes all tabs, triggers analysis |
+| `overall_analysis.py` | Computes Readiness Score, generates insights, writes Overall Analysis |
+| `weekly_report.py` | 7-day trend summary |
+
+### Setup (run once)
+| Script | Purpose |
+|--------|---------|
+| `setup_wizard.py` | Interactive setup for all tabs and configuration |
+| `setup_analysis.py` | Creates Sleep, Session Log, Nutrition tabs |
+| `setup_daily_log.py` | Creates Daily Log tab |
+| `setup_overall_analysis.py` | Creates Overall Analysis tab with formatting |
+
+### Analytics
+| Script | Purpose |
+|--------|---------|
+| `analysis_correlations.py` | Pearson correlations between metric pairs (FDR-corrected) |
+| `analysis_regression.py` | OLS regression with VIF multicollinearity detection |
+| `analysis_lag.py` | Time-lagged correlation analysis |
+
+### Utilities
+| Script | Purpose |
+|--------|---------|
+| `verify_sheets.py` | Validates all tab headers match schema |
+| `verify_formatting.py` | Validates conditional formatting rules and numeric types |
+| `reformat_style.py` | Applies visual styling (colors, banding, column widths) |
+| `sheets_to_sqlite.py` | Exports Google Sheets to local SQLite database |
+| `sqlite_backup.py` | Backs up SQLite database |
+| `backfill_history.py` | Backfills historical data via Garmin Connect API |
+| `parse_garmin_export.py` | Imports from Garmin Connect data export files |
+
+### Modules (imported by scripts, not run directly)
+| Module | Purpose |
+|--------|---------|
+| `garmin_client.py` | Garmin Connect API authentication and data fetching |
+| `sleep_analysis.py` | Sleep quality scoring (pure functions, no API deps) |
+| `writers.py` | Google Sheets write/upsert for each tab |
+| `sheets_formatting.py` | Conditional formatting, color grading, sorting |
+| `notifications.py` | Pushover notification composition and delivery |
+| `schema.py` | Column headers, tab names, index constants |
+| `utils.py` | Shared utilities (workbook access, date helpers) |
+| `profile_loader.py` | Loads user health profile for personalized analysis |
 
 ---
 
 ## Project Structure
 
 ```
-NS Habit tracker/
-  garmin_sync.py              Core sync script + shared module
-  backfill_history.py         Backfill via Garmin Connect API
-  parse_garmin_export.py      Import historical data from Garmin export
-  setup_analysis.py           Setup Analysis tab with live formulas
-  setup_charts.py             Setup Charts tab with line charts
-  setup_daily_log.py          Setup Daily Log tab
-  setup_wizard.py             Interactive cross-platform setup wizard
-  cleanup_garmin.py           Duplicate detection and removal
-  verify_sheets.py            Integrity checker for all tabs
-  format_all_headers.py       Uniform header formatting
-  reformat_style.py           Visual styling (colors, banding, borders)
-  analysis_correlations.py    Correlation analysis + heatmaps
-
-  scripts/                    Scheduler wrappers (bat, ps1, command)
-  data/garmin_export/         Historical Garmin JSON export files
-  reference/                  Sleep research, books, transcripts, images
-  analysis_output/            Generated charts and CSVs
-
-  .env                        Config: email, Sheet ID, JSON key filename
-  requirements.txt            Python dependencies
-  .gitignore                  Excludes creds, cache, data, books
+health-tracker/
+  *.py                      All scripts and modules
+  .env                      Config (not committed)
+  .env.example              Template for .env
+  thresholds.json           Scoring thresholds (single source of truth)
+  requirements.txt          Python dependencies
+  reference/                Research library and methodology
+    METHODOLOGY.md          Scientific basis for all scoring
+    health_knowledge.json   Runtime knowledge base for insights
+    HEALTH_INTEL.md         Evaluated health claims index
+    *Research Universe.md   Domain-specific compiled research
+  dashboard/                Web dashboard export
+  voice_logger/             Voice-based logging API (separate deploy)
+  scripts/                  Scheduler setup scripts
+  tests/                    Unit tests
+  migrations/               Historical one-time migration scripts
 ```
 
 ---
 
-## Running the Sync Manually
-
-```bash
-python garmin_sync.py                     # Sync yesterday (default scheduled mode, auto-backfills gaps)
-python garmin_sync.py --today             # Sync today
-python garmin_sync.py --date 2026-03-01   # Sync a specific past date
-```
-
----
-
-## Setup on a New Machine
-
-1. Copy project folder (or clone from private GitHub repo)
-2. Install Python 3.10+
-3. `pip install -r requirements.txt`
-4. Copy the Google service account JSON key file into the project folder
-5. Confirm `.env` has `JSON_KEY_FILE=filename.json` (filename only, no path)
-6. Store Garmin password in keyring — run this in terminal (replace with real values):
-   ```
-   python -c "import keyring; keyring.set_password('garmin_connect', 'YOUR_EMAIL', 'YOUR_PASSWORD')"
-   ```
-7. Set up the scheduler (see below)
-8. Test: `python garmin_sync.py --today`
-
-### Scheduler setup
-
-| Platform | Method |
-|---|---|
-| Windows | Run `scripts/create_schedule.bat` as Administrator |
-| macOS | launchd plist in `~/Library/LaunchAgents/` |
-| Linux | cron: `0 20 * * * /usr/bin/python3 /path/to/garmin_sync.py` |
-
----
-
-## Credentials — Security Model
-
-- **Garmin password:** stored in OS keyring (Windows Credential Manager / macOS Keychain). Never in any file.
-- **Google service account key:** JSON file in project folder. Filename referenced in `.env` — never the full path.
-- **Rule:** Never paste passwords or key contents into any chat or document.
-
----
-
-## Analytics Roadmap
-
-The system is designed to answer: *what behaviors actually improve HRV, sleep, and cognitive performance?*
-
-1. **Now:** Correlation matrix across all numeric variables
-2. **Next:** Regression models predicting HRV, sleep score, and focus from habits + ratings
-3. **Later:** Lag analysis (does a hard workout hurt HRV for 1 day or 2?), seasonal patterns, streak effects
-
-See `ANALYSIS.md` for the full plan and findings as they accumulate.
-
----
-
-## If Something Breaks
+## Troubleshooting
 
 | Problem | Fix |
-|---|---|
-| Script fails with `FileNotFoundError` on JSON key | `.env` has wrong path — set `JSON_KEY_FILE=filename.json` (no path) |
-| Script fails with `keyring` error | Re-store Garmin password in keyring on this machine |
-| Google Sheets data looks misaligned | Run `python verify_sheets.py` to diagnose |
-| Missed days during downtime | Auto-backfill handles the last 7 days. For older gaps: `python garmin_sync.py --date YYYY-MM-DD` |
-| Tab completely corrupted | Restore from Raw Data Archive tab using `python parse_garmin_export.py --restore` |
+|---------|-----|
+| `FileNotFoundError` on JSON key | Set `JSON_KEY_FILE=filename.json` in `.env` (filename only, no path) |
+| `keyring` error | Re-store Garmin password: `python -c "import keyring; keyring.set_password(...)"` |
+| Data misaligned in Sheets | Run `python verify_sheets.py` to diagnose |
+| Missed days | Auto-backfill covers last 7 days. Older: `python garmin_sync.py --date YYYY-MM-DD` |
+| Tab corrupted | Restore from archive: `python parse_garmin_export.py --restore` |
+| Formatting missing/broken | Run `python verify_formatting.py --repair` |
+
+---
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the full credential model, rotation procedures, and data privacy details.
+
+- Garmin password: OS keyring only (never in files)
+- Google service account key: gitignored JSON file
+- No credentials in code, env vars committed, or logs
+- Push notification tokens: `.env` (gitignored)

@@ -27,35 +27,10 @@ Migrates existing Habits tab data on first run.
 from pathlib import Path
 from dotenv import load_dotenv
 import gspread
-from garmin_sync import get_workbook, YELLOW, date_to_day
+from utils import get_workbook, date_to_day
+from schema import YELLOW, DAILY_LOG_HEADERS
 
 load_dotenv(Path(__file__).parent / ".env")
-
-DAILY_LOG_HEADERS = [
-    # Manual entry zone
-    "Day",                            # A
-    "Date",                           # B
-    "Morning Energy (1-10)",          # C
-    "Wake at 9:30 AM",                # D  checkbox
-    "No Morning Screens",             # E  checkbox
-    "Creatine & Hydrate",             # F  checkbox
-    "20 Min Walk + Breathing",        # G  checkbox
-    "Physical Activity",              # H  checkbox
-    "No Screens Before Bed",          # I  checkbox
-    "Bed at 10 PM",                   # J  checkbox
-    "Habits Total (0-7)",             # K  formula
-    "Midday Energy (1-10)",           # L
-    "Midday Focus (1-10)",            # M  brain fog = low score
-    "Midday Mood (1-10)",             # N
-    "Midday Body Feel (1-10)",        # O
-    "Midday Notes",                   # P  free text
-    "Evening Energy (1-10)",          # Q
-    "Evening Focus (1-10)",           # R
-    "Evening Mood (1-10)",            # S
-    "Perceived Stress (1-10)",        # T
-    "Day Rating (1-10)",              # U
-    "Evening Notes",                  # V  free text
-]
 
 MANUAL_COLS  = list(range(2, 22))   # C through V (0-indexed 2-21)
 HABIT_COLS   = list(range(3, 10))   # D through J (0-indexed 3-9)
@@ -214,9 +189,9 @@ def setup_daily_log(wb):
         3: 55, 4: 55, 5: 55, 6: 55, 7: 55, 8: 55, 9: 55,  # Checkboxes
         10: 65,   # Habits Total
         11: 80, 12: 80, 13: 80, 14: 80,  # Midday scores
-        15: 180,  # Midday Notes
+        15: 300,  # Midday Notes
         16: 80, 17: 80, 18: 80, 19: 80, 20: 80,  # Evening scores
-        21: 180,  # Evening Notes
+        21: 300,  # Evening Notes
     }
     for col_idx, px in width_map.items():
         requests.append({

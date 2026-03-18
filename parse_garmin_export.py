@@ -18,12 +18,10 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from garmin_sync import (
-    get_workbook, get_sheet, setup_headers,
-    get_or_create_archive_sheet, build_garmin_row,
-    ARCHIVE_KEYS, SLEEP_HEADERS, NUTRITION_HEADERS,
-    date_to_day,
-)
+from utils import get_workbook, date_to_day
+from schema import ARCHIVE_KEYS, SLEEP_HEADERS, NUTRITION_HEADERS
+from utils import get_sheet
+from writers import setup_headers, get_or_create_archive_sheet, build_garmin_row
 
 # Default export folder (relative to this script)
 DEFAULT_EXPORT_FOLDER = Path(__file__).parent / "data" / "garmin_export"
@@ -314,10 +312,10 @@ def merge(date_str: str, sleep: dict, uds: dict, hrv: dict,
         data["activity_avg_speed"]= round(speed * 10 * 2.23694, 2) if speed else ""   # (m/s)/10 -> mph
         data["aerobic_te"]        = act.get("aerobicTrainingEffect", "")
         data["anaerobic_te"]      = act.get("anaerobicTrainingEffect", "")
-        # HR zones: export stores seconds in hrTimeInZone_0..6 — convert to minutes
+        # HR zones: export stores milliseconds in hrTimeInZone_0..6 — convert to minutes
         for i in range(1, 6):
-            zone_secs = act.get(f"hrTimeInZone_{i}", 0) or 0
-            data[f"zone_{i}"] = round(zone_secs / 60, 1) if zone_secs else ""
+            zone_ms = act.get(f"hrTimeInZone_{i}", 0) or 0
+            data[f"zone_{i}"] = round(zone_ms / 60000, 1) if zone_ms else ""
     else:
         for k in ["activity_name", "activity_type", "activity_start", "activity_distance",
                   "activity_duration", "activity_avg_hr", "activity_max_hr", "activity_calories",
@@ -576,7 +574,7 @@ def verify_import(wb, written_dates: set):
 def _fill_garmin_tab(wb, sleep_data, uds_data, hrv_data, hrv_7day, activities):
     """Fill blank Garmin tab cells where the export has data."""
     import gspread as _gspread
-    from garmin_sync import get_sheet
+    from utils import get_sheet
 
     sheet = get_sheet(wb)
     all_rows = sheet.get_all_values()
@@ -716,7 +714,8 @@ def _fill_archive_tab(wb, sleep_data, uds_data, hrv_data, hrv_7day, activities):
 
     TIME_OVERWRITE_KEYS = {"sleep_bedtime", "sleep_wake_time"}
     try:
-        from garmin_sync import ARCHIVE_KEYS, get_or_create_archive_sheet
+        from schema import ARCHIVE_KEYS
+        from writers import get_or_create_archive_sheet
         archive_sheet = get_or_create_archive_sheet(wb)
         arch_rows = archive_sheet.get_all_values()
         arch_col  = {h.strip(): i for i, h in enumerate(arch_rows[0])}
@@ -794,7 +793,7 @@ def _serial_to_datetime_str(serial):
 def _fix_garmin_types(wb):
     """Fix Garmin tab: datetime serials in Start Time, string-numbers to actual numbers."""
     import gspread as _gspread
-    from garmin_sync import get_sheet
+    from utils import get_sheet
 
     sheet = get_sheet(wb)
     hdr   = sheet.row_values(1)
@@ -891,7 +890,7 @@ def _fix_archive_types(wb):
     import gspread as _gspread
 
     try:
-        from garmin_sync import get_or_create_archive_sheet
+        from writers import get_or_create_archive_sheet
         arch = get_or_create_archive_sheet(wb)
         ahdr = arch.row_values(1)
         acol = {h.strip(): i for i, h in enumerate(ahdr)}
@@ -1092,7 +1091,6 @@ _SESS_FORMATS = [
     ("Zone Ranges",                   "",            False),
     ("Source",                        "",            False),
     ("Elevation (m)",                 "0.0",         True),
-    ("Next Morning Feel (1-10)",      "0",           True),
 ]
 
 _ARCHIVE_COL_FORMATS = {
@@ -1142,7 +1140,9 @@ def _apply_tab_format(wb, tab_name, col_formats, ws=None):
 
 def reformat_sheets(wb):
     """Apply uniform formatting to all tabs."""
-    from garmin_sync import get_sheet, ARCHIVE_KEYS, get_or_create_archive_sheet
+    from utils import get_sheet
+    from schema import ARCHIVE_KEYS
+    from writers import get_or_create_archive_sheet
 
     print("\nApplying uniform formatting to all tabs...")
     _apply_tab_format(wb, "Garmin",      _GARMIN_FORMATS, ws=get_sheet(wb))
@@ -1184,7 +1184,8 @@ def fix_existing_data(wb):
        -> reads both columns once, rewrites them in ONE update call each
     3. Session Log: remove duplicate rows (same date + activity name)
     """
-    from garmin_sync import get_sheet, HEADERS
+    from utils import get_sheet
+    from schema import HEADERS
     import string
 
     def col_letter(n):
@@ -1370,7 +1371,8 @@ def _load_export_data(base):
 
 def _read_existing_dates(wb):
     """Read existing dates from every tab. Returns dict of sheet objects and date sets."""
-    from garmin_sync import get_sheet, setup_headers
+    from utils import get_sheet
+    from writers import setup_headers
     sheet         = get_sheet(wb)
     setup_headers(sheet)
     archive_sheet = get_or_create_archive_sheet(wb)
@@ -1432,7 +1434,7 @@ def _build_session_type(activity_type):
 
 def _build_sleep_row(date_str, data):
     """Build a Sleep tab row from merged data dict."""
-    from garmin_sync import generate_sleep_analysis
+    from sleep_analysis import generate_sleep_analysis
     ind_score, analysis = generate_sleep_analysis(data)
     return [
         date_to_day(date_str),                     # A  Day
@@ -1442,10 +1444,10 @@ def _build_sleep_row(date_str, data):
         data.get("sleep_duration", ""),             # E  Total Sleep (hrs)
         analysis,                                  # F  Sleep Analysis (auto)
         "",                                        # G  Notes (manual)
-        "",                                        # H  Cognition (1-10) (manual)
-        "",                                        # I  Cognition Notes (manual)
-        data.get("sleep_bedtime", ""),              # J  Bedtime
-        data.get("sleep_wake_time", ""),            # K  Wake Time
+        data.get("sleep_bedtime", ""),              # H  Bedtime
+        data.get("sleep_wake_time", ""),            # I  Wake Time
+        "",                                        # J  Bedtime Variability (7d) — computed post-write
+        "",                                        # K  Wake Variability (7d) — computed post-write
         data.get("sleep_time_in_bed", ""),          # L  Time in Bed (hrs)
         data.get("sleep_deep_min", ""),             # M  Deep Sleep (min)
         data.get("sleep_light_min", ""),            # N  Light Sleep (min)
@@ -1486,7 +1488,6 @@ def _build_session_row(date_str, data):
         "",                                    # Zone Ranges — manual
         "Garmin Export",                       # Source
         data.get("activity_elevation", ""),    # Elevation (m)
-        "",                                    # Next Morning Feel — manual
     ]
 
 
@@ -1583,7 +1584,7 @@ def _write_all_rows(wb, rows, sheets, base):
 
     print("\nApplying formatting and sorting...")
     reformat_sheets(wb)
-    from garmin_sync import sort_sheet_by_date_desc
+    from sheets_formatting import sort_sheet_by_date_desc
     for tab in ["Garmin", "Sleep", "Session Log", "Nutrition", "Raw Data Archive"]:
         sort_sheet_by_date_desc(wb, tab)
 
@@ -1598,7 +1599,7 @@ def main():
 
     # --fix-data mode: patch sentinel values and remove Session Log duplicates
     if args.get("fix_data"):
-        print("\nNS Habit Tracker — Fix Existing Sheet Data")
+        print("\nHealth Tracker — Fix Existing Sheet Data")
         print("Connecting to Google Sheets...")
         wb = get_workbook()
         fix_existing_data(wb)
@@ -1610,7 +1611,7 @@ def main():
         if not base.exists():
             print(f"ERROR: Export folder not found: {base}")
             return
-        print("\nNS Habit Tracker — Fill Missing Cells from Export")
+        print("\nHealth Tracker — Fill Missing Cells from Export")
         print("Connecting to Google Sheets...")
         wb = get_workbook()
         fill_missing_data(wb, base)
@@ -1621,7 +1622,7 @@ def main():
         if not base.exists():
             print(f"ERROR: Export folder not found: {base}")
             return
-        print("\nNS Habit Tracker — Fix Data Types")
+        print("\nHealth Tracker — Fix Data Types")
         print("Connecting to Google Sheets...")
         wb = get_workbook()
         fix_data_types(wb)
@@ -1629,13 +1630,13 @@ def main():
 
     # --reformat mode: apply uniform formatting to all tabs
     if args.get("reformat"):
-        print("\nNS Habit Tracker — Reformat All Sheets")
+        print("\nHealth Tracker — Reformat All Sheets")
         print("Connecting to Google Sheets...")
         wb = get_workbook()
         reformat_sheets(wb)
         return
 
-    print(f"\nNS Habit Tracker — Garmin Export Importer")
+    print(f"\nHealth Tracker — Garmin Export Importer")
     print(f"  Export folder : {base}")
     print(f"  Mode          : {'DRY RUN' if dry_run else 'LIVE'}\n")
 

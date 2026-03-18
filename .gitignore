@@ -13,3 +13,5 @@ analysis_output/
 reference/
 dashboard/dashboard_data.json
 *.db
+profiles/
+Priv*/

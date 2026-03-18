@@ -14,28 +14,13 @@ import sys
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from garmin_sync import get_workbook, HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS
-from setup_daily_log import DAILY_LOG_HEADERS
+from utils import get_workbook
+from schema import (
+    HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, SESSION_LOG_HEADERS,
+    DAILY_LOG_HEADERS, OVERALL_ANALYSIS_HEADERS, EXPECTED_HEADERS,
+)
 
 load_dotenv(Path(__file__).parent / ".env")
-
-# ── Expected headers ─────────────────────────────────────────────────────────
-
-SESSION_LOG_HEADERS = [
-    "Day", "Date", "Session Type", "Perceived Effort", "Post-Workout Energy (1-10)",
-    "Notes", "Activity Name", "Duration (min)", "Distance (mi)", "Avg HR",
-    "Max HR", "Calories", "Aerobic TE (0-5)", "Anaerobic TE (0-5)",
-    "Zone 1 (min)", "Zone 2 (min)", "Zone 3 (min)", "Zone 4 (min)", "Zone 5 (min)",
-    "Zone Ranges", "Source", "Elevation (m)", "Next Morning Feel (1-10)",
-]
-
-EXPECTED_HEADERS = {
-    "Garmin":        HEADERS,
-    "Sleep":         SLEEP_HEADERS,
-    "Nutrition":     NUTRITION_HEADERS,
-    "Session Log":   SESSION_LOG_HEADERS,
-    "Daily Log":     DAILY_LOG_HEADERS,
-}
 
 # ── Type rules ────────────────────────────────────────────────────────────────
 # (tab, col_letter, rule_name, validator_fn, description)
@@ -78,12 +63,11 @@ TYPE_RULES = {
         ("C", "numeric or empty", lambda v: is_numeric(v),   "Garmin Sleep Score must be numeric"),
         ("D", "numeric or empty", lambda v: is_numeric(v),   "Sleep Analysis Score must be numeric"),
         ("E", "numeric or empty", lambda v: is_numeric(v),   "Total Sleep must be numeric"),
-        ("H", "numeric or empty", lambda v: is_numeric(v),   "Cognition must be numeric"),
-        ("J", "HH:MM or empty",  is_time_hhmm,        "Bedtime must be HH:MM — if decimal, USER_ENTERED was used"),
-        ("K", "HH:MM or empty",  is_time_hhmm,        "Wake Time must be HH:MM"),
-        ("L", "numeric or empty", lambda v: is_numeric(v),   "Time in Bed must be numeric"),
-        ("W", "numeric or empty", lambda v: is_numeric(v),   "Overnight HRV must be numeric"),
-        ("X", "numeric or empty", lambda v: is_numeric(v),   "Body Battery Gained must be numeric"),
+        ("H", "HH:MM or empty",  is_time_hhmm,        "Bedtime must be HH:MM — if decimal, USER_ENTERED was used"),
+        ("I", "HH:MM or empty",  is_time_hhmm,        "Wake Time must be HH:MM"),
+        ("J", "numeric or empty", lambda v: is_numeric(v),   "Time in Bed must be numeric"),
+        ("U", "numeric or empty", lambda v: is_numeric(v),   "Overnight HRV must be numeric"),
+        ("V", "numeric or empty", lambda v: is_numeric(v),   "Body Battery Gained must be numeric"),
     ],
     "Nutrition": [
         ("B", "date format",     is_plain_text_date,  "Date must be YYYY-MM-DD text"),
@@ -96,6 +80,11 @@ TYPE_RULES = {
         ("H", "numeric or empty", lambda v: is_numeric(v),   "Duration must be numeric"),
         ("I", "numeric or empty", lambda v: is_numeric(v),   "Distance must be numeric"),
         ("J", "numeric or empty", lambda v: is_numeric(v),   "Avg HR must be numeric"),
+    ],
+    "Overall Analysis": [
+        ("B", "date format",     is_plain_text_date,  "Date must be YYYY-MM-DD text"),
+        ("C", "numeric or empty", lambda v: is_numeric(v),   "Readiness Score must be numeric"),
+        ("H", "numeric or empty", lambda v: is_numeric(v),   "Cognition must be numeric"),
     ],
 }
 
@@ -118,16 +107,21 @@ def check_tab(sheet, tab_name):
         return issues, warnings
 
     headers = all_rows[0]
-    # Only count rows that have an actual date in col B — ignores blank/checkbox-only rows
-    data_rows = [r for r in all_rows[1:] if r and len(r) > 1 and r[1] and str(r[1]).startswith("20")]
+    # Date column index: col B (1) for all tabs
+    date_col_idx = 1
+    # Only count rows that have an actual date — ignores blank/checkbox-only rows
+    data_rows = [r for r in all_rows[1:] if r and len(r) > date_col_idx and r[date_col_idx] and str(r[date_col_idx]).startswith("20")]
 
     # 1. Header check
     expected = EXPECTED_HEADERS.get(tab_name)
     if expected:
-        if headers != expected:
-            missing = [h for h in expected if h not in headers]
-            extra   = [h for h in headers if h not in expected]
-            wrong_order = headers != expected and set(headers) == set(expected)
+        # For tabs with legend columns beyond the main headers (e.g. Overall Analysis),
+        # only compare the main header columns
+        check_headers = headers[:len(expected)] if len(headers) > len(expected) else headers
+        if check_headers != expected:
+            missing = [h for h in expected if h not in check_headers]
+            extra   = [h for h in check_headers if h not in expected]
+            wrong_order = check_headers != expected and set(check_headers) == set(expected)
             if missing:
                 issues.append(f"MISSING headers: {missing}")
             if extra:
@@ -169,8 +163,8 @@ def check_tab(sheet, tab_name):
                 f"Sample: {[(r, repr(v)) for r,v in sample]}"
             )
 
-    # 5. Duplicate dates (Date is column B = index 1)
-    dates = [row[1] for row in data_rows if row and len(row) > 1 and row[1]]
+    # 5. Duplicate dates
+    dates = [row[date_col_idx] for row in data_rows if row and len(row) > date_col_idx and row[date_col_idx]]
     if tab_name != "Session Log":  # Session Log allows multiple rows per date
         seen = {}
         for i, d in enumerate(dates):
@@ -209,7 +203,8 @@ def run_verify(tabs_to_check=None):
             continue
 
         all_rows = sheet.get_all_values()
-        row_count = sum(1 for r in all_rows[1:] if r and len(r) > 1 and r[1] and str(r[1]).startswith("20"))
+        dcol = 1  # Date is col B for all tabs
+        row_count = sum(1 for r in all_rows[1:] if r and len(r) > dcol and r[dcol] and str(r[dcol]).startswith("20"))
 
         issues, warnings = check_tab(sheet, tab_name)
 

@@ -1,4 +1,4 @@
-"""SQLite local backup module for NS Habit Tracker.
+"""SQLite local backup module for Health Tracker.
 
 Provides a local SQLite database as a parallel backup to Google Sheets.
 Every daily sync writes to both Sheets and SQLite via these functions.
@@ -6,7 +6,7 @@ Every daily sync writes to both Sheets and SQLite via these functions.
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "ns_habit_tracker.db"
+DB_PATH = Path(__file__).parent / "health_tracker.db"
 SCHEMA_VERSION = 1
 
 _conn = None
@@ -101,8 +101,6 @@ def init_db(conn):
         total_sleep_hrs REAL,
         sleep_analysis TEXT,
         notes TEXT,
-        cognition REAL,
-        cognition_notes TEXT,
         bedtime TEXT,
         wake_time TEXT,
         time_in_bed_hrs REAL,
@@ -119,6 +117,8 @@ def init_db(conn):
         overnight_hrv_ms REAL,
         body_battery_gained REAL,
         sleep_feedback TEXT,
+        bedtime_variability_7d REAL,
+        wake_variability_7d REAL,
         updated_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -165,7 +165,6 @@ def init_db(conn):
         zone_ranges TEXT,
         source TEXT,
         elevation_m REAL,
-        next_morning_feel REAL,
         updated_at TEXT DEFAULT (datetime('now')),
         PRIMARY KEY (date, activity_name)
     );
@@ -232,12 +231,35 @@ def init_db(conn):
         created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS overall_analysis (
+        date TEXT PRIMARY KEY,
+        day TEXT,
+        readiness_score REAL,
+        readiness_label TEXT,
+        confidence TEXT,
+        cognitive_energy_assessment TEXT,
+        sleep_context TEXT,
+        cognition REAL,
+        cognition_notes TEXT,
+        key_insights TEXT,
+        recommendations TEXT,
+        training_load_status TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS _meta (
         key TEXT PRIMARY KEY,
         value TEXT,
         updated_at TEXT DEFAULT (datetime('now'))
     );
     """)
+
+    # Migrate: add new columns to existing tables (safe — ALTER ignores if col exists)
+    for col, ctype in [("bedtime_variability_7d", "REAL"), ("wake_variability_7d", "REAL")]:
+        try:
+            conn.execute(f"ALTER TABLE sleep ADD COLUMN {col} {ctype}")
+        except Exception:
+            pass  # column already exists
 
     # Set schema version
     conn.execute(
@@ -435,9 +457,34 @@ def upsert_session_log(conn, date_str, data):
     ))
 
 
+def upsert_overall_analysis(conn, date_str, data):
+    """Upsert one row into overall_analysis from a dict."""
+    conn.execute("""
+        INSERT OR REPLACE INTO overall_analysis (
+            date, day, readiness_score, readiness_label, confidence,
+            cognitive_energy_assessment, sleep_context,
+            cognition, cognition_notes,
+            key_insights, recommendations, training_load_status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        date_str,
+        _day_from_date(date_str),
+        _to_num(data.get("readiness_score")),
+        _to_text(data.get("readiness_label")),
+        _to_text(data.get("confidence")),
+        _to_text(data.get("cognitive_energy_assessment")),
+        _to_text(data.get("sleep_context")),
+        _to_num(data.get("cognition")),
+        _to_text(data.get("cognition_notes")),
+        _to_text(data.get("key_insights")),
+        _to_text(data.get("recommendations")),
+        _to_text(data.get("training_load_status")),
+    ))
+
+
 def append_archive(conn, date_str, data):
     """Append to raw_data_archive. Skips if date already exists (write-once)."""
-    from garmin_sync import ARCHIVE_KEYS
+    from schema import ARCHIVE_KEYS
     columns = ["date", "day"] + ARCHIVE_KEYS
     values = [date_str, _day_from_date(date_str)]
     values += [_to_text(data.get(k)) for k in ARCHIVE_KEYS]
@@ -514,8 +561,10 @@ def upsert_sleep_row(conn, row):
     conn.execute("""
         INSERT OR REPLACE INTO sleep (
             day, date, garmin_sleep_score, sleep_analysis_score, total_sleep_hrs,
-            sleep_analysis, notes, cognition, cognition_notes,
-            bedtime, wake_time, time_in_bed_hrs,
+            sleep_analysis, notes,
+            bedtime, wake_time,
+            bedtime_variability_7d, wake_variability_7d,
+            time_in_bed_hrs,
             deep_sleep_min, light_sleep_min, rem_min, awake_during_sleep_min,
             deep_pct, rem_pct, sleep_cycles, awakenings,
             avg_hr, avg_respiration, overnight_hrv_ms,
@@ -529,10 +578,10 @@ def upsert_sleep_row(conn, row):
         _to_num(row[4]),    # total_sleep_hrs
         _to_text(row[5]),   # sleep_analysis
         _to_text(row[6]),   # notes (manual)
-        _to_num(row[7]),    # cognition (manual)
-        _to_text(row[8]),   # cognition_notes (manual)
-        _to_text(row[9]),   # bedtime
-        _to_text(row[10]),  # wake_time
+        _to_text(row[7]),   # bedtime
+        _to_text(row[8]),   # wake_time
+        _to_num(row[9]),    # bedtime_variability_7d
+        _to_num(row[10]),   # wake_variability_7d
         _to_num(row[11]),   # time_in_bed
         _to_num(row[12]),   # deep_sleep
         _to_num(row[13]),   # light_sleep
@@ -581,9 +630,9 @@ def upsert_nutrition_row(conn, row):
 
 
 def upsert_session_log_row(conn, row):
-    """Upsert session_log from a positional row list (23 columns, matching SESSION_LOG_HEADERS)."""
-    if len(row) < 23:
-        row = row + [""] * (23 - len(row))
+    """Upsert session_log from a positional row list (22 columns, matching SESSION_LOG_HEADERS)."""
+    if len(row) < 22:
+        row = row + [""] * (22 - len(row))
     date_str = _to_text(row[1])
     activity_name = _to_text(row[6])
     if not date_str or not activity_name:
@@ -594,8 +643,8 @@ def upsert_session_log_row(conn, row):
             notes, activity_name, duration_min, distance_mi,
             avg_hr, max_hr, calories, aerobic_te, anaerobic_te,
             zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min,
-            zone_ranges, source, elevation_m, next_morning_feel
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            zone_ranges, source, elevation_m
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         _to_text(row[0]),   # day
         date_str,           # date
@@ -619,7 +668,6 @@ def upsert_session_log_row(conn, row):
         _to_text(row[19]),  # zone_ranges
         _to_text(row[20]),  # source
         _to_num(row[21]),   # elevation
-        _to_num(row[22]),   # next_morning_feel
     ))
 
 
@@ -699,13 +747,43 @@ def upsert_strength_log_row(conn, row):
         ))
 
 
+def upsert_overall_analysis_row(conn, row):
+    """Upsert overall_analysis from a positional row list (12 columns, matching OVERALL_ANALYSIS_HEADERS)."""
+    if len(row) < 12:
+        row = row + [""] * (12 - len(row))
+    date_str = _to_text(row[1])
+    if not date_str:
+        return
+    conn.execute("""
+        INSERT OR REPLACE INTO overall_analysis (
+            day, date, readiness_score, readiness_label, confidence,
+            cognitive_energy_assessment, sleep_context,
+            cognition, cognition_notes,
+            key_insights, recommendations, training_load_status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        _to_text(row[0]),   # day
+        date_str,           # date
+        _to_num(row[2]),    # readiness_score
+        _to_text(row[3]),   # readiness_label
+        _to_text(row[4]),   # confidence
+        _to_text(row[5]),   # cognitive_energy_assessment
+        _to_text(row[6]),   # sleep_context
+        _to_num(row[7]),    # cognition (manual)
+        _to_text(row[8]),   # cognition_notes (manual)
+        _to_text(row[9]),   # key_insights
+        _to_text(row[10]),  # recommendations
+        _to_text(row[11]),  # training_load_status
+    ))
+
+
 def upsert_archive_row(conn, row):
     """Insert into raw_data_archive from a positional row list. Write-once (INSERT OR IGNORE).
 
     Sheets row order: [Day(0), Date(1), ...ARCHIVE_KEYS]
     SQLite column order: [day, date, ...ARCHIVE_KEYS]
     """
-    from garmin_sync import ARCHIVE_KEYS
+    from schema import ARCHIVE_KEYS
     # Sheets: row[0]=Day, row[1]=Date — map to SQLite: day, date
     columns = ["day", "date"] + ARCHIVE_KEYS
     expected_len = len(columns)
