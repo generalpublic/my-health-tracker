@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Health Tracker — Today</title>
+  <link rel="stylesheet" href="design-system.css">
+  <style>
+    /* ============================================
+       Today Dashboard — Page-specific styles
+       ============================================ */
+
+    /* Readiness Hero Card */
+    .readiness-card {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-xl);
+    }
+
+    .readiness-gauge-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: var(--space-lg);
+    }
+
+    .readiness-meta {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-lg);
+    }
+
+    .expect-block {
+      text-align: left;
+      margin-bottom: var(--space-lg);
+      padding: var(--space-lg);
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(12px);
+      border-radius: var(--radius-md);
+      border-left: 3px solid transparent;
+      border-image: var(--gradient-iridescent) 1;
+    }
+
+    .expect-level {
+      font-size: var(--text-base);
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: var(--space-sm);
+      letter-spacing: -0.3px;
+    }
+
+    .expect-line {
+      font-size: var(--text-sm);
+      color: var(--text);
+      padding: 4px 0;
+      display: flex;
+      gap: var(--space-sm);
+      line-height: 1.4;
+    }
+
+    .expect-domain {
+      font-weight: 700;
+      min-width: 58px;
+      font-size: var(--text-base);
+    }
+
+    /* Expanded content (FLAGS + DO) */
+    .expand-section {
+      text-align: left;
+      margin-top: var(--space-lg);
+      padding-top: var(--space-lg);
+      border-top: 1px solid var(--border);
+    }
+
+    .expand-section-title {
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: var(--space-sm);
+    }
+
+    .flag-item {
+      font-size: var(--text-sm);
+      color: var(--text);
+      padding: var(--space-xs) 0;
+      display: flex;
+      gap: var(--space-sm);
+      align-items: flex-start;
+    }
+
+    .flag-bullet {
+      width: 6px;
+      height: 6px;
+      border-radius: var(--radius-full);
+      background: var(--primary);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+
+    .do-item {
+      font-size: var(--text-sm);
+      color: var(--text);
+      padding: var(--space-sm) 0;
+      display: flex;
+      gap: var(--space-sm);
+      align-items: flex-start;
+    }
+
+    .do-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: var(--radius-full);
+      border: 2px solid var(--primary);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Sleep Summary Card */
+    .sleep-hero-section {
+      text-align: center;
+      margin-bottom: var(--space-md);
+    }
+
+    .sleep-score-big {
+      font-size: var(--text-hero);
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -1.5px;
+    }
+
+    .sleep-verdict-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-xs);
+      margin-top: 4px;
+      margin-bottom: var(--space-md);
+    }
+
+    .sleep-timeline {
+      position: relative;
+      border-radius: 12px;
+      padding: 14px 16px 10px;
+      margin-top: var(--space-sm);
+      background: linear-gradient(90deg, #1a1a3e 0%, #2d2b5e 25%, #4a3f8a 50%, #7c6bc4 70%, #c4a7e7 85%, #f0daf0 95%, #fde8c8 100%);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .sleep-timeline::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      background:
+        radial-gradient(circle at 8% 60%, rgba(255,255,255,0.04) 0%, transparent 50%),
+        radial-gradient(circle at 92% 60%, rgba(255,200,100,0.08) 0%, transparent 40%);
+      pointer-events: none;
+    }
+
+    /* tiny star dots on the night side */
+    .sleep-timeline::after {
+      content: '· ·  ·   ·';
+      position: absolute;
+      top: 6px;
+      left: 12px;
+      font-size: 8px;
+      letter-spacing: 3px;
+      color: rgba(255,255,255,0.25);
+      pointer-events: none;
+    }
+
+    .sleep-timeline-bed, .sleep-timeline-wake {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      z-index: 1;
+    }
+
+    .sleep-timeline-bed {
+      align-items: flex-start;
+    }
+
+    .sleep-timeline-wake {
+      align-items: flex-end;
+    }
+
+    .sleep-timeline-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .sleep-timeline-time {
+      font-size: var(--text-base);
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    .sleep-timeline-bed .sleep-timeline-time {
+      color: rgba(255, 255, 255, 0.95);
+    }
+
+    .sleep-timeline-wake .sleep-timeline-time {
+      color: #5a4a3a;
+    }
+
+    .sleep-timeline-sub {
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sleep-timeline-bed .sleep-timeline-sub {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .sleep-timeline-wake .sleep-timeline-sub {
+      color: rgba(90, 74, 58, 0.6);
+    }
+
+    .sleep-timeline-total {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: var(--text-base);
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.3);
+      z-index: 1;
+      letter-spacing: -0.3px;
+    }
+
+
+    .sleep-stages-bar {
+      height: 22px;
+      border-radius: var(--radius-full);
+      display: flex;
+      overflow: hidden;
+      gap: 1px;
+      margin-top: var(--space-lg);
+      margin-bottom: var(--space-md);
+    }
+
+    .sleep-stage {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: width 0.6s ease;
+    }
+
+    .sleep-stage-pct {
+      font-size: 9px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.9);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .sleep-stages-detail {
+      margin-bottom: var(--space-md);
+    }
+
+    .sleep-metrics-row {
+      display: flex;
+      justify-content: space-around;
+      padding-top: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .sleep-context-section {
+      margin-top: var(--space-md);
+      padding-top: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    /* Body & Recovery Card */
+    .body-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: var(--space-xl);
+      align-items: center;
+    }
+
+    .body-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .body-metric {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-md);
+    }
+
+    .body-metric-label {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+
+    .body-metric-value {
+      font-size: var(--text-base);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .steps-section {
+      margin-top: var(--space-lg);
+      padding-top: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .steps-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: var(--space-sm);
+    }
+
+    .steps-count {
+      font-size: var(--text-lg);
+      font-weight: 700;
+    }
+
+    .steps-goal {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+
+    /* Activity Card */
+    .activity-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-md);
+    }
+
+    .activity-info {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .activity-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: var(--primary-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .activity-name {
+      font-weight: 600;
+      font-size: var(--text-base);
+    }
+
+    .activity-subtitle {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+
+    .activity-calories {
+      font-size: var(--text-lg);
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .activity-calories-label {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+    }
+
+    .zone-bar {
+      display: flex;
+      height: 10px;
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      gap: 1px;
+      margin-top: var(--space-md);
+    }
+
+    .zone-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+    }
+
+    .zone-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* Training Load Card */
+    .training-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Tap hint */
+    .tap-hint {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-xs);
+      margin-top: var(--space-md);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="screen">
+
+      <!-- Status Bar -->
+      <div class="status-bar">
+        <span>9:41</span>
+        <span></span>
+        <span>100%</span>
+      </div>
+
+      <!-- Scrollable Content -->
+      <div class="screen-content stagger">
+
+        <!-- Top Bar -->
+        <div class="top-bar animate-in">
+          <div class="greeting" id="greeting">Good morning, Daniel</div>
+          <div class="date-label" id="dateLabel">March 18, Wed</div>
+        </div>
+
+        <!-- 1. Readiness Hero Card -->
+        <div class="card readiness-card card-expandable animate-in" onclick="toggleExpand(this)">
+          <!-- EXPECT block — most important at-a-glance info, ABOVE gauge -->
+          <div class="expect-block" id="expectBlock">
+            <div class="expect-level" id="expectLevel">Above baseline</div>
+            <div id="expectEffects"></div>
+          </div>
+
+          <div class="readiness-gauge-wrap">
+            <div class="gauge gauge-lg">
+              <svg id="readinessGaugeSvg" width="140" height="140" viewBox="0 0 140 140"></svg>
+              <div class="gauge-value">
+                <div class="gauge-number" id="readinessScore">7.8</div>
+                <div class="gauge-label">Readiness</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="readiness-meta">
+            <span class="status-pill" id="readinessLabel">Good</span>
+            <span class="badge" id="readinessConfidence">High Confidence</span>
+          </div>
+
+          <div class="tap-hint">
+            <span class="card-chevron" id="readinessChevron">&#9660;</span>
+            <span>Tap for insights</span>
+          </div>
+
+          <!-- Expanded: FLAGS + DO (replaces Pushover) -->
+          <div class="card-expand-content" id="readinessExpand">
+            <div class="expand-section">
+              <div class="expand-section-title">Flags</div>
+              <div id="flagsList"></div>
+            </div>
+            <div class="expand-section" style="border-top:none; padding-top: var(--space-md);">
+              <div class="expand-section-title">Do Today</div>
+              <div id="doList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Sleep Summary Card -->
+        <div class="card animate-in" id="sleepCard" onclick="navigateTo('sleep-detail.html')">
+          <div class="card-header">
+            <div class="card-title">Sleep</div>
+            <div class="card-chevron">&#8250;</div>
+          </div>
+
+          <!-- Score hero: centered score + verdict -->
+          <div class="sleep-hero-section">
+            <div class="sleep-score-big" id="sleepScore">78</div>
+            <div class="sleep-verdict-row">
+              <span class="status-pill" id="sleepVerdict">Good</span>
+              <span class="status-dot" id="sleepDot"></span>
+            </div>
+            <div class="sleep-timeline">
+              <div class="sleep-timeline-bed">
+                <span class="sleep-timeline-icon">&#9790;</span>
+                <span class="sleep-timeline-time" id="bedtime">10:34 PM</span>
+                <span class="sleep-timeline-sub">Bedtime</span>
+              </div>
+              <span class="sleep-timeline-total" id="totalSleep">7h 30m</span>
+              <div class="sleep-timeline-wake">
+                <span class="sleep-timeline-icon">&#9788;</span>
+                <span class="sleep-timeline-time" id="wakeTime">6:15 AM</span>
+                <span class="sleep-timeline-sub">Wake</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sleep stages stacked bar with % labels -->
+          <div class="sleep-stages-bar" id="sleepStagesBar"></div>
+
+          <!-- Stage mini progress bars (actual vs target) -->
+          <div class="sleep-stages-detail" id="sleepStagesDetail"></div>
+
+          <!-- Bottom metrics row -->
+          <div class="sleep-metrics-row">
+            <div class="metric-compact">
+              <div class="metric-compact-value"><span id="hrvValue">46</span><span class="status-dot" id="hrvDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-label">HRV (ms)</div>
+            </div>
+            <div class="metric-compact">
+              <div class="metric-compact-value"><span id="bbGained">+62</span><span class="status-dot" id="bbDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-label">Battery</div>
+            </div>
+            <div class="metric-compact">
+              <div class="metric-compact-value"><span id="awakenings">2</span></div>
+              <div class="metric-compact-label">Awakenings</div>
+            </div>
+          </div>
+
+          <!-- 7-day context as structured stats -->
+          <div class="sleep-context-section">
+            <div class="context-stats" id="sleepContextStats"></div>
+          </div>
+        </div>
+
+        <!-- 3. Body & Recovery Card -->
+        <div class="card animate-in">
+          <div class="card-header">
+            <div class="card-title">Body & Recovery</div>
+          </div>
+
+          <div class="body-grid">
+            <div class="gauge gauge-md">
+              <svg id="bodyBatteryGaugeSvg" width="100" height="100" viewBox="0 0 100 100"></svg>
+              <div class="gauge-value">
+                <div class="gauge-number" id="bbValue">82</div>
+                <div class="gauge-label">Battery</div>
+              </div>
+            </div>
+
+            <div class="body-metrics">
+              <div class="body-metric">
+                <span class="body-metric-label">Resting HR</span>
+                <span class="body-metric-value"><span id="rhrValue">52</span> bpm <span class="status-dot" id="rhrDot"></span></span>
+              </div>
+              <div class="body-metric">
+                <span class="body-metric-label">Stress</span>
+                <span class="body-metric-value"><span id="stressValue">22</span> <span class="status-dot" id="stressDot"></span></span>
+              </div>
+              <div class="body-metric">
+                <span class="body-metric-label">HRV 7-day</span>
+                <span class="body-metric-value"><span id="hrv7dValue">42</span> ms</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="steps-section">
+            <div class="steps-header">
+              <div>
+                <span class="steps-count" id="stepsValue">8,742</span>
+                <span class="steps-goal"> / 10,000</span>
+              </div>
+              <span class="status-dot" id="stepsDot" style="margin-top:6px"></span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="stepsBar" style="width:87%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Habits Card -->
+        <div class="card animate-in">
+          <div class="card-header">
+            <div class="card-title">Today's Habits</div>
+            <div style="font-size:var(--text-lg); font-weight:700; color:var(--primary);" id="habitsCount">5/7</div>
+          </div>
+          <div class="habits-row" id="habitsRow"></div>
+        </div>
+
+        <!-- 5. Activity Card -->
+        <div class="card animate-in" id="activityCard">
+          <div class="card-header">
+            <div class="card-title">Today's Activity</div>
+          </div>
+          <div id="activityContent"></div>
+        </div>
+
+        <!-- 6. Training Load Card -->
+        <div class="card card-compact animate-in">
+          <div class="training-card">
+            <div class="card-title">Training Load</div>
+            <span class="status-pill status-pill-green" id="trainingPill">1.08 — Sweet Spot</span>
+          </div>
+        </div>
+
+        <!-- 7. Quick Insights Card -->
+        <div class="card card-insight animate-in" id="insightsCard">
+          <div class="card-title" style="margin-bottom:var(--space-md);">&#10024; Key Insights</div>
+          <div id="insightsList"></div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Tab Bar -->
+      <div class="tab-bar">
+        <div class="tab-item tab-item-active">
+          <div class="tab-icon">&#8962;</div>
+          <div class="tab-label">Today</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-label">Trends</div>
+        </div>
+        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+          <div class="tab-center-button">+</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+          <div class="tab-icon">&#9883;</div>
+          <div class="tab-label">Activity</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
+          <div class="tab-label">Profile</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="sample-data.js"></script>
+  <script>
+    // ============================================
+    // Populate Today Dashboard from sample data
+    // ============================================
+
+    const D = SAMPLE_DATA.today;
+
+    // --- Greeting ---
+    document.getElementById('greeting').textContent = 'Howdy, Sek';
+
+    // --- Readiness Hero Card ---
+    (function renderReadiness() {
+      const score = D.readiness.score;
+      const color = getStatusColor(score, 'readiness_score');
+
+      // Gauge — uses CSS grid centering from design-system.css
+      const r = 56, sw = 13, w = 140;
+      const circ = 2 * Math.PI * r;
+      const offset = circ * (1 - score / 10);
+      const svg = document.getElementById('readinessGaugeSvg');
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="readinessGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#8B5CF6" />
+            <stop offset="50%" stop-color="#6366F1" />
+            <stop offset="100%" stop-color="#06B6D4" />
+          </linearGradient>
+        </defs>
+        <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
+        <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+          stroke="url(#readinessGrad)" stroke-width="${sw}"
+          stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+          stroke-linecap="round" />`;
+      document.getElementById('readinessScore').style.color = color;
+
+      // Label pill
+      const labelEl = document.getElementById('readinessLabel');
+      const cls = getStatusClass(score, 'readiness_score');
+      labelEl.className = `status-pill status-pill-${cls}`;
+      labelEl.textContent = D.readiness.label;
+
+      // Confidence
+      document.getElementById('readinessConfidence').textContent = D.readiness.confidence + ' Confidence';
+
+      // EXPECT block — gradient text for Mind/Energy domain labels
+      document.getElementById('expectLevel').textContent = D.briefing.expect.level;
+      const effectsHtml = D.briefing.expect.effects.map(e => {
+        const gradClass = e.domain === 'Mind' ? 'gradient-text-mind' : 'gradient-text-energy';
+        return `<div class="expect-line"><span class="expect-domain gradient-text ${gradClass}">${e.domain}:</span><span>${e.text}</span></div>`;
+      }).join('');
+      document.getElementById('expectEffects').innerHTML = effectsHtml;
+
+      // FLAGS
+      const flagsHtml = D.briefing.flags.map(f =>
+        `<div class="flag-item"><div class="flag-bullet"></div><span>${f}</span></div>`
+      ).join('');
+      document.getElementById('flagsList').innerHTML = flagsHtml;
+
+      // DO
+      const doHtml = D.briefing.do_items.map(d =>
+        `<div class="do-item"><div class="do-icon"></div><span>${d}</span></div>`
+      ).join('');
+      document.getElementById('doList').innerHTML = doHtml;
+    })();
+
+    // --- Sleep Summary Card ---
+    (function renderSleep() {
+      const s = D.sleep;
+      const targets = SAMPLE_DATA.sleep_stage_targets;
+
+      // Score + verdict + status dot
+      document.getElementById('sleepScore').textContent = s.analysis_score;
+      const scoreColor = getStatusColor(s.analysis_score, 'sleep_analysis_score');
+      document.getElementById('sleepScore').style.color = scoreColor;
+      const dot = document.getElementById('sleepDot');
+      dot.className = `status-dot status-dot-${getStatusClass(s.analysis_score, 'sleep_analysis_score')}`;
+      const verdict = document.getElementById('sleepVerdict');
+      const cls = getStatusClass(s.analysis_score, 'sleep_analysis_score');
+      verdict.className = `status-pill status-pill-${cls}`;
+      verdict.textContent = s.sleep_feedback;
+
+      // Times row: bed · total · wake
+      document.getElementById('totalSleep').textContent = formatHours(s.total_sleep_hrs);
+      document.getElementById('bedtime').textContent = formatTime(s.bedtime);
+      document.getElementById('wakeTime').textContent = formatTime(s.wake_time);
+
+
+      // Stages bar with % labels inside
+      const total = s.deep_min + s.light_min + s.rem_min + s.awake_min;
+      const stages = [
+        { min: s.deep_min, pct: s.deep_pct, color: 'var(--sleep-deep)' },
+        { min: s.light_min, pct: Math.round(s.light_min / total * 100), color: 'var(--sleep-light)' },
+        { min: s.rem_min, pct: s.rem_pct, color: 'var(--sleep-rem)' },
+        { min: s.awake_min, pct: Math.round(s.awake_min / total * 100), color: 'var(--sleep-awake)' }
+      ];
+      const bar = document.getElementById('sleepStagesBar');
+      bar.innerHTML = stages.map(st => {
+        const widthPct = (st.min / total * 100).toFixed(1);
+        const showLabel = widthPct > 12; // only show % if segment is wide enough
+        return `<div class="sleep-stage" style="width:${widthPct}%;background:${st.color}">
+          ${showLabel ? `<span class="sleep-stage-pct">${st.pct}%</span>` : ''}
+        </div>`;
+      }).join('');
+
+      // Stage mini progress bars (actual vs target)
+      const totalMin = Math.round(s.total_sleep_hrs * 60);
+      const deepTarget = Math.round(totalMin * targets.deep_pct / 100);
+      const remTarget = Math.round(totalMin * targets.rem_pct / 100);
+      const lightTarget = totalMin - deepTarget - remTarget - targets.awake_max;
+      const stageData = [
+        { name: 'Deep', min: s.deep_min, target: deepTarget, color: 'var(--sleep-deep)', metric: 'deep_pct', pctVal: s.deep_pct },
+        { name: 'Light', min: s.light_min, target: lightTarget, color: 'var(--sleep-light)', metric: null, pctVal: null },
+        { name: 'REM', min: s.rem_min, target: remTarget, color: 'var(--sleep-rem)', metric: 'rem_pct', pctVal: s.rem_pct },
+        { name: 'Awake', min: s.awake_min, target: targets.awake_max, color: 'var(--sleep-awake)', metric: 'awake_min', pctVal: null }
+      ];
+
+      document.getElementById('sleepStagesDetail').innerHTML = stageData.map(st => {
+        let barMax, fillPct, valueText;
+        if (st.target === null) {
+          // Light — no target, just show the bar relative to total
+          barMax = totalMin;
+          fillPct = (st.min / barMax * 100).toFixed(1);
+          valueText = `${st.min}m`;
+        } else if (st.name === 'Awake') {
+          // Awake — lower is better
+          barMax = Math.max(st.target * 2, st.min);
+          fillPct = (st.min / barMax * 100).toFixed(1);
+          const met = st.min <= st.target;
+          valueText = `${st.min}m / ${st.target}m ${met ? '<span style="color:var(--status-green)">&#10003;</span>' : ''}`;
+        } else {
+          // Deep, REM — higher is better
+          barMax = Math.max(st.target, st.min);
+          fillPct = (st.min / barMax * 100).toFixed(1);
+          const met = st.min >= st.target;
+          valueText = `${st.min}m / ${st.target}m ${met ? '<span style="color:var(--status-green)">&#10003;</span>' : ''}`;
+        }
+
+        return `<div class="stage-bar-row">
+          <div class="stage-bar-label"><div class="stage-bar-dot" style="background:${st.color}"></div>${st.name}</div>
+          <div class="stage-bar-track">
+            <div class="stage-bar-fill" style="width:${fillPct}%;background:${st.color}"></div>
+          </div>
+          <div class="stage-bar-value">${valueText}</div>
+        </div>`;
+      }).join('');
+
+      // Bottom metrics
+      document.getElementById('hrvValue').textContent = s.overnight_hrv;
+      document.getElementById('hrvDot').className = `status-dot status-dot-${getStatusClass(s.overnight_hrv, 'overnight_hrv_ms')}`;
+      document.getElementById('bbGained').textContent = '+' + s.body_battery_gained;
+      document.getElementById('bbDot').className = `status-dot status-dot-${getStatusClass(s.body_battery_gained, 'body_battery_gained')}`;
+      document.getElementById('awakenings').textContent = s.awakenings;
+
+      // 7-day context as structured stats
+      const contextItems = D.briefing.sleep_context_items;
+      document.getElementById('sleepContextStats').innerHTML = contextItems.map(item =>
+        `<div class="context-stat">
+          <span class="status-dot status-dot-${item.status}" style="width:6px;height:6px"></span>
+          <span>${item.label}: <span class="context-stat-value">${item.value}</span></span>
+        </div>`
+      ).join('');
+    })();
+
+    // --- Body & Recovery Card ---
+    (function renderBody() {
+      const g = D.garmin;
+
+      // Body Battery gauge — uses CSS grid centering
+      const bb = g.body_battery;
+      const bbColor = getStatusColor(bb, 'body_battery');
+      const r = 40, sw = 8, w = 100;
+      const circ = 2 * Math.PI * r;
+      const offset = circ * (1 - bb / 100);
+      const bbSvg = document.getElementById('bodyBatteryGaugeSvg');
+      bbSvg.innerHTML = `
+        <defs>
+          <linearGradient id="bbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#22C55E" />
+            <stop offset="50%" stop-color="#06B6D4" />
+            <stop offset="100%" stop-color="#8B5CF6" />
+          </linearGradient>
+        </defs>
+        <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
+        <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+          stroke="url(#bbGrad)" stroke-width="${sw}"
+          stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+          stroke-linecap="round" />`;
+      document.getElementById('bbValue').style.color = bbColor;
+
+      // Metrics
+      document.getElementById('rhrValue').textContent = g.resting_hr;
+      document.getElementById('rhrDot').className = `status-dot status-dot-${getStatusClass(g.resting_hr, 'resting_hr')}`;
+      document.getElementById('stressValue').textContent = g.avg_stress;
+      document.getElementById('stressDot').className = `status-dot status-dot-${getStatusClass(g.avg_stress, 'avg_stress_level')}`;
+      document.getElementById('hrv7dValue').textContent = g.hrv_7day_avg;
+
+      // Steps
+      const stepsColor = getStatusColor(g.steps, 'steps');
+      document.getElementById('stepsValue').textContent = g.steps.toLocaleString();
+      document.getElementById('stepsDot').className = `status-dot status-dot-${getStatusClass(g.steps, 'steps')}`;
+      const pct = Math.min(g.steps / 10000 * 100, 100);
+      const bar = document.getElementById('stepsBar');
+      bar.style.width = pct + '%';
+      bar.style.background = stepsColor;
+    })();
+
+    // --- Habits Card ---
+    (function renderHabits() {
+      const habits = [
+        { key: 'wake_930', label: 'Wake', icon: '&#9788;' },
+        { key: 'no_morning_screens', label: 'No AM', icon: '&#128241;' },
+        { key: 'creatine_hydrate', label: 'Hydrate', icon: '&#128167;' },
+        { key: 'walk_breathing', label: 'Walk', icon: '&#127939;' },
+        { key: 'physical_activity', label: 'Active', icon: '&#9889;' },
+        { key: 'no_screens_bed', label: 'No PM', icon: '&#128564;' },
+        { key: 'bed_10pm', label: 'Bed 10', icon: '&#127769;' }
+      ];
+
+      const row = document.getElementById('habitsRow');
+      row.innerHTML = habits.map(h => {
+        const done = D.daily_log.habits[h.key];
+        return `
+          <div class="habit-item">
+            <div class="habit-circle ${done ? 'habit-circle-done' : 'habit-circle-pending'}">
+              ${done ? '&#10003;' : h.icon}
+            </div>
+            <div class="habit-label">${h.label}</div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('habitsCount').textContent = D.daily_log.habits_total + '/7';
+    })();
+
+    // --- Activity Card ---
+    (function renderActivity() {
+      const sessions = D.sessions;
+      if (!sessions.length) {
+        document.getElementById('activityCard').style.display = 'none';
+        return;
+      }
+
+      const content = document.getElementById('activityContent');
+      content.innerHTML = sessions.map(s => {
+        const typeIcons = { running: '&#127939;', cycling: '&#128690;', swimming: '&#127946;', strength: '&#127947;', walking: '&#128694;' };
+        const icon = typeIcons[s.activity_type] || '&#9883;';
+        const totalZone = s.zone_1_min + s.zone_2_min + s.zone_3_min + s.zone_4_min + s.zone_5_min;
+
+        return `
+          <div class="activity-item">
+            <div class="activity-info">
+              <div class="activity-icon">${icon}</div>
+              <div>
+                <div class="activity-name">${s.activity_name}</div>
+                <div class="activity-subtitle">${s.duration_min}min &bull; ${s.distance_mi}mi &bull; ${s.avg_hr} bpm avg</div>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="activity-calories">${s.calories}</div>
+              <div class="activity-calories-label">cal</div>
+            </div>
+          </div>
+          <div class="zone-bar">
+            <div style="width:${(s.zone_1_min/totalZone*100)}%;background:var(--zone-1)"></div>
+            <div style="width:${(s.zone_2_min/totalZone*100)}%;background:var(--zone-2)"></div>
+            <div style="width:${(s.zone_3_min/totalZone*100)}%;background:var(--zone-3)"></div>
+            <div style="width:${(s.zone_4_min/totalZone*100)}%;background:var(--zone-4)"></div>
+            <div style="width:${(s.zone_5_min/totalZone*100)}%;background:var(--zone-5)"></div>
+          </div>
+          <div class="zone-labels">
+            <span class="zone-label">Z1 ${s.zone_1_min}m</span>
+            <span class="zone-label">Z2 ${s.zone_2_min}m</span>
+            <span class="zone-label">Z3 ${s.zone_3_min}m</span>
+            <span class="zone-label">Z4 ${s.zone_4_min}m</span>
+            <span class="zone-label">Z5 ${s.zone_5_min}m</span>
+          </div>`;
+      }).join('');
+    })();
+
+    // --- Quick Insights Card ---
+    (function renderInsights() {
+      const insights = D.readiness.key_insights.slice(0, 3);
+      document.getElementById('insightsList').innerHTML = insights.map(i =>
+        `<div class="flag-item"><div class="insight-bullet"></div><span style="font-size:var(--text-sm);">${i}</span></div>`
+      ).join('');
+    })();
+
+    // ============================================
+    // Interaction Handlers
+    // ============================================
+
+    function toggleExpand(card) {
+      const expand = card.querySelector('.card-expand-content');
+      const chevron = card.querySelector('.card-chevron');
+      if (expand) {
+        expand.classList.toggle('expanded');
+        if (chevron) chevron.classList.toggle('expanded');
+      }
+    }
+
+    function navigateTo(page) {
+      window.location.href = page;
+    }
+
+    // ============================================
+    // Helpers
+    // ============================================
+
+    function formatHours(hrs) {
+      const h = Math.floor(hrs);
+      const m = Math.round((hrs - h) * 60);
+      return h + 'h ' + m + 'm';
+    }
+
+    function formatTime(time24) {
+      const [h, m] = time24.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Health Tracker — Profile</title>
+  <link rel="stylesheet" href="design-system.css">
+  <style>
+    .profile-header {
+      text-align: center;
+      padding: var(--space-2xl) var(--space-xl);
+    }
+
+    .profile-avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: var(--radius-full);
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto var(--space-md);
+      font-size: 32px;
+      color: var(--text-inverse);
+      font-weight: 700;
+    }
+
+    .profile-name {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    .profile-streak {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-xs);
+      margin-top: var(--space-xs);
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+
+    .streak-fire {
+      color: #F59E0B;
+    }
+
+    /* Stats summary */
+    .profile-stats {
+      display: flex;
+      justify-content: space-around;
+      padding: var(--space-xl);
+      margin: 0 var(--space-xl);
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      margin-bottom: var(--space-xl);
+    }
+
+    .profile-stat {
+      text-align: center;
+    }
+
+    .profile-stat-value {
+      font-size: var(--text-xl);
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .profile-stat-label {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Menu sections */
+    .menu-section {
+      margin-bottom: var(--space-lg);
+    }
+
+    .menu-section-title {
+      font-size: var(--text-xs);
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 var(--space-lg);
+      margin-bottom: var(--space-sm);
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-lg);
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+    }
+
+    .menu-item:first-of-type {
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .menu-item:active {
+      background: var(--primary-bg);
+    }
+
+    .menu-item-left {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .menu-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      background: var(--primary-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .menu-label {
+      font-size: var(--text-base);
+      font-weight: 500;
+    }
+
+    .menu-sublabel {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
+
+    .menu-chevron {
+      color: var(--text-muted);
+      font-size: var(--text-lg);
+    }
+
+    .menu-toggle {
+      display: flex;
+      align-items: center;
+    }
+
+    /* Version */
+    .version-text {
+      text-align: center;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      padding: var(--space-xl);
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="screen">
+
+      <div class="status-bar">
+        <span>9:41</span>
+        <span></span>
+        <span>100%</span>
+      </div>
+
+      <div class="screen-content">
+
+        <!-- Profile Header -->
+        <div class="profile-header">
+          <div class="profile-avatar">D</div>
+          <div class="profile-name">Daniel</div>
+          <div class="profile-streak">
+            <span class="streak-fire">&#128293;</span>
+            <span>12 day streak</span>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="profile-stats">
+          <div class="profile-stat">
+            <div class="profile-stat-value">15</div>
+            <div class="profile-stat-label">Days Tracked</div>
+          </div>
+          <div class="profile-stat">
+            <div class="profile-stat-value">7.1</div>
+            <div class="profile-stat-label">Avg Readiness</div>
+          </div>
+          <div class="profile-stat">
+            <div class="profile-stat-value">7.0h</div>
+            <div class="profile-stat-label">Avg Sleep</div>
+          </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="menu-section">
+          <div class="menu-section-title">Reports</div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#128202;</div>
+              <div>
+                <div class="menu-label">Weekly Report</div>
+                <div class="menu-sublabel">Mar 11 - Mar 17 summary</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#128197;</div>
+              <div>
+                <div class="menu-label">Calendar View</div>
+                <div class="menu-sublabel">Full year heatmap</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#128229;</div>
+              <div>
+                <div class="menu-label">Export Data</div>
+                <div class="menu-sublabel">Download as CSV or JSON</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="menu-section">
+          <div class="menu-section-title">Settings</div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#128276;</div>
+              <div>
+                <div class="menu-label">Notifications</div>
+                <div class="menu-sublabel">Morning briefing, sleep review</div>
+              </div>
+            </div>
+            <div class="toggle-switch active"></div>
+          </div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#10003;</div>
+              <div>
+                <div class="menu-label">Habits</div>
+                <div class="menu-sublabel">Customize your 7 daily habits</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#127919;</div>
+              <div>
+                <div class="menu-label">Goals</div>
+                <div class="menu-sublabel">Steps, sleep, readiness targets</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#9881;</div>
+              <div>
+                <div class="menu-label">Garmin Sync</div>
+                <div class="menu-sublabel">Last sync: Today, 8:00 PM</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+        </div>
+
+        <!-- About -->
+        <div class="menu-section">
+          <div class="menu-section-title">About</div>
+          <div class="menu-item">
+            <div class="menu-item-left">
+              <div class="menu-icon">&#9432;</div>
+              <div>
+                <div class="menu-label">About Health Tracker</div>
+              </div>
+            </div>
+            <span class="menu-chevron">&#8250;</span>
+          </div>
+        </div>
+
+        <div class="version-text">Health Tracker v1.0</div>
+
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
+          <div class="tab-icon">&#8962;</div>
+          <div class="tab-label">Today</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-label">Trends</div>
+        </div>
+        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+          <div class="tab-center-button">+</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+          <div class="tab-icon">&#9883;</div>
+          <div class="tab-label">Activity</div>
+        </div>
+        <div class="tab-item tab-item-active">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
+          <div class="tab-label">Profile</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function navigateTo(page) { window.location.href = page; }
+  </script>
+</body>
+</html>

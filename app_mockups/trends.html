@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Health Tracker — Trends</title>
+  <link rel="stylesheet" href="design-system.css">
+  <style>
+    .trends-header {
+      padding: var(--space-sm) var(--space-xl) var(--space-md);
+    }
+
+    .trends-title {
+      font-size: var(--text-2xl);
+      font-weight: 700;
+      margin-bottom: var(--space-md);
+    }
+
+    /* Chart area */
+    .chart-container {
+      padding: var(--space-lg) 0;
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: 180px;
+    }
+
+    .chart-x-labels {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 var(--space-sm);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
+    .chart-y-labels {
+      position: absolute;
+      right: var(--space-sm);
+      top: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    /* Stats summary */
+    .stats-row {
+      display: flex;
+      justify-content: space-around;
+      padding: var(--space-lg) 0;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    .stat-label {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+    }
+
+    .stat-trend {
+      font-size: var(--text-sm);
+      font-weight: 600;
+    }
+
+    .trend-up { color: var(--status-green); }
+    .trend-down { color: var(--status-red); }
+    .trend-flat { color: var(--text-muted); }
+
+    /* Calendar heatmap */
+    .heatmap-container {
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .heatmap-container::-webkit-scrollbar { display: none; }
+
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: 40px repeat(31, 16px);
+      gap: 3px;
+      font-size: 9px;
+      min-width: fit-content;
+    }
+
+    .heatmap-month {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+    }
+
+    .heatmap-cell {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background: var(--border);
+    }
+
+    .heatmap-cell-empty {
+      background: transparent;
+    }
+
+    .heatmap-day-header {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: center;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="screen">
+
+      <div class="status-bar">
+        <span>9:41</span>
+        <span></span>
+        <span>100%</span>
+      </div>
+
+      <div class="screen-content">
+
+        <div class="trends-header">
+          <div class="trends-title">Trends</div>
+
+          <!-- Metric picker pills -->
+          <div class="pill-row" id="metricPills"></div>
+
+          <!-- Time range pills -->
+          <div class="pill-row" style="margin-top:var(--space-sm)" id="rangePills">
+            <div class="pill" data-range="7" onclick="setRange(7, this)">7D</div>
+            <div class="pill pill-active" data-range="14" onclick="setRange(14, this)">14D</div>
+            <div class="pill" data-range="30" onclick="setRange(30, this)">30D</div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="card animate-in">
+          <div class="chart-container" style="position:relative">
+            <svg class="chart-svg" id="trendChart" viewBox="0 0 340 180" preserveAspectRatio="none"></svg>
+            <div class="chart-x-labels" id="chartXLabels"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Stats row -->
+          <div class="stats-row" id="statsRow">
+            <div class="stat-item">
+              <div class="stat-value" id="statAvg">--</div>
+              <div class="stat-label">Average</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value" id="statBest">--</div>
+              <div class="stat-label">Best</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value" id="statWorst">--</div>
+              <div class="stat-label">Worst</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-trend" id="statTrend">--</div>
+              <div class="stat-label">Trend</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calendar Heatmap -->
+        <div class="card animate-in" style="margin-top:var(--space-md)">
+          <div class="card-header" onclick="toggleHeatmap()">
+            <div class="card-title">Calendar View</div>
+            <div class="card-chevron" id="heatmapChevron">&#9660;</div>
+          </div>
+          <div class="card-expand-content expanded" id="heatmapContent">
+            <div class="heatmap-container">
+              <div class="heatmap-grid" id="heatmapGrid"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
+          <div class="tab-icon">&#8962;</div>
+          <div class="tab-label">Today</div>
+        </div>
+        <div class="tab-item tab-item-active">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-label">Trends</div>
+        </div>
+        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+          <div class="tab-center-button">+</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+          <div class="tab-icon">&#9883;</div>
+          <div class="tab-label">Activity</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
+          <div class="tab-label">Profile</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="sample-data.js"></script>
+  <script>
+    function navigateTo(page) { window.location.href = page; }
+
+    // ============================================
+    // Metrics available for charting
+    // ============================================
+
+    const metrics = [
+      { key: 'readiness', label: 'Readiness', field: 'readiness', threshold: 'readiness_score', category: 'readiness' },
+      { key: 'sleep_score', label: 'Sleep Score', field: 'sleep_score', threshold: 'sleep_analysis_score', category: 'sleep' },
+      { key: 'total_sleep', label: 'Sleep Hrs', field: 'total_sleep', threshold: 'total_sleep_hrs', category: 'sleep' },
+      { key: 'hrv', label: 'HRV', field: 'hrv', threshold: 'overnight_hrv_ms', category: 'body' },
+      { key: 'rhr', label: 'Resting HR', field: 'rhr', threshold: 'resting_hr', category: 'body' },
+      { key: 'body_battery', label: 'Body Battery', field: 'body_battery', threshold: 'body_battery', category: 'body' },
+      { key: 'steps', label: 'Steps', field: 'steps', threshold: 'steps', category: 'body' },
+      { key: 'stress', label: 'Stress', field: 'stress', threshold: 'avg_stress_level', category: 'body' },
+      { key: 'morning_energy', label: 'AM Energy', field: 'morning_energy', threshold: 'morning_energy', category: 'subjective' },
+      { key: 'day_rating', label: 'Day Rating', field: 'day_rating', threshold: 'day_rating', category: 'subjective' },
+      { key: 'cognition', label: 'Cognition', field: 'cognition', threshold: 'cognition', category: 'subjective' },
+      { key: 'habits', label: 'Habits', field: 'habits', threshold: 'habits_total', category: 'subjective' },
+    ];
+
+    let currentMetric = metrics[0];
+    let currentRange = 14;
+
+    // ============================================
+    // Render metric pills
+    // ============================================
+
+    (function renderPills() {
+      document.getElementById('metricPills').innerHTML = metrics.map((m, i) =>
+        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-metric="${m.key}" onclick="setMetric('${m.key}', this)">${m.label}</div>`
+      ).join('');
+    })();
+
+    function setMetric(key, el) {
+      currentMetric = metrics.find(m => m.key === key);
+      document.querySelectorAll('#metricPills .pill').forEach(p => p.classList.remove('pill-active'));
+      el.classList.add('pill-active');
+      renderChart();
+      renderHeatmap();
+    }
+
+    function setRange(days, el) {
+      currentRange = days;
+      document.querySelectorAll('#rangePills .pill').forEach(p => p.classList.remove('pill-active'));
+      el.classList.add('pill-active');
+      renderChart();
+    }
+
+    // ============================================
+    // Render chart
+    // ============================================
+
+    function renderChart() {
+      const data = SAMPLE_DATA.history.slice(-currentRange);
+      const values = data.map(d => d[currentMetric.field]);
+      const t = SAMPLE_DATA.thresholds[currentMetric.threshold];
+
+      const allVals = [...values, t.red, t.yellow || t.green, t.green].filter(v => v != null);
+      const min = Math.min(...allVals) * 0.9;
+      const max = Math.max(...allVals) * 1.1;
+
+      const w = 340, h = 160, pad = 15;
+
+      function yPos(v) {
+        return h - pad - ((v - min) / (max - min)) * (h - 2 * pad);
+      }
+
+      let svg = '';
+
+      // Threshold zones
+      const yG = yPos(t.green);
+      const yY = yPos(t.yellow || ((t.red + t.green) / 2));
+      const yR = yPos(t.red);
+
+      if (t.type === 'higher_better') {
+        svg += `<rect x="${pad}" y="0" width="${w-2*pad}" height="${Math.max(0,yG)}" fill="rgba(34,197,94,0.06)" />`;
+        svg += `<rect x="${pad}" y="${yG}" width="${w-2*pad}" height="${Math.max(0,yY-yG)}" fill="rgba(245,158,11,0.06)" />`;
+        svg += `<rect x="${pad}" y="${yY}" width="${w-2*pad}" height="${h-yY-pad}" fill="rgba(239,68,68,0.06)" />`;
+        svg += `<line x1="${pad}" y1="${yG}" x2="${w-pad}" y2="${yG}" stroke="var(--status-green)" stroke-width="0.5" stroke-dasharray="4"/>`;
+        svg += `<line x1="${pad}" y1="${yY}" x2="${w-pad}" y2="${yY}" stroke="var(--status-yellow)" stroke-width="0.5" stroke-dasharray="4"/>`;
+      } else {
+        svg += `<rect x="${pad}" y="0" width="${w-2*pad}" height="${Math.max(0,yR)}" fill="rgba(239,68,68,0.06)" />`;
+        svg += `<rect x="${pad}" y="${yR}" width="${w-2*pad}" height="${Math.max(0,yG-yR)}" fill="rgba(245,158,11,0.06)" />`;
+        svg += `<rect x="${pad}" y="${yG}" width="${w-2*pad}" height="${h-yG-pad}" fill="rgba(34,197,94,0.06)" />`;
+        svg += `<line x1="${pad}" y1="${yG}" x2="${w-pad}" y2="${yG}" stroke="var(--status-green)" stroke-width="0.5" stroke-dasharray="4"/>`;
+        svg += `<line x1="${pad}" y1="${yR}" x2="${w-pad}" y2="${yR}" stroke="var(--status-red)" stroke-width="0.5" stroke-dasharray="4"/>`;
+      }
+
+      // Data points
+      const points = values.map((v, i) => ({
+        x: pad + (i / Math.max(values.length - 1, 1)) * (w - 2 * pad),
+        y: yPos(v),
+        v
+      }));
+
+      // Area fill
+      if (points.length > 1) {
+        const areaPath = `M${points[0].x},${points[0].y} ` +
+          points.slice(1).map(p => `L${p.x},${p.y}`).join(' ') +
+          ` L${points[points.length-1].x},${h-pad} L${points[0].x},${h-pad} Z`;
+        svg += `<path d="${areaPath}" fill="var(--primary)" opacity="0.08"/>`;
+      }
+
+      // Line
+      if (points.length > 1) {
+        const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
+        svg += `<path d="${linePath}" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+      }
+
+      // Dots
+      points.forEach(p => {
+        const color = getStatusColor(p.v, currentMetric.threshold);
+        svg += `<circle cx="${p.x}" cy="${p.y}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`;
+      });
+
+      document.getElementById('trendChart').innerHTML = svg;
+
+      // X labels
+      const labelIndices = [0, Math.floor(data.length / 2), data.length - 1];
+      document.getElementById('chartXLabels').innerHTML = data.map((d, i) => {
+        if (!labelIndices.includes(i)) return '<span></span>';
+        const date = new Date(d.date + 'T12:00:00');
+        return `<span>${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`;
+      }).join('');
+
+      // Stats
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const best = t.type === 'higher_better' ? Math.max(...values) : Math.min(...values);
+      const worst = t.type === 'higher_better' ? Math.min(...values) : Math.max(...values);
+
+      document.getElementById('statAvg').textContent = avg.toFixed(1);
+      document.getElementById('statBest').textContent = best.toFixed ? best.toFixed(1) : best;
+      document.getElementById('statWorst').textContent = worst.toFixed ? worst.toFixed(1) : worst;
+
+      // Trend (simple linear regression direction)
+      const n = values.length;
+      const xMean = (n - 1) / 2;
+      const yMean = avg;
+      let num = 0, den = 0;
+      values.forEach((v, i) => { num += (i - xMean) * (v - yMean); den += (i - xMean) ** 2; });
+      const slope = den ? num / den : 0;
+
+      const trendEl = document.getElementById('statTrend');
+      if (Math.abs(slope) < 0.1) {
+        trendEl.textContent = '-> Stable';
+        trendEl.className = 'stat-trend trend-flat';
+      } else if ((slope > 0 && t.type === 'higher_better') || (slope < 0 && t.type === 'lower_better')) {
+        trendEl.textContent = '^ Improving';
+        trendEl.className = 'stat-trend trend-up';
+      } else {
+        trendEl.textContent = 'v Declining';
+        trendEl.className = 'stat-trend trend-down';
+      }
+    }
+
+    // ============================================
+    // Calendar Heatmap
+    // ============================================
+
+    function renderHeatmap() {
+      const grid = document.getElementById('heatmapGrid');
+      const hist = SAMPLE_DATA.history;
+      const dateMap = {};
+      hist.forEach(d => { dateMap[d.date] = d[currentMetric.field]; });
+
+      // Show March 2026
+      const months = [{ year: 2026, month: 2, name: 'Mar' }]; // 0-indexed month
+
+      // Day headers
+      let html = '<div></div>';
+      for (let d = 1; d <= 31; d++) {
+        html += `<div class="heatmap-day-header">${d}</div>`;
+      }
+
+      months.forEach(m => {
+        html += `<div class="heatmap-month">${m.name}</div>`;
+        const daysInMonth = new Date(m.year, m.month + 1, 0).getDate();
+        for (let d = 1; d <= 31; d++) {
+          if (d > daysInMonth) {
+            html += '<div class="heatmap-cell heatmap-cell-empty"></div>';
+          } else {
+            const dateStr = `${m.year}-${String(m.month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const val = dateMap[dateStr];
+            if (val !== undefined) {
+              const color = getStatusColor(val, currentMetric.threshold);
+              html += `<div class="heatmap-cell" style="background:${color}" title="${dateStr}: ${val}"></div>`;
+            } else {
+              html += '<div class="heatmap-cell"></div>';
+            }
+          }
+        }
+      });
+
+      grid.innerHTML = html;
+    }
+
+    function toggleHeatmap() {
+      document.getElementById('heatmapContent').classList.toggle('expanded');
+      document.getElementById('heatmapChevron').classList.toggle('expanded');
+    }
+
+    // ============================================
+    // Initial render
+    // ============================================
+
+    renderChart();
+    renderHeatmap();
+  </script>
+</body>
+</html>

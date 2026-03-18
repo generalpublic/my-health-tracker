@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Health Tracker — Log Entry</title>
+  <link rel="stylesheet" href="design-system.css">
+  <style>
+    /* Log Hub and Entry Forms */
+
+    .hub-header {
+      text-align: center;
+      margin-bottom: var(--space-xl);
+    }
+
+    .hub-title {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    .hub-subtitle {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      margin-top: var(--space-xs);
+    }
+
+    /* Form views */
+    .form-view {
+      display: none;
+    }
+
+    .form-view.active {
+      display: block;
+    }
+
+    .form-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      margin-bottom: var(--space-xl);
+    }
+
+    .form-back {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-full);
+      background: var(--primary-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--primary);
+      font-size: var(--text-xl);
+    }
+
+    .form-title {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    /* Slider with big value display */
+    .big-slider {
+      margin-bottom: var(--space-2xl);
+    }
+
+    .big-slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: var(--space-md);
+    }
+
+    .big-slider-label {
+      font-size: var(--text-base);
+      font-weight: 600;
+    }
+
+    .big-slider-value {
+      font-size: var(--text-3xl);
+      font-weight: 800;
+      transition: color 0.2s ease;
+    }
+
+    .big-slider-anchors {
+      display: flex;
+      justify-content: space-between;
+      margin-top: var(--space-xs);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
+    /* Habit toggle row */
+    .habit-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-md) 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .habit-toggle:last-child {
+      border-bottom: none;
+    }
+
+    .habit-toggle-info {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .habit-toggle-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      background: var(--primary-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .habit-toggle-name {
+      font-size: var(--text-base);
+      font-weight: 500;
+    }
+
+    /* Meal card */
+    .meal-card {
+      margin-bottom: var(--space-lg);
+    }
+
+    .meal-label {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: var(--space-sm);
+    }
+
+    /* Macro inputs row */
+    .macro-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-md);
+      margin-bottom: var(--space-md);
+    }
+
+    .macro-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .macro-input-label {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .macro-input {
+      width: 100%;
+      padding: var(--space-sm) var(--space-md);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-base);
+      text-align: center;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+    }
+
+    .macro-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-bg);
+    }
+
+    /* Calorie summary bar */
+    .calorie-bar {
+      display: flex;
+      justify-content: space-around;
+      padding: var(--space-lg);
+      background: var(--primary-bg);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--space-xl);
+    }
+
+    .calorie-item {
+      text-align: center;
+    }
+
+    .calorie-value {
+      font-size: var(--text-lg);
+      font-weight: 700;
+    }
+
+    .calorie-label {
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+    }
+
+    /* Cognition stepper */
+    .cognition-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2xl);
+      padding: var(--space-3xl) 0;
+    }
+
+    .cognition-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: var(--radius-full);
+      border: 3px solid var(--primary);
+      background: transparent;
+      color: var(--primary);
+      font-size: var(--text-2xl);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .cognition-btn:active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .cognition-value {
+      font-size: 64px;
+      font-weight: 800;
+      min-width: 80px;
+      text-align: center;
+      transition: color 0.2s ease;
+    }
+
+    /* Success toast */
+    .toast {
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--text);
+      color: var(--text-inverse);
+      padding: var(--space-md) var(--space-2xl);
+      border-radius: var(--radius-full);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="screen">
+
+      <div class="status-bar">
+        <span>9:41</span>
+        <span></span>
+        <span>100%</span>
+      </div>
+
+      <div class="screen-content">
+
+        <!-- ========== HUB VIEW ========== -->
+        <div class="form-view active" id="hubView">
+          <div class="hub-header">
+            <div class="hub-title">Quick Log</div>
+            <div class="hub-subtitle">What would you like to log?</div>
+          </div>
+
+          <div class="category-grid">
+            <div class="category-card" onclick="showForm('morning')">
+              <div class="category-icon">&#9788;</div>
+              <div class="category-name">Morning</div>
+              <div class="category-status category-logged"></div>
+            </div>
+            <div class="category-card" onclick="showForm('midday')">
+              <div class="category-icon">&#9728;</div>
+              <div class="category-name">Midday</div>
+              <div class="category-status category-logged"></div>
+            </div>
+            <div class="category-card" onclick="showForm('evening')">
+              <div class="category-icon">&#127749;</div>
+              <div class="category-name">Evening</div>
+              <div class="category-status category-pending"></div>
+            </div>
+            <div class="category-card" onclick="showForm('nutrition')">
+              <div class="category-icon">&#127860;</div>
+              <div class="category-name">Nutrition</div>
+              <div class="category-status category-logged"></div>
+            </div>
+            <div class="category-card" onclick="showForm('cognition')">
+              <div class="category-icon">&#129504;</div>
+              <div class="category-name">Cognition</div>
+              <div class="category-status category-logged"></div>
+            </div>
+            <div class="category-card" onclick="showForm('sleep_notes')">
+              <div class="category-icon">&#127769;</div>
+              <div class="category-name">Sleep Notes</div>
+              <div class="category-status category-pending"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== MORNING CHECK-IN ========== -->
+        <div class="form-view" id="morningForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Morning Check-in</div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Morning Energy</span>
+              <span class="big-slider-value" id="morningEnergyVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'morningEnergyVal', 'morning_energy')">
+            <div class="big-slider-anchors">
+              <span>Exhausted</span>
+              <span>Energized</span>
+            </div>
+          </div>
+
+          <div class="card-title" style="margin-bottom:var(--space-md)">Habits</div>
+          <div id="morningHabits"></div>
+
+          <div style="margin-top:var(--space-2xl)">
+            <button class="btn-primary" onclick="saveForm('Morning check-in saved')">Save Morning Check-in</button>
+          </div>
+        </div>
+
+        <!-- ========== MIDDAY CHECK-IN ========== -->
+        <div class="form-view" id="middayForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Midday Check-in</div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Energy</span>
+              <span class="big-slider-value" id="midEnergyVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midEnergyVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Dragging</span><span>Energized</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Focus</span>
+              <span class="big-slider-value" id="midFocusVal">8</span>
+            </div>
+            <input type="range" min="1" max="10" value="8" oninput="updateSlider(this, 'midFocusVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Brain fog</span><span>Crystal clear</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Mood</span>
+              <span class="big-slider-value" id="midMoodVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midMoodVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Body Feel</span>
+              <span class="big-slider-value" id="midBodyVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midBodyVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Sore/heavy</span><span>Light/strong</span></div>
+          </div>
+
+          <textarea class="text-input" placeholder="Any notes..." rows="2"></textarea>
+
+          <div style="margin-top:var(--space-xl)">
+            <button class="btn-primary" onclick="saveForm('Midday check-in saved')">Save Midday Check-in</button>
+          </div>
+        </div>
+
+        <!-- ========== EVENING REVIEW ========== -->
+        <div class="form-view" id="eveningForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Evening Review</div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Evening Energy</span>
+              <span class="big-slider-value" id="eveEnergyVal">6</span>
+            </div>
+            <input type="range" min="1" max="10" value="6" oninput="updateSlider(this, 'eveEnergyVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Depleted</span><span>Still going</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Evening Focus</span>
+              <span class="big-slider-value" id="eveFocusVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveFocusVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Scattered</span><span>Sharp</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Evening Mood</span>
+              <span class="big-slider-value" id="eveMoodVal">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveMoodVal', 'morning_energy')">
+            <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Perceived Stress</span>
+              <span class="big-slider-value" id="eveStressVal">3</span>
+            </div>
+            <input type="range" min="1" max="10" value="3" class="slider-inverted" oninput="updateSliderInverted(this, 'eveStressVal')">
+            <div class="big-slider-anchors"><span>Calm</span><span>Overwhelmed</span></div>
+          </div>
+
+          <div class="big-slider">
+            <div class="big-slider-header">
+              <span class="big-slider-label">Day Rating &#11088;</span>
+              <span class="big-slider-value" id="eveDayRating">7</span>
+            </div>
+            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveDayRating', 'day_rating')">
+            <div class="big-slider-anchors"><span>Terrible</span><span>Amazing</span></div>
+          </div>
+
+          <div class="card-title" style="margin-bottom:var(--space-md)">Update Habits</div>
+          <div id="eveningHabits"></div>
+
+          <textarea class="text-input" placeholder="Evening notes..." rows="3" style="margin-top:var(--space-lg)"></textarea>
+
+          <div style="margin-top:var(--space-xl)">
+            <button class="btn-primary" onclick="saveForm('Evening review saved')">Save Evening Review</button>
+          </div>
+        </div>
+
+        <!-- ========== NUTRITION ========== -->
+        <div class="form-view" id="nutritionForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Nutrition</div>
+          </div>
+
+          <!-- Calorie summary (auto from Garmin) -->
+          <div class="calorie-bar">
+            <div class="calorie-item">
+              <div class="calorie-value">2,380</div>
+              <div class="calorie-label">Burned</div>
+            </div>
+            <div class="calorie-item">
+              <div class="calorie-value" id="calConsumed">1,650</div>
+              <div class="calorie-label">Consumed</div>
+            </div>
+            <div class="calorie-item">
+              <div class="calorie-value" id="calBalance" style="color:var(--status-red)">-730</div>
+              <div class="calorie-label">Balance</div>
+            </div>
+          </div>
+
+          <div class="meal-card">
+            <div class="meal-label">Breakfast</div>
+            <textarea class="text-input" rows="2" placeholder="What did you eat?">3 eggs scrambled, whole wheat toast, avocado, coffee</textarea>
+          </div>
+
+          <div class="meal-card">
+            <div class="meal-label">Lunch</div>
+            <textarea class="text-input" rows="2" placeholder="What did you eat?">Grilled chicken salad, quinoa, mixed greens, olive oil dressing</textarea>
+          </div>
+
+          <div class="meal-card">
+            <div class="meal-label">Dinner</div>
+            <textarea class="text-input" rows="2" placeholder="What did you eat?"></textarea>
+          </div>
+
+          <div class="meal-card">
+            <div class="meal-label">Snacks</div>
+            <textarea class="text-input" rows="2" placeholder="Snacks throughout the day">Greek yogurt, banana, almonds</textarea>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="macro-row">
+            <div class="macro-input-group">
+              <span class="macro-input-label">Calories</span>
+              <input class="macro-input" type="number" value="1650" placeholder="kcal">
+            </div>
+            <div class="macro-input-group">
+              <span class="macro-input-label">Protein (g)</span>
+              <input class="macro-input" type="number" value="95" placeholder="g">
+            </div>
+            <div class="macro-input-group">
+              <span class="macro-input-label">Carbs (g)</span>
+              <input class="macro-input" type="number" value="180" placeholder="g">
+            </div>
+          </div>
+
+          <div class="macro-row">
+            <div class="macro-input-group">
+              <span class="macro-input-label">Fats (g)</span>
+              <input class="macro-input" type="number" value="62" placeholder="g">
+            </div>
+            <div class="macro-input-group">
+              <span class="macro-input-label">Water (L)</span>
+              <input class="macro-input" type="number" value="2.5" step="0.5" placeholder="L">
+            </div>
+            <div class="macro-input-group">
+              <span class="macro-input-label">&nbsp;</span>
+            </div>
+          </div>
+
+          <textarea class="text-input" placeholder="Nutrition notes..." rows="2"></textarea>
+
+          <div style="margin-top:var(--space-xl)">
+            <button class="btn-primary" onclick="saveForm('Nutrition saved')">Save Nutrition</button>
+          </div>
+        </div>
+
+        <!-- ========== COGNITION ========== -->
+        <div class="form-view" id="cognitionForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Cognition</div>
+          </div>
+
+          <div style="text-align:center; margin-bottom:var(--space-lg);">
+            <div style="font-size:var(--text-sm); color:var(--text-secondary);">How sharp is your mind today?</div>
+          </div>
+
+          <div class="cognition-stepper">
+            <button class="cognition-btn" onclick="stepCognition(-1)">-</button>
+            <div class="cognition-value" id="cognitionVal">8</div>
+            <button class="cognition-btn" onclick="stepCognition(1)">+</button>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; padding:0 var(--space-3xl); margin-bottom:var(--space-2xl);">
+            <span class="text-xs text-muted">Brain fog</span>
+            <span class="text-xs text-muted">Crystal clear</span>
+          </div>
+
+          <textarea class="text-input" placeholder="Mental clarity, focus, brain fog notes..." rows="3">Sharp focus, good recall</textarea>
+
+          <div style="margin-top:var(--space-xl)">
+            <button class="btn-primary" onclick="saveForm('Cognition saved')">Save Cognition</button>
+          </div>
+        </div>
+
+        <!-- ========== SLEEP NOTES ========== -->
+        <div class="form-view" id="sleep_notesForm">
+          <div class="form-header">
+            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-title">Sleep Notes</div>
+          </div>
+
+          <div style="text-align:center; margin-bottom:var(--space-xl);">
+            <div style="font-size:var(--text-sm); color:var(--text-secondary);">Anything that affected your sleep last night?</div>
+          </div>
+
+          <textarea class="text-input" placeholder="Late caffeine, alcohol, stress, new mattress, noise, temperature..." rows="5"></textarea>
+
+          <div style="margin-top:var(--space-xl)">
+            <button class="btn-primary" onclick="saveForm('Sleep notes saved')">Save Sleep Notes</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
+          <div class="tab-icon">&#8962;</div>
+          <div class="tab-label">Today</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-label">Trends</div>
+        </div>
+        <div class="tab-item tab-center">
+          <div class="tab-center-button" onclick="showHub()" style="background:var(--primary-gradient);">+</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+          <div class="tab-icon">&#9883;</div>
+          <div class="tab-label">Activity</div>
+        </div>
+        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
+          <div class="tab-label">Profile</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="sample-data.js"></script>
+  <script>
+    const D = SAMPLE_DATA.today;
+
+    // ============================================
+    // Navigation
+    // ============================================
+
+    function showHub() {
+      document.querySelectorAll('.form-view').forEach(v => v.classList.remove('active'));
+      document.getElementById('hubView').classList.add('active');
+      document.querySelector('.screen-content').scrollTop = 0;
+    }
+
+    function showForm(name) {
+      document.querySelectorAll('.form-view').forEach(v => v.classList.remove('active'));
+      document.getElementById(name + 'Form').classList.add('active');
+      document.querySelector('.screen-content').scrollTop = 0;
+    }
+
+    function navigateTo(page) {
+      window.location.href = page;
+    }
+
+    // ============================================
+    // Slider updates
+    // ============================================
+
+    function updateSlider(input, valueId, metric) {
+      const val = parseInt(input.value);
+      const el = document.getElementById(valueId);
+      el.textContent = val;
+      el.style.color = getStatusColor(val, metric);
+    }
+
+    function updateSliderInverted(input, valueId) {
+      const val = parseInt(input.value);
+      const el = document.getElementById(valueId);
+      el.textContent = val;
+      // Inverted: low = green, high = red
+      const color = getStatusColor(val, 'avg_stress_level'); // reuse lower_better threshold pattern
+      el.style.color = color;
+    }
+
+    // ============================================
+    // Cognition stepper
+    // ============================================
+
+    let cognitionScore = 8;
+
+    function stepCognition(delta) {
+      cognitionScore = Math.max(1, Math.min(10, cognitionScore + delta));
+      const el = document.getElementById('cognitionVal');
+      el.textContent = cognitionScore;
+      el.style.color = getStatusColor(cognitionScore, 'cognition');
+    }
+
+    // Initialize cognition color
+    document.getElementById('cognitionVal').style.color = getStatusColor(8, 'cognition');
+
+    // ============================================
+    // Habit toggles
+    // ============================================
+
+    const habits = [
+      { key: 'wake_930', label: 'Wake at 9:30 AM', icon: '&#9788;' },
+      { key: 'no_morning_screens', label: 'No morning screens', icon: '&#128241;' },
+      { key: 'creatine_hydrate', label: 'Creatine & Hydrate', icon: '&#128167;' },
+      { key: 'walk_breathing', label: '20 min walk + breathing', icon: '&#127939;' },
+      { key: 'physical_activity', label: 'Physical Activity', icon: '&#9889;' },
+      { key: 'no_screens_bed', label: 'No screens before bed', icon: '&#128564;' },
+      { key: 'bed_10pm', label: 'Bed at 10 PM', icon: '&#127769;' }
+    ];
+
+    function renderHabits(containerId) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = habits.map(h => {
+        const done = D.daily_log.habits[h.key];
+        return `
+          <div class="habit-toggle">
+            <div class="habit-toggle-info">
+              <div class="habit-toggle-icon">${h.icon}</div>
+              <div class="habit-toggle-name">${h.label}</div>
+            </div>
+            <div class="toggle-switch ${done ? 'active' : ''}" onclick="this.classList.toggle('active')"></div>
+          </div>`;
+      }).join('');
+    }
+
+    renderHabits('morningHabits');
+    renderHabits('eveningHabits');
+
+    // ============================================
+    // Save + Toast
+    // ============================================
+
+    function saveForm(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = '&#10003; ' + message;
+      toast.innerHTML = '&#10003; ' + message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+      setTimeout(() => showHub(), 1500);
+    }
+
+    // ============================================
+    // Initialize slider colors
+    // ============================================
+
+    document.querySelectorAll('.big-slider-value').forEach(el => {
+      const val = parseInt(el.textContent);
+      if (!isNaN(val)) {
+        el.style.color = getStatusColor(val, 'morning_energy');
+      }
+    });
+
+    // Special: stress is inverted
+    const stressEl = document.getElementById('eveStressVal');
+    if (stressEl) {
+      stressEl.style.color = getStatusColor(parseInt(stressEl.textContent), 'avg_stress_level');
+    }
+  </script>
+</body>
+</html>
