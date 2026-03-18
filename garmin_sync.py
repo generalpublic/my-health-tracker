@@ -102,15 +102,8 @@ def _retry_pending_syncs(wb, sheet):
         try:
             target_date = date.fromisoformat(date_str)
             data = get_garmin_data(target_date, target_date)
-            row = build_garmin_row(target_date, data)
-            upsert_row(sheet, date_str, row)
-            write_to_session_log(wb, target_date, data)
-            write_to_sleep_log(wb, target_date, data)
-            write_to_nutrition_log(wb, target_date, data)
-            write_to_daily_log(wb, target_date)
-            archive_sheet = get_or_create_archive_sheet(wb)
-            write_to_archive(archive_sheet, date_str, data)
-            print(f"    -> {date_str} synced to Sheets successfully")
+            sync_single_date(wb, sheet, target_date, data)
+            print(f"    -> {date_str} synced successfully (SQLite + Sheets)")
         except Exception as e:
             print(f"    -> {date_str} still failing: {e}")
             still_pending.append(date_str)
@@ -344,16 +337,16 @@ def migrate_sleep_analysis_col():
             except (ValueError, TypeError):
                 pass
 
-    end_col = chr(64 + len(new_headers))
+    from gspread.utils import rowcol_to_a1
+    end_col = rowcol_to_a1(1, len(new_headers)).rstrip("1")
     range_name = f"A1:{end_col}{len(new_all_rows)}"
     sheet.update(range_name=range_name, values=new_all_rows, value_input_option="RAW")
 
-    clear_start_col = chr(65 + len(new_headers))
-    if clear_start_col <= 'Z':
-        try:
-            sheet.batch_clear([f"{clear_start_col}1:Z{len(new_all_rows)}"])
-        except Exception:
-            pass
+    clear_start_col = rowcol_to_a1(1, len(new_headers) + 1).rstrip("1")
+    try:
+        sheet.batch_clear([f"{clear_start_col}1:Z{len(new_all_rows)}"])
+    except Exception:
+        pass
 
     apply_yellow_columns(wb, "Sleep", SLEEP_MANUAL_COLS)
     bold_headers(wb, "Sleep")

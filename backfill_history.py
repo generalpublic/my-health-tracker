@@ -16,7 +16,7 @@ Usage:
 
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 # Reuse all logic from garmin_sync.py
@@ -340,8 +340,8 @@ def _fetch_data(client, target_date):
             data["sleep_score"] = overall.get("value", "") if isinstance(overall, dict) else ""
             start_local = dto.get("sleepStartTimestampLocal")
             end_local   = dto.get("sleepEndTimestampLocal")
-            data["sleep_bedtime"]   = datetime.fromtimestamp(start_local/1000, tz=timezone.utc).strftime("%H:%M") if start_local else ""
-            data["sleep_wake_time"] = datetime.fromtimestamp(end_local/1000,   tz=timezone.utc).strftime("%H:%M") if end_local   else ""
+            data["sleep_bedtime"]   = datetime.fromtimestamp(start_local/1000).strftime("%H:%M") if start_local else ""
+            data["sleep_wake_time"] = datetime.fromtimestamp(end_local/1000).strftime("%H:%M") if end_local   else ""
             data["sleep_time_in_bed"] = round((end_local - start_local)/1000/3600, 2) if start_local and end_local else ""
             data["sleep_deep_min"]  = round(dto.get("deepSleepSeconds",  0)/60, 1)
             data["sleep_light_min"] = round(dto.get("lightSleepSeconds", 0)/60, 1)

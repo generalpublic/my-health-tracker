@@ -17,6 +17,9 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 NUTRITIONIX_APP_ID = os.environ.get("NUTRITIONIX_APP_ID", "")
 NUTRITIONIX_APP_KEY = os.environ.get("NUTRITIONIX_APP_KEY", "")
 SHEET_ID = os.environ.get("SHEET_ID", "")
+CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+MAX_BODY_SIZE = 65536  # 64 KB
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -211,7 +214,7 @@ def json_response(handler, status, body):
     """Write a JSON response to the handler."""
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
     handler.send_header("Access-Control-Allow-Headers",
                         "Content-Type, Authorization, X-TOTP-Code")
     handler.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
@@ -220,8 +223,13 @@ def json_response(handler, status, body):
 
 
 def read_body(handler):
-    """Read and parse JSON request body."""
+    """Read and parse JSON request body. Rejects payloads over MAX_BODY_SIZE."""
     content_length = int(handler.headers.get("Content-Length", 0))
     if content_length == 0:
         return {}
-    return json.loads(handler.rfile.read(content_length))
+    if content_length > MAX_BODY_SIZE:
+        return None
+    try:
+        return json.loads(handler.rfile.read(content_length))
+    except (json.JSONDecodeError, ValueError):
+        return None

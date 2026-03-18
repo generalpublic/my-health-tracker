@@ -250,13 +250,15 @@ def apply_sleep_color_grading(wb):
         _gradient_lower_better(hmap["Wake Variability (7d)"], 30, 60, 90),
     ]
 
-    # Bedtime discrete bands
+    # Bedtime discrete bands — derive column letter from hmap
+    bt_col = gspread.utils.rowcol_to_a1(1, hmap["Bedtime"] + 1)[0]  # e.g. "H"
+    bt = f"{bt_col}2"  # e.g. "H2"
     bedtime_rules = [
-        ('=AND(H2<>"", TIMEVALUE(H2)>=TIMEVALUE("20:00"), TIMEVALUE(H2)<TIMEVALUE("23:00"))', _GRADE_GREEN),
-        ('=AND(H2<>"", TIMEVALUE(H2)>=TIMEVALUE("23:00"))', _GRADE_LIGHT_GREEN),
-        ('=AND(H2<>"", TIMEVALUE(H2)>=TIMEVALUE("00:00"), TIMEVALUE(H2)<TIMEVALUE("01:00"))', _GRADE_YELLOW),
-        ('=AND(H2<>"", TIMEVALUE(H2)>=TIMEVALUE("01:00"), TIMEVALUE(H2)<TIMEVALUE("02:00"))', _GRADE_ORANGE_RED),
-        ('=AND(H2<>"", TIMEVALUE(H2)>=TIMEVALUE("02:00"), TIMEVALUE(H2)<TIMEVALUE("06:00"))', _GRADE_RED),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("20:00"), TIMEVALUE({bt})<TIMEVALUE("23:00"))', _GRADE_GREEN),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("23:00"))', _GRADE_LIGHT_GREEN),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("00:00"), TIMEVALUE({bt})<TIMEVALUE("01:00"))', _GRADE_YELLOW),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("01:00"), TIMEVALUE({bt})<TIMEVALUE("02:00"))', _GRADE_ORANGE_RED),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("02:00"), TIMEVALUE({bt})<TIMEVALUE("06:00"))', _GRADE_RED),
     ]
     for formula, color in reversed(bedtime_rules):
         requests.append(_bedtime_band(formula, color))

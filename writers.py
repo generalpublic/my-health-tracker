@@ -218,7 +218,7 @@ def write_to_nutrition_log(wb, target_date, data):
             "",  # P notes
         ]
         sheet.append_row(row)
-        new_row_index = len(sheet.col_values(2))
+        new_row_index = len(sheet.get_all_values())
         row[14] = f'=IF(J{new_row_index}<>"",J{new_row_index}-C{new_row_index},"")'
         sheet.update(range_name=f"O{new_row_index}", values=[[row[14]]], value_input_option="USER_ENTERED")
         print(f"  Nutrition: logged {date_str}.")
@@ -334,7 +334,9 @@ def _verify_sleep_row_alignment(sheet, row_index):
         for ci, label in [(9, "Bed Var"), (10, "Wake Var")]:
             val = row[ci] if len(row) > ci else ""
             if val and not val.replace(".", "").replace("-", "").isdigit():
-                errors.append(f"{chr(65+ci)}{row_index}({label})='{val[:30]}' — expected numeric")
+                from gspread.utils import rowcol_to_a1
+                col_letter = rowcol_to_a1(1, ci + 1).rstrip("1")
+                errors.append(f"{col_letter}{row_index}({label})='{val[:30]}' — expected numeric")
         # Sleep Feedback (Y, index 24) should be text or empty, not a pure number
         fb = row[24] if len(row) > 24 else ""
         if fb and fb.replace(".", "").isdigit() and float(fb) < 200:

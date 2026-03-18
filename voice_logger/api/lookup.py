@@ -23,6 +23,9 @@ class handler(BaseHTTPRequestHandler):
             return
 
         body = read_body(self)
+        if body is None:
+            json_response(self, 400, {"error": "Invalid JSON"})
+            return
         query = body.get("nutritionix_query", "").strip()
 
         if not query:

@@ -9,6 +9,7 @@ Usage:
 """
 
 from utils import get_workbook
+from schema import SESSION_LOG_HEADERS
 
 
 def setup_analysis_tab(wb):
@@ -67,21 +68,21 @@ def setup_analysis_tab(wb):
     sheet.update("A34", [
         ["Metric", "Avg HRV (ms)"],
         ["Full habit day (7/7) -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!K2:K1000=7,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!K2:K1000=7,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["Incomplete day (<7 habits) -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF((\'Daily Log\'!K2:K1000<7)*(\'Daily Log\'!K2:K1000<>""),IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF((\'Daily Log\'!K2:K1000<7)*(\'Daily Log\'!K2:K1000<>""),IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["Bed at 10 PM -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!J2:J1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!J2:J1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["Bed at 10 PM missed -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!J2:J1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!J2:J1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["No screens before bed -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!I2:I1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!I2:I1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["No screens before bed missed -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!I2:I1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!I2:I1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["Physical activity -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!H2:H1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!H2:H1000=TRUE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
         ["Physical activity missed -> HRV next morning",
-         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!H2:H1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
+         '=IFERROR(AVERAGE(ARRAYFORMULA(IF(\'Daily Log\'!H2:H1000=FALSE,IFERROR(VLOOKUP(\'Daily Log\'!B2:B1000+1,{Garmin!B2:B1000,Garmin!D2:D1000},2,0),""),""))),"No data yet")'],
     ])
 
     # Section: Morning Energy Score
@@ -135,31 +136,7 @@ def setup_session_log_tab(wb):
     except Exception:
         sheet = wb.add_worksheet(title="Session Log", rows=1000, cols=22)
 
-    headers = [
-        "Day",                         # A
-        "Date",                        # B
-        "Session Type",                # C
-        "Perceived Effort",            # D
-        "Post-Workout Energy (1-10)", # E
-        "Notes",                       # F
-        "Activity Name",               # G
-        "Duration (min)",              # H
-        "Distance (mi)",               # I
-        "Avg HR",                      # J
-        "Max HR",                      # K
-        "Calories",                    # L
-        "Aerobic TE (0-5)",            # M
-        "Anaerobic TE (0-5)",          # N
-        "Zone 1 (min)",                # O
-        "Zone 2 (min)",                # P
-        "Zone 3 (min)",                # Q
-        "Zone 4 (min)",                # R
-        "Zone 5 (min)",                # S
-        "Zone Ranges",                 # T
-        "Source",                      # U
-        "Elevation (m)",               # V
-    ]
-    sheet.update(range_name="A1", values=[headers])
+    sheet.update(range_name="A1", values=[SESSION_LOG_HEADERS])
     sheet.format("A1:V1", {"textFormat": {"bold": True}})
 
     # Add Perceived Effort dropdown to column D (rows 2-1000)
@@ -234,7 +211,9 @@ def setup_sleep_tab(wb):
 
     from schema import SLEEP_HEADERS
     sheet.update(range_name="A1", values=[SLEEP_HEADERS])
-    sheet.format(f"A1:{chr(64+len(SLEEP_HEADERS))}1", {"textFormat": {"bold": True}})
+    from gspread.utils import rowcol_to_a1
+    end_col = rowcol_to_a1(1, len(SLEEP_HEADERS)).rstrip("1")
+    sheet.format(f"A1:{end_col}1", {"textFormat": {"bold": True}})
     print("  Sleep tab headers updated.")
 
 

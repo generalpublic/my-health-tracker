@@ -265,7 +265,7 @@ def migrate_habits_data(wb, sheet):
         return
 
     # Sort newest-first
-    new_rows.sort(key=lambda r: r[0], reverse=True)
+    new_rows.sort(key=lambda r: r[1], reverse=True)
 
     # Write all rows at once
     sheet.update(

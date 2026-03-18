@@ -2,11 +2,15 @@
 
 from http.server import BaseHTTPRequestHandler
 
+import re
+
 from _shared import (
     authenticate, json_response, read_body, get_workbook, date_to_day, today_str,
     NUTRITION_HEADERS, STRENGTH_LOG_HEADERS,
     MEAL_TYPE_COLS, COL_TOTAL_CONSUMED, COL_PROTEIN, COL_CARBS, COL_FATS, COL_NOTES,
 )
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _safe_float(val):
@@ -28,6 +32,8 @@ def _log_nutrition(wb, body):
     - Auto columns A-E are never touched (garmin_sync owns those)
     """
     date_str = body.get("date", today_str())
+    if not _DATE_RE.match(date_str):
+        return 400, {"error": f"Invalid date format: {date_str}. Must be YYYY-MM-DD"}
     meal_type = body.get("meal_type", "Snacks")
     meal_desc = body.get("meal_description", "")
     calories = body.get("calories", 0)
@@ -145,14 +151,17 @@ def _log_nutrition(wb, body):
         # Set the specific meal column
         row[meal_col] = meal_desc
 
-        sheet.append_row(row, value_input_option="USER_ENTERED")
+        # Write with RAW to preserve date as text, then re-write numeric cols + formula
+        sheet.append_row(row, value_input_option="RAW")
 
-        # Add the balance formula
         new_row_index = len(sheet.col_values(2))
-        formula = f'=IF(J{new_row_index}<>"",J{new_row_index}-C{new_row_index},"")'
+        # Re-write numeric columns (J-N) with USER_ENTERED so numbers are numeric
         sheet.update(
-            range_name=f"O{new_row_index}",
-            values=[[formula]],
+            range_name=f"J{new_row_index}:O{new_row_index}",
+            values=[[
+                calories, protein, carbs, fat, "",
+                f'=IF(J{new_row_index}<>"",J{new_row_index}-C{new_row_index},"")',
+            ]],
             value_input_option="USER_ENTERED",
         )
 
@@ -175,6 +184,8 @@ def _log_workout(wb, body):
     entries for the same exercise are valid (different sets).
     """
     date_str = body.get("date", today_str())
+    if not _DATE_RE.match(date_str):
+        return 400, {"error": f"Invalid date format: {date_str}. Must be YYYY-MM-DD"}
     exercises = body.get("exercises", [])
     session_notes = body.get("session_notes", "")
 
@@ -229,6 +240,9 @@ class handler(BaseHTTPRequestHandler):
             return
 
         body = read_body(self)
+        if body is None:
+            json_response(self, 400, {"error": "Invalid JSON"})
+            return
         mode = body.get("mode", "")
 
         if mode not in ("nutrition", "workout"):

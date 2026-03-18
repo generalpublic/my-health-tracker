@@ -66,8 +66,8 @@ TYPE_RULES = {
         ("H", "HH:MM or empty",  is_time_hhmm,        "Bedtime must be HH:MM — if decimal, USER_ENTERED was used"),
         ("I", "HH:MM or empty",  is_time_hhmm,        "Wake Time must be HH:MM"),
         ("J", "numeric or empty", lambda v: is_numeric(v),   "Time in Bed must be numeric"),
-        ("U", "numeric or empty", lambda v: is_numeric(v),   "Overnight HRV must be numeric"),
-        ("V", "numeric or empty", lambda v: is_numeric(v),   "Body Battery Gained must be numeric"),
+        ("W", "numeric or empty", lambda v: is_numeric(v),   "Overnight HRV must be numeric"),
+        ("X", "numeric or empty", lambda v: is_numeric(v),   "Body Battery Gained must be numeric"),
     ],
     "Nutrition": [
         ("B", "date format",     is_plain_text_date,  "Date must be YYYY-MM-DD text"),

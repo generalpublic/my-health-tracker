@@ -6,10 +6,9 @@ No Google Sheets dependency.
 """
 
 from garminconnect import Garmin
-from datetime import datetime, timezone
+from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
-import keyring
 import os
 
 from utils import _safe_float  # noqa: F401 — used by callers
@@ -17,7 +16,6 @@ from utils import _safe_float  # noqa: F401 — used by callers
 load_dotenv(Path(__file__).parent / ".env")
 
 GARMIN_EMAIL = os.getenv("GARMIN_EMAIL")
-GARMIN_PASSWORD = keyring.get_password("garmin_connect", GARMIN_EMAIL)
 
 # --- Data key constants ---
 
@@ -72,8 +70,8 @@ def _fetch_sleep_data(client, date_iso):
 
         start_local = dto.get("sleepStartTimestampLocal")
         end_local   = dto.get("sleepEndTimestampLocal")
-        data["sleep_bedtime"]   = datetime.fromtimestamp(start_local / 1000, tz=timezone.utc).strftime("%H:%M") if start_local else ""
-        data["sleep_wake_time"] = datetime.fromtimestamp(end_local / 1000, tz=timezone.utc).strftime("%H:%M") if end_local   else ""
+        data["sleep_bedtime"]   = datetime.fromtimestamp(start_local / 1000).strftime("%H:%M") if start_local else ""
+        data["sleep_wake_time"] = datetime.fromtimestamp(end_local / 1000).strftime("%H:%M") if end_local   else ""
 
         if start_local and end_local:
             data["sleep_time_in_bed"] = round((end_local - start_local) / 1000 / 3600, 2)
@@ -191,8 +189,19 @@ def get_garmin_data(today, yesterday):
     Returns a flat dict with all metrics.
     """
     print("Connecting to Garmin Connect...")
-    client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-    client.login()
+    import keyring
+    garmin_password = keyring.get_password("garmin_connect", GARMIN_EMAIL)
+    if not GARMIN_EMAIL or not garmin_password:
+        raise RuntimeError(
+            "Garmin credentials not configured. "
+            "Set GARMIN_EMAIL in .env and password via: "
+            "python -c \"import keyring; keyring.set_password('garmin_connect', 'EMAIL', 'PASSWORD')\""
+        )
+    client = Garmin(GARMIN_EMAIL, garmin_password)
+    try:
+        client.login()
+    except Exception as e:
+        raise RuntimeError(f"Garmin Connect login failed: {e}") from e
     print("Connected successfully.")
 
     t = today.isoformat()

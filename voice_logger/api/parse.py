@@ -3,13 +3,17 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 # Vercel resolves relative imports from the api/ directory
 from _shared import authenticate, json_response, read_body, ANTHROPIC_API_KEY
 
-# US Eastern timezone (UTC-5 / UTC-4 DST)
-ET = timezone(timedelta(hours=-5))
+try:
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+except ImportError:
+    from datetime import timezone, timedelta
+    ET = timezone(timedelta(hours=-5))
 
 NUTRITION_PROMPT = """You are a nutrition logging assistant. Parse the user's food description into structured data.
 
@@ -29,15 +33,15 @@ Rules:
 - Write a brief human-readable meal_description for the spreadsheet cell (keep it under 80 chars)
 
 Return ONLY valid JSON (no markdown, no explanation):
-{{
+{
   "meal_type": "Breakfast" | "Lunch" | "Dinner" | "Snacks",
   "meal_description": "brief summary for spreadsheet cell",
   "nutritionix_query": "full natural language query for Nutritionix API",
   "restaurant": "restaurant name or null if homemade/unknown",
   "notes": "any extra context the user mentioned (mood, feelings, etc.) or empty string"
-}}
+}
 
-User said: {text}"""
+<user_input>{text}</user_input>"""
 
 WORKOUT_PROMPT = """You are a strength training logging assistant. Parse the user's workout description into structured exercise sets.
 
@@ -62,21 +66,21 @@ Rules:
 - Extract overall session notes (mood, energy, feelings) separately from per-set notes
 
 Return ONLY valid JSON (no markdown, no explanation):
-{{
+{
   "exercises": [
-    {{
+    {
       "muscle_group": "Chest",
       "exercise": "Bench Press",
       "weight_lbs": 20,
       "reps": 20,
       "rpe": 3,
       "notes": "warm-up"
-    }}
+    }
   ],
   "session_notes": "overall mood/energy notes or empty string"
-}}
+}
 
-User said: {text}"""
+<user_input>{text}</user_input>"""
 
 
 class handler(BaseHTTPRequestHandler):
@@ -92,12 +96,16 @@ class handler(BaseHTTPRequestHandler):
 
         # Parse request
         body = read_body(self)
+        if body is None:
+            json_response(self, 400, {"error": "Invalid JSON"})
+            return
         text = body.get("text", "").strip()
         mode = body.get("mode", "").strip()
 
         if not text:
             json_response(self, 400, {"error": "Missing 'text' field"})
             return
+        text = text[:2000]  # Truncate to prevent prompt injection via large inputs
         if mode not in ("nutrition", "workout"):
             json_response(self, 400, {"error": "Mode must be 'nutrition' or 'workout'"})
             return
@@ -106,13 +114,14 @@ class handler(BaseHTTPRequestHandler):
             json_response(self, 500, {"error": "ANTHROPIC_API_KEY not configured"})
             return
 
-        # Build prompt
+        # Build prompt — use replace() instead of .format() to avoid KeyError
+        # on user input containing curly braces
         if mode == "nutrition":
             now_et = datetime.now(ET)
             current_time = now_et.strftime("%I:%M %p ET")
-            prompt = NUTRITION_PROMPT.format(current_time=current_time, text=text)
+            prompt = NUTRITION_PROMPT.replace("{current_time}", current_time).replace("{text}", text)
         else:
-            prompt = WORKOUT_PROMPT.format(text=text)
+            prompt = WORKOUT_PROMPT.replace("{text}", text)
 
         # Call Claude Haiku via raw HTTP
         try:

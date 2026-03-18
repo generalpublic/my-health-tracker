@@ -26,10 +26,19 @@ class handler(BaseHTTPRequestHandler):
         Returns: {"session_token": "abc123...", "expires_in": 1800}
         """
         body = read_body(self)
+        if body is None:
+            json_response(self, 400, {"error": "Invalid JSON"})
+            return
         totp_code = body.get("totp_code", "").strip()
 
         if not totp_code:
             json_response(self, 400, {"error": "Missing 'totp_code' field"})
+            return
+
+        # Rate limit login attempts (keyed by "login" to share across all clients)
+        ok, remaining = check_rate_limit("login_attempts")
+        if not ok:
+            json_response(self, 429, {"error": "Too many login attempts. Try again later."})
             return
 
         if not verify_totp(totp_code):

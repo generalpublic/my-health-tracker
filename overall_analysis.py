@@ -452,7 +452,7 @@ def compute_acwr(sessions_by_date, target_date):
         weekly_loads.append(week_load)
 
     acute_load = weekly_loads[0]  # most recent 7 days
-    chronic_load = sum(weekly_loads) / 4 if sum(weekly_loads) > 0 else 0
+    chronic_load = sum(weekly_loads[1:]) / 3 if sum(weekly_loads[1:]) > 0 else 0
 
     if chronic_load == 0:
         if acute_load == 0:
@@ -2426,7 +2426,9 @@ def _sort_analysis_tab(sheet):
     for r in all_sorted:
         while len(r) < max_cols:
             r.append("")
-    sheet.update(range_name=f"A1:{chr(64+max_cols)}{len(all_sorted)}", values=all_sorted,
+    from gspread.utils import rowcol_to_a1
+    end_col = rowcol_to_a1(1, max_cols).rstrip("1")
+    sheet.update(range_name=f"A1:{end_col}{len(all_sorted)}", values=all_sorted,
                  value_input_option="RAW")
 
     # RAW write converts Column C (Readiness Score) to text strings, which breaks
@@ -2643,20 +2645,18 @@ def run_validation(wb, target_date):
     print(f"\n=== VALIDATION CHECK (28 days ending {target_date}) ===\n")
 
     data = read_all_data(wb)
-    daily_log_by_date = _rows_by_date(data.get("Daily Log", []))
+    daily_log_by_date = _rows_by_date(data.get("daily_log", []))
 
-    # Read Overall Analysis tab for readiness scores
-    analysis_rows = data.get("Overall Analysis", [])
-    if not analysis_rows:
-        # Try reading directly
-        try:
-            sheet = wb.worksheet("Overall Analysis")
-            all_vals = sheet.get_all_values()
-            if len(all_vals) > 1:
-                headers = all_vals[0]
-                analysis_rows = [dict(zip(headers, row)) for row in all_vals[1:]]
-        except Exception:
-            pass
+    # Read Overall Analysis tab for readiness scores (not in read_all_data)
+    analysis_rows = []
+    try:
+        sheet = wb.worksheet("Overall Analysis")
+        all_vals = sheet.get_all_values()
+        if len(all_vals) > 1:
+            headers = all_vals[0]
+            analysis_rows = [dict(zip(headers, row)) for row in all_vals[1:]]
+    except Exception:
+        pass
 
     analysis_by_date = {}
     for row in analysis_rows:

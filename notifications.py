@@ -430,13 +430,7 @@ def compose_briefing_notification(date_str, result, sleep_data):
 
     body = "\n".join(body_parts)
 
-    # Sanitize PHI before sending through third-party service
-    profile = load_profile()
-    if profile:
-        title = sanitize_for_notification(title, profile)
-        body = sanitize_for_notification(body, profile)
-
-    # Safety: trim flags if body exceeds 1024 chars
+    # Safety: trim flags if body exceeds 1024 chars (before sanitization)
     while len(body) > 1000 and flags:
         flags.pop()
         body_parts_rebuild = [expect, "", sleep_line]
@@ -445,6 +439,14 @@ def compose_briefing_notification(date_str, result, sleep_data):
         if actions:
             body_parts_rebuild += ["", "DO:"] + [f"- {a}" for a in actions]
         body = "\n".join(body_parts_rebuild)
+
+    # Sanitize PHI before sending through third-party service
+    profile = load_profile()
+    if profile:
+        title = sanitize_for_notification(title, profile)
+        body = sanitize_for_notification(body, profile)
+    else:
+        print("  WARNING: No health profile loaded — PHI sanitization skipped")
 
     try:
         resp = requests.post(
