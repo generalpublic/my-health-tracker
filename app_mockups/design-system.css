@@ -1087,10 +1087,8 @@ textarea.text-input {
 
 .pill-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   padding: var(--space-xs) 0;
 }
 
@@ -1239,14 +1237,11 @@ textarea.text-input {
 }
 
 .category-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
-  background: var(--gradient-iridescent-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  margin-bottom: var(--space-xs);
+  color: var(--primary);
 }
 
 .category-name {

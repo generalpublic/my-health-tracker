@@ -216,6 +216,9 @@ const SAMPLE_DATA = {
 
   // --- Historical data (14 days for trends) ---
   history: [
+    { date: "2026-03-01", readiness: 5.5, sleep_score: 52, total_sleep: 5.4, hrv: 30, rhr: 61, body_battery: 40, steps: 3800, stress: 40, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-03-02", readiness: 6.0, sleep_score: 58, total_sleep: 6.0, hrv: 33, rhr: 59, body_battery: 50, steps: 4500, stress: 35, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-03-03", readiness: 5.9, sleep_score: 56, total_sleep: 5.8, hrv: 31, rhr: 60, body_battery: 46, steps: 4100, stress: 37, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
     { date: "2026-03-04", readiness: 6.2, sleep_score: 62, total_sleep: 6.1, hrv: 35, rhr: 58, body_battery: 55, steps: 5200, stress: 32, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
     { date: "2026-03-05", readiness: 5.8, sleep_score: 55, total_sleep: 5.5, hrv: 32, rhr: 60, body_battery: 42, steps: 4800, stress: 38, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
     { date: "2026-03-06", readiness: 6.8, sleep_score: 68, total_sleep: 7.0, hrv: 38, rhr: 56, body_battery: 62, steps: 6500, stress: 28, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
@@ -271,9 +274,9 @@ function getStatusColor(value, metric) {
   let h, s, l;
   if (ratio <= 0.5) {
     const p = ratio / 0.5;
-    h = 0 + p * 45;
-    s = 65 + p * 5;
-    l = 38 + p * 8;
+    h = 12 + p * 33;
+    s = 62 + p * 8;
+    l = 60 + p * 0;
   } else {
     const p = (ratio - 0.5) / 0.5;
     h = 45 + p * 95;
