@@ -418,6 +418,21 @@ def _update_sleep_variability(sheet, target_row_index):
             cells.append(gspread.Cell(target_row_index, 11, wake_sd))
         if cells:
             sheet.update_cells(cells, value_input_option="USER_ENTERED")
+
+        # Mirror variability to Supabase
+        try:
+            from supabase_sync import init_supabase
+            supa = init_supabase()
+            if supa is not None:
+                update = {}
+                if bed_sd is not None:
+                    update["bedtime_variability_7d"] = bed_sd
+                if wake_sd is not None:
+                    update["wake_variability_7d"] = wake_sd
+                if update:
+                    supa.table("sleep").update(update).eq("date", target_date).execute()
+        except Exception as e2:
+            print(f"  Supabase variability update skipped: {e2}")
     except Exception as e:
         print(f"  Sleep variability: skipped — {e}")
 

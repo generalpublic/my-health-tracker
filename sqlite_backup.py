@@ -334,15 +334,16 @@ def upsert_sleep(conn, date_str, data):
         return
     conn.execute("""
         INSERT INTO sleep (
-            date, day, garmin_sleep_score, total_sleep_hrs,
+            date, day, garmin_sleep_score, sleep_analysis_score, total_sleep_hrs,
             bedtime, wake_time, time_in_bed_hrs,
             deep_sleep_min, light_sleep_min, rem_min, awake_during_sleep_min,
             deep_pct, rem_pct, sleep_cycles, awakenings,
             avg_hr, avg_respiration, overnight_hrv_ms,
             body_battery_gained, sleep_feedback
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(date) DO UPDATE SET
             garmin_sleep_score = excluded.garmin_sleep_score,
+            sleep_analysis_score = excluded.sleep_analysis_score,
             total_sleep_hrs = excluded.total_sleep_hrs,
             bedtime = excluded.bedtime,
             wake_time = excluded.wake_time,
@@ -365,6 +366,7 @@ def upsert_sleep(conn, date_str, data):
         date_str,
         _day_from_date(date_str),
         _to_num(data.get("sleep_score")),
+        _to_num(data.get("sleep_analysis_score")),
         _to_num(data.get("sleep_duration")),
         _to_text(data.get("sleep_bedtime")),
         _to_text(data.get("sleep_wake_time")),

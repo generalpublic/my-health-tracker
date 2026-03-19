@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#8B5CF6">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Sleep Detail</title>
   <link rel="stylesheet" href="design-system.css">
   <style>
@@ -216,7 +221,7 @@
       <!-- Navigation header -->
       <div class="nav-header">
         <div class="nav-back" onclick="navigateTo('today.html')">&#8249;</div>
-        <div class="nav-title">Sleep &mdash; Mar 18</div>
+        <div class="nav-title" id="sleepNavTitle">Sleep &mdash; Mar 18, 2026</div>
       </div>
 
       <div class="screen-content stagger">
@@ -274,7 +279,8 @@
 
         <!-- 5. Consistency -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-sm)">Sleep Consistency</div>
+          <div class="card-title" style="margin-bottom:2px">Sleep Consistency</div>
+          <div id="consistencySubtitle" style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--space-sm)">Average bedtime deviation over 7 nights</div>
 
           <div class="consistency-row">
             <span class="consistency-label">Bedtime Variability (7d)</span>
@@ -316,18 +322,18 @@
       <!-- Tab Bar -->
       <div class="tab-bar">
         <div class="tab-item tab-item-active" onclick="navigateTo('today.html')">
-          <div class="tab-icon">&#8962;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
-          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
         <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
           <div class="tab-center-button">+</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
-          <div class="tab-icon">&#9883;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
@@ -339,10 +345,9 @@
     </div>
   </div>
 
-  <script src="sample-data.js"></script>
+  <script src="data-loader.js"></script>
   <script>
-    const S = SAMPLE_DATA.today.sleep;
-
+    // --- Global functions for onclick handlers ---
     function navigateTo(page) { window.location.href = page; }
     function formatTime(t) {
       const [h, m] = t.split(':').map(Number);
@@ -351,6 +356,19 @@
     function formatHours(hrs) {
       return Math.floor(hrs) + 'h ' + Math.round((hrs % 1) * 60) + 'm';
     }
+
+    // --- Render after data loads ---
+    initData().then(() => {
+
+    const S = SAMPLE_DATA.today.sleep;
+
+    // --- Nav title with date ---
+    (function() {
+      const today = SAMPLE_DATA.today.date || new Date().toISOString().slice(0, 10);
+      const d = new Date(today + 'T12:00:00');
+      const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      document.getElementById('sleepNavTitle').textContent = `Sleep: ${formatted}`;
+    })();
 
     // --- Hero gauge ---
     (function() {
@@ -487,7 +505,7 @@
       // Yellow zone
       svg += `<rect x="${pad}" y="${yGreen}" width="${w-2*pad}" height="${Math.max(0,yYellow-yGreen)}" fill="rgba(245,158,11,0.06)" rx="0"/>`;
       // Red zone
-      svg += `<rect x="${pad}" y="${yYellow}" width="${w-2*pad}" height="${h-yYellow-pad}" fill="rgba(239,68,68,0.06)" rx="4"/>`;
+      svg += `<rect x="${pad}" y="${yYellow}" width="${w-2*pad}" height="${h-yYellow-pad}" fill="rgba(248,113,113,0.06)" rx="4"/>`;
 
       // Threshold lines
       svg += `<line x1="${pad}" y1="${yGreen}" x2="${w-pad}" y2="${yGreen}" stroke="var(--status-green)" stroke-width="0.5" stroke-dasharray="4"/>`;
@@ -511,6 +529,9 @@
         return `<span>${date.toLocaleDateString('en-US', { weekday: 'short' })}</span>`;
       }).join('');
     })();
+
+    }); // end initData().then()
   </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>

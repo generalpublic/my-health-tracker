@@ -296,7 +296,7 @@ def compute_baselines(by_date_garmin, by_date_sleep, target_date):
 def analyze_sleep_context(by_date_sleep, by_date_garmin, target_date, baselines):
     """Analyze 5-day sleep trend with recent nights weighted 2x.
 
-    Returns (context_text, sleep_debt_hours, trend_direction).
+    Returns (context_text, sleep_debt_hours, trend_direction, deep_trend, rem_trend).
     Based on Van Dongen et al. 2003 -- cumulative sleep restriction model.
     """
     # Collect last 5 nights of sleep data
@@ -315,7 +315,7 @@ def analyze_sleep_context(by_date_sleep, by_date_garmin, target_date, baselines)
                 durations.append((dur, weight))
 
     if not scores:
-        return "No sleep data available for analysis window.", None, None
+        return "No sleep data available for analysis window.", None, None, None, None
 
     weighted_score = sum(s * w for s, w in scores) / sum(w for _, w in scores)
     weighted_duration = sum(d * w for d, w in durations) / sum(w for _, w in durations) if durations else None
@@ -2271,6 +2271,203 @@ def _distill_insights(raw_insights, max_items=6):
     return distilled
 
 
+def _distill_for_phone(raw_insights, max_items=4):
+    """Distill raw insights into 3-4 high-priority actionable items for the phone app.
+
+    Priority order (what changes your day):
+      1. Recovery/stress overload signals (stress budget, cumulative load)
+      2. Physiological signals (HRV suppressed, RHR elevated)
+      3. Sleep quality summary (one consolidated line)
+      4. Habit patterns that compound with current state
+      5. Training load status
+
+    Rules:
+      - DROP all "Note:", "extreme value", baseline accuracy noise
+      - DEDUPLICATE related items (deep sleep % + deep sleep trending = one item)
+      - CONDENSE each item to one sentence with the key number + consequence
+      - Max 4 items for phone display
+    """
+    if not raw_insights:
+        return []
+
+    # Clean and categorize
+    candidates = {
+        "stress": [],      # stress budget, overload
+        "physio": [],       # HRV, RHR
+        "sleep_verdict": [],  # Sleep Review line
+        "sleep_quality": [],  # deep/REM/trends/declining
+        "habits": [],       # screen time, bedtime, activity
+        "training": [],     # ACWR, steps, training load
+    }
+
+    for raw in raw_insights:
+        text = raw.lstrip("- ").strip()
+        upper = text.upper()
+
+        # DROP noise
+        if any(k in upper for k in ("NOTE:", "EXTREME VALUE", "BASELINE ACCURACY")):
+            continue
+
+        if "STRESS BUDGET" in upper or "STRESS CAPACITY" in upper:
+            candidates["stress"].append(text)
+        elif "SLEEP REVIEW" in upper:
+            candidates["sleep_verdict"].append(text)
+        elif any(k in upper for k in ("HRV", "HEART RATE VARIABILITY")):
+            candidates["physio"].append(text)
+        elif any(k in upper for k in ("RESTING HR", "RHR")):
+            candidates["physio"].append(text)
+        elif "GARMIN STRESS" in upper or "STRESS LEVEL" in upper:
+            candidates["stress"].append(text)
+        elif any(k in upper for k in ("DEEP SLEEP", "REM SLEEP", "REM ", "SLEEP QUALITY",
+                                       "SLEEP TREND", "SLEEP DEBT", "DECLINING")):
+            candidates["sleep_quality"].append(text)
+        elif any(k in upper for k in ("SCREEN TIME", "BEDTIME TARGET", "BEDTIME MISSED",
+                                       "CONSECUTIVE", "BROKEN", "MISSED")):
+            candidates["habits"].append(text)
+        elif any(k in upper for k in ("TRAINING", "ACWR", "STEPS")):
+            candidates["training"].append(text)
+        else:
+            # Catch-all — try to fit into most relevant bucket
+            if any(k in upper for k in ("COGNITIVE", "MEMORY", "EMOTIONAL REGULATION")):
+                candidates["sleep_quality"].append(text)
+            else:
+                candidates["training"].append(text)
+
+    distilled = []
+
+    # 1. Stress/recovery — prefer "stress budget" over generic Garmin stress
+    if candidates["stress"]:
+        budget_item = next((t for t in candidates["stress"] if "BUDGET" in t.upper()), None)
+        text = budget_item or candidates["stress"][0]
+        distilled.append(_phone_condense(text))
+
+    # 2. Physiological signals — merge HRV + RHR into one line if both present
+    if candidates["physio"]:
+        hrv_item = next((t for t in candidates["physio"] if "HRV" in t.upper()), None)
+        rhr_item = next((t for t in candidates["physio"] if "RESTING HR" in t.upper() or "RHR" in t.upper()), None)
+        if hrv_item and rhr_item:
+            # Extract key numbers
+            hrv_num = re.search(r'today:\s*(\d+)\s*ms', hrv_item)
+            rhr_num = re.search(r'today:\s*(\d+)\s*bpm', rhr_item)
+            hrv_str = f"HRV {hrv_num.group(1)}ms" if hrv_num else "HRV suppressed"
+            rhr_str = f"RHR {rhr_num.group(1)}bpm" if rhr_num else "RHR elevated"
+            distilled.append(f"{hrv_str} (below baseline), {rhr_str} (above baseline) — autonomic system under strain, recovery impaired.")
+        elif hrv_item:
+            distilled.append(_phone_condense(hrv_item))
+        elif rhr_item:
+            distilled.append(_phone_condense(rhr_item))
+
+    # 3. Sleep — consolidate all sleep items into one summary line
+    if candidates["sleep_verdict"]:
+        # Use the sleep review line, condensed
+        distilled.append(_phone_condense(candidates["sleep_verdict"][0]))
+    elif candidates["sleep_quality"]:
+        # No verdict — pick the most informative sleep item
+        distilled.append(_phone_condense(candidates["sleep_quality"][0]))
+
+    # 4. Habits — merge into one line
+    if candidates["habits"] and len(distilled) < max_items:
+        habit_names = []
+        for h in candidates["habits"]:
+            if "SCREEN" in h.upper():
+                habit_names.append("screen time before bed")
+            elif "BEDTIME" in h.upper():
+                habit_names.append("bedtime consistency")
+            elif "PHYSICAL" in h.upper() or "ACTIVITY" in h.upper():
+                habit_names.append("physical activity")
+            else:
+                # Extract first few words as label
+                label = h.split(" missed")[0].split(" broken")[0][:30].strip()
+                if label and label not in habit_names:
+                    habit_names.append(label)
+        if habit_names:
+            names = ", ".join(dict.fromkeys(habit_names))  # dedupe preserving order
+            days = re.search(r'(\d+)\s+(?:of last\s+)?(\d+)\s+(?:recent\s+)?days', candidates["habits"][0])
+            if days:
+                distilled.append(f"Habits broken recently: {names}. These compound with poor sleep to reduce recovery.")
+            else:
+                distilled.append(f"Habits broken recently: {names}. Consistency compounds with recovery.")
+
+    # 5. Training — if room
+    if candidates["training"] and len(distilled) < max_items:
+        distilled.append(_phone_condense(candidates["training"][0]))
+
+    return distilled[:max_items]
+
+
+def _phone_condense(text):
+    """Condense a verbose insight to 1-2 sentences for phone display.
+
+    Keeps: the trigger (what happened + key number) and the consequence.
+    Drops: mechanism details, citations, profile-specific elaboration.
+    """
+    text = _strip_citations(text)
+
+    # For Sleep Review lines, restructure
+    if "Sleep Review:" in text:
+        parts = text.split(" -- ")
+        verdict = parts[0].strip()  # "Sleep Review: POOR"
+        metrics = []
+        action = ""
+        for p in parts[1:]:
+            p = p.strip()
+            if p.startswith("->") or p.startswith("ACTION"):
+                action = re.sub(r'^(->|ACTION:)\s*', '', p).strip()
+            else:
+                metrics.append(p)
+        result = verdict
+        if metrics:
+            result += ". " + ". ".join(m.strip() for m in metrics if m.strip())
+        if action:
+            # First sentence of action only
+            action_first = re.split(r'(?<!\d)\.\s+', action)[0].strip()
+            if not action_first.endswith('.'):
+                action_first += '.'
+            result += " " + action_first
+        return result
+
+    # For [Training] lines, clean the bracket prefix
+    text = re.sub(r'^\[Training\]\s*', '', text)
+
+    # Split into trigger (first sentence) and body
+    sentences = re.split(r'(?<!\d)\.\s{1,2}(?=[A-Z])', text, maxsplit=1)
+    trigger = sentences[0].strip()
+
+    if len(sentences) < 2:
+        # Already concise
+        if not trigger.endswith('.'):
+            trigger += '.'
+        return trigger
+
+    body = sentences[1].strip()
+
+    # Extract consequence: look for "-> " or "Cognitive impact:" or "Energy:"
+    consequence = ""
+    arrow_match = re.search(r'->\s*(.+?)(?:\.|$)', body)
+    cog_match = re.search(r'Cognitive(?:\s+impact)?:\s*(.+?)(?=Energy:|Action:|$)', body, re.IGNORECASE)
+    energy_match = re.search(r'Energy:\s*(.+?)(?=Cognitive|Action:|$)', body, re.IGNORECASE)
+
+    if arrow_match:
+        consequence = arrow_match.group(1).strip()
+    elif cog_match:
+        consequence = re.split(r'(?<!\d)\.\s+', cog_match.group(1).strip())[0]
+    elif energy_match:
+        consequence = re.split(r'(?<!\d)\.\s+', energy_match.group(1).strip())[0]
+
+    result = trigger
+    if not result.endswith('.'):
+        result += '.'
+    if consequence:
+        consequence = consequence.strip().rstrip('.')
+        result += f" Impact: {consequence}."
+
+    # Hard cap at 200 chars
+    if len(result) > 200:
+        result = result[:197].rsplit(' ', 1)[0] + '...'
+
+    return result
+
+
 def _distill_recommendations(raw_recs, max_items=3):
     """Restructure recommendations: clean presentation, keep substance.
 
@@ -2588,11 +2785,17 @@ def run_analysis(wb, target_date):
     if target_date.weekday() == 6:  # Sunday
         _maybe_run_validation(wb, target_date)
 
+    # Distill for phone app (separate from Sheets distillation)
+    phone_insights = _distill_for_phone(insights)
+    phone_recs = _distill_recommendations(recommendations)
+
     return {
         "score": score,
         "label": label,
         "confidence": confidence,
         "insights": insights,
+        "phone_insights": phone_insights,
+        "phone_recommendations": phone_recs,
         "recommendations": recommendations,
         "cognitive_assessment": cognitive_assessment,
         "sleep_context": sleep_context,

@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#8B5CF6">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Profile</title>
   <link rel="stylesheet" href="design-system.css">
   <style>
@@ -166,8 +171,8 @@
 
         <!-- Profile Header -->
         <div class="profile-header">
-          <div class="profile-avatar">D</div>
-          <div class="profile-name">Daniel</div>
+          <div class="profile-avatar">S</div>
+          <div class="profile-name">Sek</div>
           <div class="profile-streak">
             <span class="streak-fire">&#128293;</span>
             <span>12 day streak</span>
@@ -193,7 +198,7 @@
         <!-- Quick Links -->
         <div class="menu-section">
           <div class="menu-section-title">Reports</div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="navigateTo('trends.html')">
             <div class="menu-item-left">
               <div class="menu-icon">&#128202;</div>
               <div>
@@ -203,7 +208,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="navigateTo('calendar.html')">
             <div class="menu-item-left">
               <div class="menu-icon">&#128197;</div>
               <div>
@@ -213,7 +218,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="alert('Export coming soon')">
             <div class="menu-item-left">
               <div class="menu-icon">&#128229;</div>
               <div>
@@ -228,7 +233,7 @@
         <!-- Settings -->
         <div class="menu-section">
           <div class="menu-section-title">Settings</div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="toggleNotifications(this)">
             <div class="menu-item-left">
               <div class="menu-icon">&#128276;</div>
               <div>
@@ -238,7 +243,7 @@
             </div>
             <div class="toggle-switch active"></div>
           </div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="navigateTo('log-entry.html')">
             <div class="menu-item-left">
               <div class="menu-icon">&#10003;</div>
               <div>
@@ -248,7 +253,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="alert('Goals coming soon')">
             <div class="menu-item-left">
               <div class="menu-icon">&#127919;</div>
               <div>
@@ -258,7 +263,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="alert('Sync running...\\nLast sync: Today, 8:00 PM')">
             <div class="menu-item-left">
               <div class="menu-icon">&#9881;</div>
               <div>
@@ -273,7 +278,7 @@
         <!-- About -->
         <div class="menu-section">
           <div class="menu-section-title">About</div>
-          <div class="menu-item">
+          <div class="menu-item" onclick="alert('Health Tracker v1.0\\nBuilt with love')">
             <div class="menu-item-left">
               <div class="menu-icon">&#9432;</div>
               <div>
@@ -291,18 +296,18 @@
       <!-- Tab Bar -->
       <div class="tab-bar">
         <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
-          <div class="tab-icon">&#8962;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
-          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
         <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
           <div class="tab-center-button">+</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
-          <div class="tab-icon">&#9883;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
         <div class="tab-item tab-item-active">
@@ -316,6 +321,11 @@
 
   <script>
     function navigateTo(page) { window.location.href = page; }
+    function toggleNotifications(el) {
+      const toggle = el.querySelector('.toggle-switch');
+      toggle.classList.toggle('active');
+    }
   </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>

@@ -29,8 +29,8 @@ DEFAULT_BG = {"red": 0.235, "green": 0.286, "blue": 0.361}  # #3C495C slate (fal
 WHITE_TEXT  = {"red": 1.0,   "green": 1.0,   "blue": 1.0  }
 BLACK_TEXT  = {"red": 0.0,   "green": 0.0,   "blue": 0.0  }
 BAND_ODD   = {"red": 1.0,   "green": 1.0,   "blue": 1.0  }  # white rows
-BAND_EVEN  = {"red": 0.953, "green": 0.957, "blue": 0.965}  # #F3F4F6  alt rows
-CREAM      = {"red": 1.0,   "green": 0.992, "blue": 0.929}  # #FFFDED  soft fill indicator
+BAND_EVEN  = {"red": 0.95,  "green": 0.95,  "blue": 0.95 }  # light grey weekly banding (matches CLAUDE.md spec)
+CREAM      = {"red": 1.0,   "green": 1.0,   "blue": 0.8  }  # light yellow for manual-entry cells (matches CLAUDE.md spec)
 BORDER_C   = {"red": 0.859, "green": 0.867, "blue": 0.882}  # #DBDDE1  subtle grid
 DATA_TEXT  = {"red": 0.149, "green": 0.196, "blue": 0.275}  # #262F46  dark readable text
 
@@ -84,6 +84,7 @@ WIDTH_OVERRIDES = {
 FORCE_CENTER_COLS = {
     "Sleep": {7, 8, 22},          # H: Bedtime, I: Wake Time, W: Overnight HRV (ms)
     "Overall Analysis": {0, 1, 2, 3, 4},  # A-E: Day, Date, Readiness Score, Label, Confidence
+    "Daily Log": {3, 4, 5, 6, 7, 8, 9},  # D-J: checkbox columns
 }
 
 # ── Column intelligence ───────────────────────────────────────────────────────

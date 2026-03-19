@@ -19,6 +19,7 @@ Every cell in every tab must be fully readable without manual resizing. This is 
 - **Short labels/categorical** (Day, Date, single-word values like "Good"/"High"/"Optimal"): CENTER — these are lookup values, not prose
 - **Long-form text** (Notes, Analysis, Descriptions, Assessments, Recommendations): LEFT + TOP + WRAP — prose needs left alignment to read naturally
 - **Numeric/scores**: CENTER
+- **Checkboxes** (Daily Log D-J): CENTER — boolean toggles must be visually centered in their cells
 - Always set explicitly — never rely on Sheets defaults
 - Enforce via `FORCE_CENTER_COLS` in `reformat_style.py` for any text column that should stay centered despite auto-detection
 
@@ -34,6 +35,21 @@ Every cell in every tab must be fully readable without manual resizing. This is 
 ## Spreadsheet Design Ruleset (Non-Negotiable — VISUAL STANDARD)
 
 These rules define the visual design of every tab. They are checked and enforced after every structural change (column add/remove/move, tab creation, row builder update). The user must NEVER have to ask for design corrections — anticipate and apply them automatically.
+
+### Tab Order (Non-Negotiable)
+Tabs must always appear in this exact order. Enforce after any tab creation or restore operation.
+
+1. **Daily Log** — primary daily input
+2. **Overall Analysis** — daily readiness assessment
+3. **Sleep** — sleep metrics and notes
+4. **Garmin** — raw Garmin wellness data
+5. **Nutrition** — meal tracking and macros
+6. **Session Log** — workout sessions
+7. **Strength Log** — weight training sets
+8. **Analysis** — aggregate formulas and correlations
+9. **Charts** — embedded trend charts (HRV, sleep, body battery, etc.)
+10. **Raw Data Archive** — full Garmin export mirror
+11. **Key** — color legend and reference (always last)
 
 ### Cell Background Color Hierarchy (in priority order)
 1. **Color-graded cells** — cells with conditional formatting gradients or discrete color rules (e.g., Readiness Score red-green, Readiness Label Optimal=green/Poor=red, Sleep Analysis Score, Bedtime bands). These take highest priority — no other background color overrides them.
@@ -308,7 +324,7 @@ After any structural change — renames, file/folder restructuring, schema migra
 3. **Sheets verification** — `python verify_sheets.py` — all tabs must report PASS
 4. **Functional test** — `python garmin_sync.py --today` — full pipeline runs end-to-end (Garmin API -> Sheets -> SQLite -> Overall Analysis -> Dashboard)
 5. **Automated systems check** — `python garmin_sync.py --sleep-notify` — notification pipeline works, user confirms receipt on phone
-6. **Scheduler check** — confirm Task Scheduler tasks exist and point to correct paths
+6. **Scheduler check** — confirm Task Scheduler tasks exist, point to correct paths, and use **full python path** (never bare `python`). After registering tasks, trigger `schtasks /run /tn "Health Tracker - Garmin Sync"` and verify `garmin_sync.log` shows a successful run. "Ready" status alone is not proof of working — a task can show Ready but fail on every execution.
 
 **Rules:**
 - Never declare a structural change "done" without completing the verification cycle
@@ -525,11 +541,17 @@ These rules were learned from real bugs. Apply them whenever touching Google She
 - Elevation: stored in centimeters -> divide by 100 for meters
 - HR zone time: stored in seconds -> divide by 60 for minutes
 
-### Garmin export timezone handling
+### Garmin export timezone handling (export file — string timestamps)
 - `sleepStartTimestampGMT` and `sleepEndTimestampGMT` are TRUE UTC — always convert to local before displaying
 - Compute per-day UTC offset from UDS record: `wellnessStartTimeLocal - wellnessStartTimeGmt` in hours
 - This automatically handles EST (-5) vs EDT (-4) DST transitions — never hardcode a single offset
 - Default fallback if UDS record missing: -5 (EST)
+
+### Garmin API timezone handling (Connect API — epoch timestamps)
+- NEVER use `sleepStartTimestampLocal` / `sleepEndTimestampLocal` — these are NOT reliable local times
+- ALWAYS use `sleepStartTimestampGMT` / `sleepEndTimestampGMT` with `datetime.fromtimestamp(epoch_ms / 1000)` (no tz arg)
+- `fromtimestamp()` without a tz argument converts UTC epoch to system local time — this is the correct behavior
+- Bug history: v2.1 used "Local" fields without `tz=timezone.utc`, producing bedtime/wake times shifted by the timezone offset (4-5h). Downstream impact: ±15 point sleep analysis score swing, inverted color grading, wrong analysis text
 
 ### Garmin export field locations
 - HR zones: `hrTimeInZone_1` through `hrTimeInZone_5` on activity records (in seconds)

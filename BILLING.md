@@ -19,8 +19,9 @@ Rounded to nearest 0.5h. For detailed task breakdown, see `WORKLOG.md`.
 | 2026-03-18 | 0.5 | Documentation | Executive brief — comprehensive project report (markdown + styled Word document) for executive/investor audience |
 | 2026-03-18 | 0.5 | Infrastructure + Documentation | Billing methodology correction (identified systematic undercounting from AI execution time vs. engagement time, corrected Session 9 3.5h→5.5h), comprehensive work narrative generation (full March 17-18 history), created WORK_HISTORY.md permanent record, codified end-of-day narrative format as standard |
 | 2026-03-18 | 1.5 | Development | Dashboard-Sheets color grading alignment (audited all thresholds, fixed 5 divergent metrics), removed Garmin Sleep Score from dashboard, built workout activity feature (color-coded + markers on heatmap, 3 new workout metrics, session aggregation), fixed bedtime color thresholds |
-| **Weekly Total** | **31.5** | | |
+| 2026-03-18 | 5.5 | Development + Infrastructure | Task Scheduler fix (notification failure diagnosis, partial data correction for 4 dates), spreadsheet recovery from SQLite (full 8-tab rebuild after deletion), charts overhaul (9 charts with schema-based lookups), sleep variability fix, nutrition cleanup, PWA Calendar/Activity root cause fix (nested Promise.allSettled), service worker v4 |
+| **Weekly Total** | **37.0** | | |
 
-| **Project Total** | **31.5** | | |
+| **Project Total** | **37.0** | | |
 
 ---

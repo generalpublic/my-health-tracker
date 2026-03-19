@@ -1,38 +1,45 @@
-# Session Summary — 2026-03-18 (Session 12)
-**Session:** ~11:15 PM -> 12:47 AM (~1.5h)
+# Session Summary — 2026-03-18 (Session 13)
+**Session:** ~12:11 PM -> 11:38 PM (~7h window, ~5.5h active work)
 
 ## What was completed
 
-### 1. Dashboard-Sheets Color Grading Alignment (~30m)
-Audited every color grading threshold between Google Sheets and the dashboard. Found 5 metrics with divergent thresholds. Aligned all dashboard metrics to match Sheets (source of truth): Cognition (3/5/7 -> 1/5/10), Readiness Score (green 7 -> 8.5), Bedtime (22:00/23:30/01:30 -> 23:00/00:30/02:00), Day Rating and Morning Energy (3/5/8 -> 1/5.5/10). Also fixed hardcoded `getBedtimeColor()` JS function to use updated thresholds.
+### 1. Task Scheduler Fix + Partial Garmin Data Correction (~2h 46m)
+Diagnosed notification failure (LastTaskResult: 2147942402 = file not found), fixed create_schedule.ps1 missing -WorkingDirectory. Re-synced 11 dates to fix 4 with partial data from broken scheduler. Saved feedback memory on external source-of-truth verification.
 
-### 2. Remove Garmin Sleep Score from Dashboard (~10m)
-Removed `garmin_sleep_score` from thresholds.json, export fallback, default metric (changed to `sleep_analysis_score`), and detail panel (merged into single "Sleep Score" row).
+### 2. Sleep Variability Fix + Nutrition Cleanup + Charts Overhaul (~11m)
+Fixed writers.py position-based row lookup bug. Cleaned 1,027 nutrition rows. Rewrote all 9 charts with schema-based column lookups.
 
-### 3. Workout Activity Feature for Dashboard (~40m)
-Added three-part workout visualization:
-- **Activity markers**: Bold color-coded `+` sign centered on heatmap cells for workout days (blue=Run, orange=Cycle, teal=Swim, purple=Strength, white=multi-activity). Visible on all metric views.
-- **Workout metrics**: Added 3 new selectable heatmap metrics — Workout Duration (15/35/60 min), Workout Calories (100/400/900 cal), Aerobic Training Effect (1/2.5/4). Thresholds match Session Log Sheets formatting. Built session aggregation logic (sum for duration/calories, max for TE).
-- **Legend**: Activity type color key in legend bar.
+### 3. Stress Qualifier Investigation (~4m)
+Confirmed data was present — no code change needed.
 
-### 4. Bedtime Color Function Fix (~5m)
-Updated `getBedtimeColor()` hardcoded values (green=300/yellow=390/red=480 minutes-from-6pm) to match updated thresholds.json.
+### 4. --today Partial Data Warning (~4m)
+Added pre-8PM warning for partial daily stats.
+
+### 5. Spreadsheet Recovery + Full Rebuild from SQLite (~1h 56m)
+User's spreadsheet was deleted. Wrote restore_from_sqlite.py, rebuilt all 8 tabs, fixed checkboxes, tab ordering, colors. All data preserved including manual entries.
+
+### 6. App Background Gradient Fix (~2m)
+Removed purple page gradient, fixed today.html gradient bleed.
+
+### 7. PWA Calendar/Activity Root Cause + Fix (~25m)
+Discovered nested Promise.all inside fetchHistory() and fetchToday() — a single sub-query failure zeros out all data even though initData() uses Promise.allSettled. Fixed both to use Promise.allSettled internally. Bumped sw.js to v4 with resilient install. Added diagnostic logging.
 
 ## Current status
-- Dashboard fully aligned with Sheets color grading
-- Workout activities visible on heatmap with + markers and 3 dedicated metrics
-- All changes are uncommitted
+- Google Sheets: fully rebuilt, all tabs PASS, all data intact
+- Task Scheduler: both tasks fixed and verified
+- PWA fixes: applied locally, NOT yet deployed to Netlify, NOT yet committed
+- 11 modified + 6 untracked files in app_mockups/
 
 ## Active bugs / blockers
-- None
+- Calendar and Activity tabs still need Netlify deploy + user cache clear to verify fix
 
 ## Next step when resuming
-- Commit all changes (large body of uncommitted work spanning 12 sessions)
-- Voice Logger PWA — blocked on API keys + Vercel account setup
-- Polish Executive Brief Word doc
+1. Deploy PWA fixes to Netlify: `netlify deploy --prod --dir app_mockups`
+2. Have user clear cache and test Calendar + Activity
+3. If working, commit all uncommitted changes
+4. If still failing, check browser console for diagnostic logs
 
-## Key decisions made this session
-- Dashboard always matches Sheets color grading (Sheets is source of truth)
-- Removed Garmin Sleep Score — Sleep Analysis Score is the only sleep score metric
-- Workout markers use bold + sign (not dots) with activity-type coloring
-- Multi-activity days show white + sign
+## Key decisions made
+- All Supabase queries now use Promise.allSettled at every level (initData, fetchHistory, fetchToday) for maximum resilience
+- Service worker install uses Promise.allSettled so one missing asset doesn't block activation
+- Yellow cells and banding colors must exactly match CLAUDE.md RGB spec

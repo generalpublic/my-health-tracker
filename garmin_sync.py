@@ -64,10 +64,21 @@ from sqlite_backup import (
     upsert_session_log as _sqlite_upsert_session_log,
     append_archive as _sqlite_append_archive,
 )
+from supabase_sync import (
+    init_supabase as _init_supabase,
+    upsert_garmin as _supa_upsert_garmin,
+    upsert_sleep as _supa_upsert_sleep,
+    upsert_nutrition as _supa_upsert_nutrition,
+    upsert_session_log as _supa_upsert_session_log,
+    upsert_overall_analysis as _supa_upsert_overall_analysis,
+)
 
 load_dotenv(Path(__file__).parent / ".env")
 
 PENDING_SYNC_PATH = Path(__file__).parent / "pending_sync.json"
+
+# Supabase client — initialized once in main() / sleep_notify_mode()
+_supa_client = None
 
 
 # --- Pending Sync Queue (retry logic for failed Sheets writes) ---
@@ -121,6 +132,17 @@ def sync_single_date(wb, sheet, target_date, data):
     """Write one date's data to all tabs. SQLite first, then Sheets with retry queue."""
     date_str = str(target_date)
 
+    # Pre-compute sleep analysis score + text so all stores get it
+    if data.get("sleep_duration") and "sleep_analysis_score" not in data:
+        try:
+            score, analysis_text = generate_sleep_analysis(data)
+            if score is not None:
+                data["sleep_analysis_score"] = score
+            if analysis_text:
+                data["sleep_analysis_text"] = analysis_text
+        except Exception as e:
+            print(f"  Sleep analysis score computation warning: {e}")
+
     # 1. SQLite FIRST -- always succeeds locally
     try:
         db = _get_sqlite_db()
@@ -132,6 +154,16 @@ def sync_single_date(wb, sheet, target_date, data):
         db.commit()
     except Exception as e:
         print(f"  SQLite write warning: {e}")
+
+    # 1b. Supabase -- mirrors SQLite writes, failures never break pipeline
+    try:
+        if _supa_client is not None:
+            _supa_upsert_garmin(_supa_client, date_str, data)
+            _supa_upsert_sleep(_supa_client, date_str, data)
+            _supa_upsert_nutrition(_supa_client, date_str, data)
+            _supa_upsert_session_log(_supa_client, date_str, data)
+    except Exception as e:
+        print(f"  Supabase write warning: {e}")
 
     # 2. Google Sheets -- retry-safe, queues on failure
     try:
@@ -360,9 +392,14 @@ def migrate_sleep_analysis_col():
 # --- Main ---
 
 def main():
+    global _supa_client
+
     if "--sleep-notify" in sys.argv or "--morning-briefing" in sys.argv:
         sleep_notify_mode()
         return
+
+    # Initialize Supabase client (None if not configured — all calls become no-ops)
+    _supa_client = _init_supabase()
 
     today     = date.today()
     yesterday = today - timedelta(days=1)
@@ -444,7 +481,32 @@ def main():
 
     try:
         from overall_analysis import run_analysis
-        run_analysis(wb, target_date)
+        result = None
+        for _attempt in range(3):
+            try:
+                result = run_analysis(wb, target_date)
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 65 * (_attempt + 1)
+                    print(f"\n  Rate limit hit during analysis (attempt {_attempt + 1}/3). Waiting {wait}s...")
+                    time.sleep(wait)
+                else:
+                    raise
+        # Sync overall analysis to Supabase
+        if _supa_client is not None and result:
+            try:
+                _supa_upsert_overall_analysis(_supa_client, str(target_date), {
+                    "readiness_score": result.get("score"),
+                    "readiness_label": result.get("label"),
+                    "confidence": result.get("confidence"),
+                    "cognitive_energy_assessment": result.get("cognitive_assessment"),
+                    "sleep_context": result.get("sleep_context"),
+                    "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
+                    "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+                })
+            except Exception as e:
+                print(f"  Supabase overall_analysis write warning: {e}")
     except Exception as e:
         print(f"\n  Overall Analysis skipped (non-fatal): {e}")
 
@@ -469,6 +531,13 @@ def main():
     print(f"  Calories: {data.get('total_calories', 'N/A')} total | {data.get('active_calories', 'N/A')} active | BMR {data.get('bmr_calories', 'N/A')}")
     print(f"  Stress: {data.get('avg_stress', 'N/A')} ({data.get('stress_qualifier', 'N/A')})  |  Floors: {data.get('floors_ascended', 'N/A')}")
 
+    # Sync PWA manual entries from Supabase -> SQLite + Sheets
+    try:
+        from sync_pwa_to_stores import sync_pwa_entries
+        sync_pwa_entries(_supa_client, wb)
+    except Exception as e:
+        print(f"\n  PWA manual sync skipped (non-fatal): {e}")
+
     try:
         _close_sqlite_db()
     except Exception:
@@ -476,17 +545,86 @@ def main():
 
 
 def fix_all_variability():
-    """Recompute bedtime/wake variability for every row in the Sleep tab."""
-    from writers import _update_sleep_variability
+    """Recompute bedtime/wake variability for every row in the Sleep tab (batch)."""
+    from writers import _time_to_minutes, _rolling_sd_minutes
+    import gspread
+
     wb = get_workbook()
     sheet = wb.worksheet("Sleep")
-    all_dates = sheet.col_values(2)
-    total = len(all_dates) - 1  # exclude header
+    all_data = sheet.get_values()
+    headers = all_data[0]
+    date_ci = headers.index("Date")
+    bed_ci = headers.index("Bedtime")
+    wake_ci = headers.index("Wake Time")
+
+    # Sort data rows by date descending for lookback
+    data_rows = all_data[1:]
+    total = len(data_rows)
     print(f"\nRecomputing sleep variability for {total} rows...")
-    for row_idx in range(2, total + 2):
-        _update_sleep_variability(sheet, row_idx)
-        if (row_idx - 1) % 10 == 0:
-            print(f"  {row_idx - 1}/{total} rows processed...")
+
+    # Index rows by date for fast lookback
+    sorted_rows = sorted(data_rows, key=lambda r: r[date_ci] if len(r) > date_ci else "", reverse=True)
+    sorted_dates = [r[date_ci] if len(r) > date_ci else "" for r in sorted_rows]
+
+    cells = []
+    supa_updates = []
+    for i, row in enumerate(data_rows):
+        row_date = row[date_ci] if len(row) > date_ci else ""
+        if not row_date:
+            continue
+
+        # Find this date in sorted list and collect 7 consecutive entries
+        try:
+            start_idx = sorted_dates.index(row_date)
+        except ValueError:
+            continue
+
+        bed_vals = []
+        wake_vals = []
+        for j in range(start_idx, min(start_idx + 7, len(sorted_rows))):
+            sr = sorted_rows[j]
+            bed_vals.append(_time_to_minutes(sr[bed_ci] if len(sr) > bed_ci else ""))
+            wake_vals.append(_time_to_minutes(sr[wake_ci] if len(sr) > wake_ci else ""))
+
+        bed_sd = _rolling_sd_minutes(bed_vals)
+        wake_sd = _rolling_sd_minutes(wake_vals)
+
+        sheet_row = i + 2  # 1-indexed, skip header
+        if bed_sd is not None:
+            cells.append(gspread.Cell(sheet_row, 10, bed_sd))  # J
+        if wake_sd is not None:
+            cells.append(gspread.Cell(sheet_row, 11, wake_sd))  # K
+
+        update = {}
+        if bed_sd is not None:
+            update["bedtime_variability_7d"] = bed_sd
+        if wake_sd is not None:
+            update["wake_variability_7d"] = wake_sd
+        if update:
+            supa_updates.append((row_date, update))
+
+        if (i + 1) % 100 == 0:
+            print(f"  {i + 1}/{total} computed...")
+
+    # Batch write to Sheets
+    if cells:
+        # Write in chunks of 1000 to stay within API limits
+        for chunk_start in range(0, len(cells), 1000):
+            chunk = cells[chunk_start:chunk_start + 1000]
+            sheet.update_cells(chunk, value_input_option="USER_ENTERED")
+            print(f"  Sheets: wrote cells {chunk_start + 1}-{chunk_start + len(chunk)}")
+
+    # Batch update Supabase
+    try:
+        from supabase_sync import init_supabase
+        supa = init_supabase()
+        if supa is not None:
+            for date_str, update in supa_updates:
+                supa.table("sleep").update(update).eq("date", date_str).execute()
+            print(f"  Supabase: updated {len(supa_updates)} rows")
+    except Exception as e:
+        print(f"  Supabase variability backfill skipped: {e}")
+
     print(f"Done! Variability recomputed for {total} rows.")
 
 

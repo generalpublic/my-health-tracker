@@ -42,12 +42,16 @@ _STATS_KEYS = [
 ]
 
 _FEEDBACK_MAP = {
-    "POSITIVE_LONG_AND_DEEP":  "Long & Deep",
-    "POSITIVE_LATE_BED_TIME":  "Late Bedtime",
-    "NEGATIVE_SHORT":          "Too Short",
-    "NEGATIVE_FRAGMENTED":     "Fragmented",
-    "NEGATIVE_POOR_QUALITY":   "Poor Quality",
-    "NEGATIVE_LATE_BED_TIME":  "Late Bedtime",
+    "POSITIVE_LONG_AND_DEEP":              "Long & Deep",
+    "POSITIVE_LATE_BED_TIME":              "Late Bedtime",
+    "POSITIVE_GOOD_DURATION":              "Good Duration",
+    "POSITIVE_GOOD_QUALITY":               "Good Quality",
+    "NEGATIVE_SHORT":                      "Too Short",
+    "NEGATIVE_FRAGMENTED":                 "Fragmented",
+    "NEGATIVE_POOR_QUALITY":               "Poor Quality",
+    "NEGATIVE_LATE_BED_TIME":              "Late Bedtime",
+    "NEGATIVE_LONG_BUT_NOT_RESTORATIVE":   "Long But Not Restorative",
+    "NEGATIVE_SHORT_AND_POOR_QUALITY":     "Short & Poor Quality",
 }
 
 
@@ -68,13 +72,24 @@ def _fetch_sleep_data(client, date_iso):
         overall = scores.get("overall", {})
         data["sleep_score"] = overall.get("value", "") if isinstance(overall, dict) else ""
 
-        start_local = dto.get("sleepStartTimestampLocal")
-        end_local   = dto.get("sleepEndTimestampLocal")
-        data["sleep_bedtime"]   = datetime.fromtimestamp(start_local / 1000).strftime("%H:%M") if start_local else ""
-        data["sleep_wake_time"] = datetime.fromtimestamp(end_local / 1000).strftime("%H:%M") if end_local   else ""
+        # Use GMT timestamps — fromtimestamp() converts UTC epoch to system local time.
+        # NEVER use "Local" fields — they are unreliable (off by timezone offset).
+        # Bug history: v2.1 removed tz=timezone.utc from Local fields, producing
+        # bedtime/wake times shifted by 4-5h. Switched to GMT fields as the fix.
+        start_gmt = dto.get("sleepStartTimestampGMT")
+        end_gmt   = dto.get("sleepEndTimestampGMT")
+        data["sleep_bedtime"]   = datetime.fromtimestamp(start_gmt / 1000).strftime("%H:%M") if start_gmt else ""
+        data["sleep_wake_time"] = datetime.fromtimestamp(end_gmt / 1000).strftime("%H:%M") if end_gmt   else ""
 
-        if start_local and end_local:
-            data["sleep_time_in_bed"] = round((end_local - start_local) / 1000 / 3600, 2)
+        # Sanity check: wake time should be 04:00-14:00, span should be 4-16h
+        if data["sleep_wake_time"] and data["sleep_bedtime"]:
+            wake_h = int(data["sleep_wake_time"].split(":")[0])
+            if wake_h < 4 or wake_h >= 14:
+                print(f"  WARNING: Wake time {data['sleep_wake_time']} outside expected 04:00-14:00 range. "
+                      f"Check timestamp conversion.")
+
+        if start_gmt and end_gmt:
+            data["sleep_time_in_bed"] = round((end_gmt - start_gmt) / 1000 / 3600, 2)
         else:
             data["sleep_time_in_bed"] = ""
 
@@ -232,9 +247,23 @@ def get_garmin_data(today, yesterday):
         data["total_calories"]   = stats.get("totalKilocalories", "")
         data["active_calories"]  = stats.get("activeKilocalories", "")
         data["bmr_calories"]     = stats.get("bmrKilocalories", "")
-        data["avg_stress"]       = stats.get("averageStressLevel", "")
+        avg_stress = stats.get("averageStressLevel", "")
+        data["avg_stress"] = avg_stress
         raw_sq = stats.get("stressQualifier", "") or ""
-        data["stress_qualifier"] = raw_sq.replace("_", " ").title() if raw_sq and raw_sq.upper() != "UNKNOWN" else ""
+        if raw_sq and raw_sq.upper() != "UNKNOWN":
+            data["stress_qualifier"] = raw_sq.replace("_", " ").title()
+        elif isinstance(avg_stress, (int, float)) and avg_stress >= 0:
+            # Derive qualifier from avg stress when API returns UNKNOWN (partial day)
+            if avg_stress <= 25:
+                data["stress_qualifier"] = "Rest"
+            elif avg_stress <= 50:
+                data["stress_qualifier"] = "Balanced"
+            elif avg_stress <= 75:
+                data["stress_qualifier"] = "Stressful"
+            else:
+                data["stress_qualifier"] = "Very Stressful"
+        else:
+            data["stress_qualifier"] = ""
         data["floors_ascended"]  = round(stats.get("floorsAscended", 0) or 0)
         data["moderate_min"]     = stats.get("moderateIntensityMinutes", "")
         data["vigorous_min"]     = stats.get("vigorousIntensityMinutes", "")

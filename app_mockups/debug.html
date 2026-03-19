@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health Tracker — Debug</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; background: #111; color: #eee; font-size: 14px; }
+    h1 { font-size: 18px; margin-bottom: 16px; }
+    .test { margin-bottom: 12px; padding: 12px; border-radius: 8px; background: #222; }
+    .test-name { font-weight: 700; margin-bottom: 4px; }
+    .pass { border-left: 4px solid #22c55e; }
+    .fail { border-left: 4px solid #F87171; }
+    .wait { border-left: 4px solid #f59e0b; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #aaa; margin: 4px 0 0; }
+    button { display: block; background: #8B5CF6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; margin-top: 12px; }
+    .btn-danger { background: #F87171; }
+  </style>
+  <script>
+    // Global error handler — catches data-loader.js parse/runtime errors
+    window._scriptErrors = [];
+    window.onerror = function(msg, src, line, col, err) {
+      window._scriptErrors.push({msg: msg, src: src, line: line, col: col});
+      return false;
+    };
+  </script>
+</head>
+<body>
+  <h1>Health Tracker — Debug v2</h1>
+  <div id="results"></div>
+
+  <!-- Load data-loader.js the SAME way real pages do (static script tag) -->
+  <script src="data-loader.js"></script>
+
+  <script>
+    function log(name, status, detail) {
+      var el = document.createElement('div');
+      el.className = 'test ' + status;
+      el.innerHTML = '<div class="test-name">' + name + ': ' + status.toUpperCase() + '</div><pre>' + detail + '</pre>';
+      document.getElementById('results').appendChild(el);
+    }
+
+    // Use vars from data-loader.js (no redeclaration)
+    var SB_URL = (typeof SUPABASE_URL !== 'undefined') ? SUPABASE_URL : 'https://uutjdyyxxgeftffitqay.supabase.co';
+    var SB_KEY = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : 'sb_publishable_7SyMEmDUWFuHaVz9mk8oQA_2VxaILJ8';
+
+    async function runTests() {
+      document.getElementById('results').innerHTML = '';
+
+      // Test 0: Script load errors
+      if (window._scriptErrors.length > 0) {
+        log('Script Load Errors', 'fail', window._scriptErrors.map(function(e) {
+          return e.msg + ' at ' + (e.src || 'unknown') + ':' + e.line + ':' + e.col;
+        }).join('\n'));
+      } else {
+        log('Script Load Errors', 'pass', 'No errors during script loading');
+      }
+
+      // Test 1: data-loader.js functions available?
+      var fns = ['initData', 'supabaseQuery', 'fetchToday', 'fetchHistory', 'fetchSessions', 'getStatusColor', 'SAMPLE_DATA'];
+      var found = [];
+      var missing = [];
+      fns.forEach(function(fn) {
+        if (typeof window[fn] !== 'undefined') {
+          found.push(fn);
+        } else {
+          // Also check without window prefix
+          try {
+            eval('typeof ' + fn);
+            if (eval('typeof ' + fn) !== 'undefined') {
+              found.push(fn);
+            } else {
+              missing.push(fn);
+            }
+          } catch(e) {
+            missing.push(fn);
+          }
+        }
+      });
+      if (missing.length === 0) {
+        log('data-loader.js globals', 'pass', 'All available: ' + found.join(', '));
+      } else {
+        log('data-loader.js globals', 'fail', 'Found: ' + found.join(', ') + '\nMISSING: ' + missing.join(', '));
+      }
+
+      // Test 2: Service Worker
+      try {
+        if ('serviceWorker' in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          if (regs.length === 0) {
+            log('Service Worker', 'pass', 'No service worker registered');
+          } else {
+            var sw = regs[0];
+            log('Service Worker', 'pass', 'Scope: ' + sw.scope + '\nState: ' + (sw.active ? sw.active.state : 'none'));
+          }
+        } else {
+          log('Service Worker', 'wait', 'Service Workers not supported');
+        }
+      } catch (e) {
+        log('Service Worker', 'fail', e.message);
+      }
+
+      // Test 3: Direct Supabase fetch
+      try {
+        var url = SB_URL + '/rest/v1/garmin?select=date&order=date.desc&limit=3';
+        var res = await fetch(url, {
+          headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Accept': 'application/json' }
+        });
+        var body = await res.text();
+        if (res.ok) {
+          var data = JSON.parse(body);
+          log('Supabase: garmin', 'pass', res.status + ' OK - ' + data.length + ' rows\n' + body);
+        } else {
+          log('Supabase: garmin', 'fail', res.status + ' ' + res.statusText + '\n' + body);
+        }
+      } catch (e) {
+        log('Supabase: garmin', 'fail', 'Network error: ' + e.message);
+      }
+
+      // Test 4: session_log
+      try {
+        var url2 = SB_URL + '/rest/v1/session_log?select=date,activity_name&order=date.desc&limit=3';
+        var res2 = await fetch(url2, {
+          headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Accept': 'application/json' }
+        });
+        var body2 = await res2.text();
+        if (res2.ok) {
+          var data2 = JSON.parse(body2);
+          log('Supabase: session_log', 'pass', res2.status + ' OK - ' + data2.length + ' rows\n' + body2);
+        } else {
+          log('Supabase: session_log', 'fail', res2.status + ' ' + res2.statusText + '\n' + body2);
+        }
+      } catch (e) {
+        log('Supabase: session_log', 'fail', 'Network error: ' + e.message);
+      }
+
+      // Test 5: initData() — the critical test
+      try {
+        if (typeof initData === 'function') {
+          var result = await initData();
+          var detail = 'today: ' + (result.today ? result.today.date : 'null') +
+            '\nhistory: ' + (result.history ? result.history.length : 0) + ' days' +
+            '\nsessions: ' + (result.sessions_history ? result.sessions_history.length : 0) +
+            '\nerror: ' + (result._error || 'none') +
+            '\nloaded: ' + result._loaded;
+          if (result.history && result.history.length > 0) {
+            detail += '\n\nFirst date: ' + result.history[0].date;
+            detail += '\nLast date: ' + result.history[result.history.length - 1].date;
+          }
+          log('initData()', result._error ? 'fail' : 'pass', detail);
+        } else {
+          log('initData()', 'fail', 'initData is not a function. typeof = ' + typeof initData +
+            '\n\nThis means data-loader.js failed to parse/execute.\nCheck "Script Load Errors" above.');
+        }
+      } catch (e) {
+        log('initData()', 'fail', 'Error: ' + e.message + '\n' + (e.stack || ''));
+      }
+    }
+
+    // Auto-run on load
+    runTests();
+  </script>
+
+  <button onclick="runTests()">Run Tests Again</button>
+  <button class="btn-danger" onclick="clearAll()">Clear Cache + SW + Reload</button>
+
+  <script>
+    function clearAll() {
+      var btn = document.querySelector('.btn-danger');
+      btn.textContent = 'Clearing...';
+
+      // Simple approach that works on all browsers
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          return Promise.all(names.map(function(name) { return caches.delete(name); }));
+        }).then(function() {
+          if ('serviceWorker' in navigator) {
+            return navigator.serviceWorker.getRegistrations().then(function(regs) {
+              return Promise.all(regs.map(function(r) { return r.unregister(); }));
+            });
+          }
+        }).then(function() {
+          btn.textContent = 'Done! Reloading...';
+          setTimeout(function() { location.reload(true); }, 500);
+        }).catch(function(e) {
+          btn.textContent = 'Error: ' + e.message;
+        });
+      } else {
+        // No cache API — just reload
+        location.reload(true);
+      }
+    }
+  </script>
+</body>
+</html>

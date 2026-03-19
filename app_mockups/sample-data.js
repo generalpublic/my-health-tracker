@@ -8,8 +8,8 @@ const SAMPLE_DATA = {
 
   // --- Thresholds (from thresholds.json) ---
   thresholds: {
-    readiness_score:      { type: "higher_better", red: 4, yellow: 5.5, green: 8.5 },
-    sleep_analysis_score: { type: "higher_better", red: 50, yellow: 65, green: 80 },
+    readiness_score:      { type: "higher_better", red: 4, yellow: 5.5, green: 7 },
+    sleep_analysis_score: { type: "higher_better", red: 50, yellow: 65, green: 75 },
     total_sleep_hrs:      { type: "higher_better", red: 5, yellow: 7, green: 8 },
     overnight_hrv_ms:     { type: "higher_better", red: 30, yellow: 40, green: 48 },
     body_battery:         { type: "higher_better", red: 20, yellow: 50, green: 80 },
@@ -59,8 +59,8 @@ const SAMPLE_DATA = {
         "Bedtime variability down to 18min — best consistency this month"
       ],
       recommendations: [
-        "Normal training load appropriate today — body is ready",
-        "Maintain 10:30 PM bedtime tonight to lock in consistency gains"
+        "Prioritize rest and recovery. Light walking or NSDR (non-sleep deep rest) only — avoid high-intensity training. Cognitive capacity is likely reduced; defer important decisions if possible.",
+        "Plan to be off screens by 8 PM and in bed by 9-9:30 PM tonight to begin recovering sleep debt."
       ],
       training_load: "ACWR: 1.08 — Sweet Spot",
       cognition: 8,
@@ -214,8 +214,70 @@ const SAMPLE_DATA = {
     }
   },
 
-  // --- Historical data (14 days for trends) ---
+  // --- Historical data (Jan–Mar 2026 for calendar + trends) ---
   history: [
+    // January 2026 — rough month, poor sleep, inconsistent habits
+    { date: "2026-01-01", readiness: 4.2, sleep_score: 42, total_sleep: 4.8, hrv: 25, rhr: 64, body_battery: 28, steps: 2100, stress: 48, habits: 1, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-02", readiness: 4.8, sleep_score: 48, total_sleep: 5.2, hrv: 27, rhr: 63, body_battery: 35, steps: 3200, stress: 44, habits: 2, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-03", readiness: 5.0, sleep_score: 50, total_sleep: 5.5, hrv: 28, rhr: 62, body_battery: 38, steps: 3500, stress: 42, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-04", readiness: 4.5, sleep_score: 44, total_sleep: 4.9, hrv: 24, rhr: 65, body_battery: 30, steps: 2800, stress: 46, habits: 1, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-05", readiness: 5.2, sleep_score: 52, total_sleep: 5.6, hrv: 29, rhr: 61, body_battery: 42, steps: 4200, stress: 40, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-06", readiness: 5.5, sleep_score: 55, total_sleep: 5.8, hrv: 30, rhr: 60, body_battery: 45, steps: 5100, stress: 38, habits: 3, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-07", readiness: 5.8, sleep_score: 58, total_sleep: 6.2, hrv: 32, rhr: 59, body_battery: 50, steps: 5500, stress: 36, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-01-08", readiness: 4.9, sleep_score: 46, total_sleep: 5.0, hrv: 26, rhr: 63, body_battery: 33, steps: 3000, stress: 45, habits: 1, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-09", readiness: 5.1, sleep_score: 50, total_sleep: 5.4, hrv: 28, rhr: 62, body_battery: 40, steps: 3800, stress: 42, habits: 2, day_rating: 4, morning_energy: 4, cognition: 4 },
+    { date: "2026-01-10", readiness: 5.6, sleep_score: 56, total_sleep: 6.0, hrv: 31, rhr: 60, body_battery: 48, steps: 4800, stress: 38, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-01-11", readiness: 4.6, sleep_score: 43, total_sleep: 4.7, hrv: 23, rhr: 65, body_battery: 28, steps: 2500, stress: 48, habits: 1, day_rating: 3, morning_energy: 2, cognition: 3 },
+    { date: "2026-01-12", readiness: 5.3, sleep_score: 54, total_sleep: 5.7, hrv: 30, rhr: 61, body_battery: 44, steps: 4400, stress: 39, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-13", readiness: 5.7, sleep_score: 57, total_sleep: 6.1, hrv: 32, rhr: 59, body_battery: 50, steps: 5200, stress: 36, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-01-14", readiness: 6.0, sleep_score: 60, total_sleep: 6.4, hrv: 34, rhr: 58, body_battery: 54, steps: 5800, stress: 34, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-01-15", readiness: 5.0, sleep_score: 48, total_sleep: 5.1, hrv: 26, rhr: 63, body_battery: 36, steps: 3100, stress: 44, habits: 2, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-16", readiness: 5.4, sleep_score: 53, total_sleep: 5.6, hrv: 29, rhr: 61, body_battery: 42, steps: 4000, stress: 40, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-17", readiness: 5.9, sleep_score: 59, total_sleep: 6.3, hrv: 33, rhr: 59, body_battery: 52, steps: 5600, stress: 35, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-01-18", readiness: 6.2, sleep_score: 62, total_sleep: 6.5, hrv: 35, rhr: 58, body_battery: 56, steps: 6200, stress: 32, habits: 4, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-01-19", readiness: 5.1, sleep_score: 49, total_sleep: 5.2, hrv: 27, rhr: 62, body_battery: 38, steps: 3400, stress: 43, habits: 2, day_rating: 4, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-20", readiness: 5.5, sleep_score: 55, total_sleep: 5.9, hrv: 30, rhr: 60, body_battery: 46, steps: 4600, stress: 38, habits: 3, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-21", readiness: 6.0, sleep_score: 60, total_sleep: 6.4, hrv: 34, rhr: 58, body_battery: 55, steps: 5900, stress: 33, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-01-22", readiness: 5.3, sleep_score: 52, total_sleep: 5.5, hrv: 28, rhr: 61, body_battery: 40, steps: 3600, stress: 41, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-23", readiness: 5.7, sleep_score: 57, total_sleep: 6.0, hrv: 31, rhr: 60, body_battery: 48, steps: 5000, stress: 37, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-01-24", readiness: 6.1, sleep_score: 61, total_sleep: 6.5, hrv: 35, rhr: 58, body_battery: 56, steps: 6300, stress: 32, habits: 4, day_rating: 6, morning_energy: 5, cognition: 6 },
+    { date: "2026-01-25", readiness: 4.8, sleep_score: 45, total_sleep: 4.9, hrv: 25, rhr: 64, body_battery: 32, steps: 2700, stress: 46, habits: 1, day_rating: 3, morning_energy: 3, cognition: 4 },
+    { date: "2026-01-26", readiness: 5.4, sleep_score: 54, total_sleep: 5.7, hrv: 30, rhr: 61, body_battery: 44, steps: 4300, stress: 39, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-27", readiness: 5.8, sleep_score: 58, total_sleep: 6.2, hrv: 33, rhr: 59, body_battery: 52, steps: 5500, stress: 35, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-01-28", readiness: 6.3, sleep_score: 63, total_sleep: 6.6, hrv: 36, rhr: 57, body_battery: 58, steps: 6800, stress: 30, habits: 4, day_rating: 6, morning_energy: 6, cognition: 6 },
+    { date: "2026-01-29", readiness: 5.2, sleep_score: 51, total_sleep: 5.3, hrv: 28, rhr: 62, body_battery: 38, steps: 3600, stress: 42, habits: 2, day_rating: 4, morning_energy: 4, cognition: 4 },
+    { date: "2026-01-30", readiness: 5.6, sleep_score: 56, total_sleep: 5.9, hrv: 31, rhr: 60, body_battery: 46, steps: 4800, stress: 38, habits: 3, day_rating: 5, morning_energy: 4, cognition: 5 },
+    { date: "2026-01-31", readiness: 6.0, sleep_score: 60, total_sleep: 6.3, hrv: 34, rhr: 58, body_battery: 54, steps: 5600, stress: 34, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    // February 2026 — improving, building consistency
+    { date: "2026-02-01", readiness: 5.8, sleep_score: 58, total_sleep: 6.1, hrv: 32, rhr: 59, body_battery: 50, steps: 5200, stress: 36, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
+    { date: "2026-02-02", readiness: 6.2, sleep_score: 62, total_sleep: 6.5, hrv: 35, rhr: 58, body_battery: 56, steps: 6000, stress: 33, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-02-03", readiness: 6.5, sleep_score: 65, total_sleep: 6.8, hrv: 37, rhr: 57, body_battery: 60, steps: 6800, stress: 30, habits: 4, day_rating: 6, morning_energy: 6, cognition: 6 },
+    { date: "2026-02-04", readiness: 5.5, sleep_score: 54, total_sleep: 5.6, hrv: 29, rhr: 61, body_battery: 42, steps: 4000, stress: 40, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-02-05", readiness: 6.0, sleep_score: 60, total_sleep: 6.3, hrv: 34, rhr: 58, body_battery: 54, steps: 5500, stress: 34, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-02-06", readiness: 6.6, sleep_score: 66, total_sleep: 6.9, hrv: 38, rhr: 56, body_battery: 62, steps: 7200, stress: 28, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-07", readiness: 7.0, sleep_score: 70, total_sleep: 7.2, hrv: 40, rhr: 55, body_battery: 68, steps: 7800, stress: 25, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-08", readiness: 5.8, sleep_score: 56, total_sleep: 5.8, hrv: 31, rhr: 60, body_battery: 46, steps: 3800, stress: 38, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-02-09", readiness: 6.3, sleep_score: 63, total_sleep: 6.6, hrv: 36, rhr: 57, body_battery: 58, steps: 6200, stress: 32, habits: 4, day_rating: 6, morning_energy: 5, cognition: 6 },
+    { date: "2026-02-10", readiness: 6.8, sleep_score: 68, total_sleep: 7.0, hrv: 39, rhr: 56, body_battery: 64, steps: 7500, stress: 27, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-11", readiness: 5.6, sleep_score: 55, total_sleep: 5.7, hrv: 30, rhr: 60, body_battery: 44, steps: 4200, stress: 39, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
+    { date: "2026-02-12", readiness: 6.4, sleep_score: 64, total_sleep: 6.7, hrv: 37, rhr: 57, body_battery: 60, steps: 6600, stress: 30, habits: 4, day_rating: 6, morning_energy: 6, cognition: 6 },
+    { date: "2026-02-13", readiness: 7.0, sleep_score: 70, total_sleep: 7.1, hrv: 41, rhr: 55, body_battery: 68, steps: 8000, stress: 24, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-14", readiness: 7.3, sleep_score: 73, total_sleep: 7.4, hrv: 43, rhr: 54, body_battery: 72, steps: 8500, stress: 22, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-15", readiness: 5.9, sleep_score: 57, total_sleep: 5.9, hrv: 32, rhr: 59, body_battery: 48, steps: 4500, stress: 37, habits: 3, day_rating: 5, morning_energy: 4, cognition: 5 },
+    { date: "2026-02-16", readiness: 6.5, sleep_score: 65, total_sleep: 6.8, hrv: 38, rhr: 56, body_battery: 62, steps: 7000, stress: 29, habits: 4, day_rating: 6, morning_energy: 6, cognition: 6 },
+    { date: "2026-02-17", readiness: 7.1, sleep_score: 71, total_sleep: 7.2, hrv: 42, rhr: 54, body_battery: 70, steps: 8200, stress: 23, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-18", readiness: 6.7, sleep_score: 67, total_sleep: 6.9, hrv: 38, rhr: 56, body_battery: 62, steps: 6800, stress: 28, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-19", readiness: 6.1, sleep_score: 60, total_sleep: 6.2, hrv: 34, rhr: 58, body_battery: 52, steps: 5400, stress: 34, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-02-20", readiness: 6.8, sleep_score: 68, total_sleep: 7.0, hrv: 40, rhr: 55, body_battery: 66, steps: 7600, stress: 26, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-21", readiness: 7.2, sleep_score: 72, total_sleep: 7.3, hrv: 42, rhr: 54, body_battery: 70, steps: 8400, stress: 23, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-22", readiness: 6.0, sleep_score: 58, total_sleep: 6.0, hrv: 33, rhr: 59, body_battery: 48, steps: 4600, stress: 36, habits: 3, day_rating: 5, morning_energy: 4, cognition: 5 },
+    { date: "2026-02-23", readiness: 6.6, sleep_score: 66, total_sleep: 6.9, hrv: 39, rhr: 56, body_battery: 64, steps: 7200, stress: 28, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-24", readiness: 7.0, sleep_score: 70, total_sleep: 7.1, hrv: 41, rhr: 55, body_battery: 68, steps: 8000, stress: 24, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-25", readiness: 6.3, sleep_score: 62, total_sleep: 6.4, hrv: 35, rhr: 58, body_battery: 54, steps: 5800, stress: 33, habits: 3, day_rating: 5, morning_energy: 5, cognition: 6 },
+    { date: "2026-02-26", readiness: 6.9, sleep_score: 69, total_sleep: 7.0, hrv: 40, rhr: 55, body_battery: 66, steps: 7500, stress: 26, habits: 4, day_rating: 6, morning_energy: 6, cognition: 7 },
+    { date: "2026-02-27", readiness: 7.2, sleep_score: 72, total_sleep: 7.3, hrv: 43, rhr: 54, body_battery: 72, steps: 8600, stress: 22, habits: 5, day_rating: 7, morning_energy: 7, cognition: 7 },
+    { date: "2026-02-28", readiness: 6.5, sleep_score: 64, total_sleep: 6.6, hrv: 36, rhr: 57, body_battery: 58, steps: 6200, stress: 31, habits: 4, day_rating: 6, morning_energy: 5, cognition: 6 },
+    // March 2026 — continued improvement, current month
     { date: "2026-03-01", readiness: 5.5, sleep_score: 52, total_sleep: 5.4, hrv: 30, rhr: 61, body_battery: 40, steps: 3800, stress: 40, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },
     { date: "2026-03-02", readiness: 6.0, sleep_score: 58, total_sleep: 6.0, hrv: 33, rhr: 59, body_battery: 50, steps: 4500, stress: 35, habits: 3, day_rating: 5, morning_energy: 5, cognition: 5 },
     { date: "2026-03-03", readiness: 5.9, sleep_score: 56, total_sleep: 5.8, hrv: 31, rhr: 60, body_battery: 46, steps: 4100, stress: 37, habits: 2, day_rating: 4, morning_energy: 4, cognition: 5 },

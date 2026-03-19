@@ -1,0 +1,996 @@
+// ============================================
+// Health Tracker App — Live Data Loader (Supabase)
+//
+// Replaces static sample-data.js with live Supabase queries.
+// HTML pages must call `await initData()` before rendering.
+//
+// Usage in HTML:
+//   <script src="data-loader.js"></script>
+//   <script>
+//     initData().then(() => {
+//       // SAMPLE_DATA is now populated — render your page
+//     });
+//   </script>
+//
+// Falls back to empty/default structure with _error flag if fetch fails.
+// ============================================
+
+// --- Supabase Config (PUBLIC anon key — safe for frontend) ---
+// UPDATE THESE: replace with your Supabase project URL and anon key from .env
+const SUPABASE_URL = 'https://uutjdyyxxgeftffitqay.supabase.co';       // e.g. 'https://xxxx.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_7SyMEmDUWFuHaVz9mk8oQA_2VxaILJ8'; // e.g. 'eyJhbG...'
+
+// ============================================
+// Supabase REST API helper
+// ============================================
+
+async function supabaseQuery(table, params = {}) {
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache',
+    },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error(`[data-loader] ${table} query failed: ${res.status} ${res.statusText}`, body);
+    throw new Error(`Supabase ${table}: ${res.status} ${res.statusText} — ${body}`);
+  }
+  const data = await res.json();
+  console.log(`[data-loader] ${table}: ${data.length} rows`);
+  return data;
+}
+
+// ============================================
+// Supabase REST API — Write (upsert) helper
+// ============================================
+
+/**
+ * Write data to Supabase via POST with upsert semantics.
+ * Only columns included in `data` are written — other columns on the row are untouched.
+ *
+ * @param {string} table - Supabase table name
+ * @param {object} data - Row data to upsert
+ * @param {string|null} matchColumns - Conflict columns for upsert (e.g. "date" or "date,activity_name"). Null = plain INSERT.
+ * @returns {object|null} The written row, or null if queued offline.
+ */
+async function supabaseMutate(table, data, matchColumns = null) {
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+  if (matchColumns) {
+    url.searchParams.set('on_conflict', matchColumns);
+  }
+  const headers = {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=representation',
+  };
+
+  try {
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Supabase ${table} write: ${res.status} — ${body}`);
+    }
+    const rows = await res.json();
+    console.log(`[data-loader] ${table} upserted for ${data.date || 'id'}`);
+    return rows[0] || data;
+  } catch (err) {
+    // If offline, queue for later
+    if (!navigator.onLine || err instanceof TypeError) {
+      _enqueueOffline(table, data, matchColumns);
+      return null;
+    }
+    throw err;
+  }
+}
+
+// ============================================
+// Offline Queue — localStorage persistence
+// ============================================
+
+const _OFFLINE_QUEUE_KEY = 'ht_offline_queue';
+
+function _getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(_OFFLINE_QUEUE_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function _saveOfflineQueue(queue) {
+  localStorage.setItem(_OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
+function _enqueueOffline(table, data, matchColumns) {
+  const queue = _getOfflineQueue();
+  queue.push({ table, data, matchColumns, timestamp: Date.now() });
+  _saveOfflineQueue(queue);
+  console.log(`[offline] Queued ${table} write (${queue.length} pending)`);
+}
+
+async function flushOfflineQueue() {
+  const queue = _getOfflineQueue();
+  if (queue.length === 0) return;
+  console.log(`[offline] Flushing ${queue.length} queued writes`);
+  const failed = [];
+  for (const item of queue) {
+    try {
+      await supabaseMutate(item.table, item.data, item.matchColumns);
+    } catch (e) {
+      console.warn(`[offline] Flush failed for ${item.table}:`, e);
+      failed.push(item);
+    }
+  }
+  _saveOfflineQueue(failed);
+  if (failed.length > 0) console.warn(`[offline] ${failed.length} writes still pending`);
+  else console.log('[offline] All queued writes flushed');
+}
+
+// Auto-flush when coming back online
+window.addEventListener('online', () => flushOfflineQueue());
+
+// ============================================
+// PWA Write Functions — one per form type
+// ============================================
+
+/**
+ * Collect habit toggle states from a container element.
+ * Returns object with Supabase column names as keys.
+ */
+function _collectHabits(containerId) {
+  const toggles = document.querySelectorAll(`#${containerId} .toggle-switch`);
+  const keys = ['wake_at_930', 'no_morning_screens', 'creatine_hydrate',
+                'walk_breathing', 'physical_activity', 'no_screens_before_bed', 'bed_at_10pm'];
+  const result = {};
+  toggles.forEach((t, i) => {
+    if (keys[i]) result[keys[i]] = t.classList.contains('active') ? 1 : 0;
+  });
+  return result;
+}
+
+/** Morning Check-in -> daily_log (morning_energy + habits) */
+async function saveMorningCheckin() {
+  const date = _todayStr();
+  const habits = _collectHabits('morningHabits');
+  const habitsTotal = Object.values(habits).filter(v => v === 1).length;
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    morning_energy: parseInt(document.getElementById('morningEnergyVal').textContent),
+    ...habits,
+    habits_total: habitsTotal,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('daily_log', data, 'date');
+}
+
+/** Midday Check-in -> daily_log (midday fields) */
+async function saveMiddayCheckin() {
+  const date = _todayStr();
+  const textarea = document.querySelector('#middayForm textarea');
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    midday_energy: parseInt(document.getElementById('midEnergyVal').textContent),
+    midday_focus: parseInt(document.getElementById('midFocusVal').textContent),
+    midday_mood: parseInt(document.getElementById('midMoodVal').textContent),
+    midday_body_feel: parseInt(document.getElementById('midBodyVal').textContent),
+    midday_notes: (textarea && textarea.value) || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('daily_log', data, 'date');
+}
+
+/** Evening Review -> daily_log (evening fields + habits + day_rating + stress) */
+async function saveEveningReview() {
+  const date = _todayStr();
+  const habits = _collectHabits('eveningHabits');
+  const habitsTotal = Object.values(habits).filter(v => v === 1).length;
+  const textarea = document.querySelector('#eveningForm textarea');
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    evening_energy: parseInt(document.getElementById('eveEnergyVal').textContent),
+    evening_focus: parseInt(document.getElementById('eveFocusVal').textContent),
+    evening_mood: parseInt(document.getElementById('eveMoodVal').textContent),
+    perceived_stress: parseInt(document.getElementById('eveStressVal').textContent),
+    day_rating: parseInt(document.getElementById('eveDayRating').textContent),
+    ...habits,
+    habits_total: habitsTotal,
+    evening_notes: (textarea && textarea.value) || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('daily_log', data, 'date');
+}
+
+/** Nutrition -> nutrition (meals + macros) */
+async function saveNutrition() {
+  const date = _todayStr();
+  const mealTextareas = document.querySelectorAll('#nutritionForm .meal-card textarea');
+  const macroInputs = document.querySelectorAll('#nutritionForm .macro-input');
+  const calories = parseFloat(macroInputs[0]?.value) || 0;
+  const burned = _num(SAMPLE_DATA.today?.nutrition?.total_calories_burned);
+  // Last textarea in nutritionForm (not inside a meal-card) is the notes field
+  const notesTextarea = document.querySelector('#nutritionForm > textarea, #nutritionForm .text-input:last-of-type');
+  const notes = (notesTextarea && !notesTextarea.closest('.meal-card')) ? notesTextarea.value : null;
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    breakfast: mealTextareas[0]?.value || null,
+    lunch: mealTextareas[1]?.value || null,
+    dinner: mealTextareas[2]?.value || null,
+    snacks: mealTextareas[3]?.value || null,
+    total_calories_consumed: calories,
+    protein_g: parseFloat(macroInputs[1]?.value) || null,
+    carbs_g: parseFloat(macroInputs[2]?.value) || null,
+    fats_g: parseFloat(macroInputs[3]?.value) || null,
+    water_l: parseFloat(macroInputs[4]?.value) || null,
+    calorie_balance: calories > 0 ? calories - burned : null,
+    notes: notes || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('nutrition', data, 'date');
+}
+
+/** Cognition -> overall_analysis (cognition + cognition_notes only) */
+async function saveCognition() {
+  const date = _todayStr();
+  const textarea = document.querySelector('#cognitionForm textarea');
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    cognition: typeof cognitionScore !== 'undefined' ? cognitionScore : parseInt(document.getElementById('cognitionVal').textContent),
+    cognition_notes: (textarea && textarea.value) || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('overall_analysis', data, 'date');
+}
+
+/** Sleep Notes -> sleep (notes column only) */
+async function saveSleepNotes() {
+  const date = _todayStr();
+  const textarea = document.querySelector('#sleep_notesForm textarea');
+  const data = {
+    date,
+    notes: (textarea && textarea.value) || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('sleep', data, 'date');
+}
+
+/** Strength Set -> strength_log (plain INSERT, auto-increment ID) */
+async function saveStrengthSet(muscleGroup, exercise, weight, reps, rpe) {
+  const date = _todayStr();
+  const data = {
+    date,
+    day: _dayOfWeek(date),
+    muscle_group: muscleGroup,
+    exercise: exercise,
+    weight_lbs: weight,
+    reps: reps,
+    rpe: rpe,
+    manual_source: 'pwa',
+  };
+  // No matchColumns = plain INSERT (strength_log uses auto-increment id)
+  return supabaseMutate('strength_log', data, null);
+}
+
+/** Session manual fields -> session_log (perceived_effort, post_workout_energy, notes) */
+async function saveSessionManualFields(activityName, perceivedEffort, postWorkoutEnergy, notes) {
+  const date = _todayStr();
+  const data = {
+    date,
+    activity_name: activityName,
+    day: _dayOfWeek(date),
+    perceived_effort: perceivedEffort || null,
+    post_workout_energy: postWorkoutEnergy || null,
+    notes: notes || null,
+    manual_source: 'pwa',
+  };
+  return supabaseMutate('session_log', data, 'date,activity_name');
+}
+
+// ============================================
+// Thresholds (static config — from thresholds.json)
+// ============================================
+
+const THRESHOLDS = {
+  readiness_score: { type: "higher_better", red: 4, yellow: 5.5, green: 8.5 },
+  sleep_analysis_score: { type: "higher_better", red: 50, yellow: 65, green: 80 },
+  total_sleep_hrs: { type: "higher_better", red: 5, yellow: 7, green: 8 },
+  overnight_hrv_ms: { type: "higher_better", red: 30, yellow: 40, green: 48 },
+  body_battery: { type: "higher_better", red: 20, yellow: 50, green: 80 },
+  body_battery_gained: { type: "higher_better", red: 15, yellow: 40, green: 65 },
+  resting_hr: { type: "lower_better", green: 48, yellow: 55, red: 65 },
+  avg_stress_level: { type: "lower_better", green: 15, yellow: 30, red: 50 },
+  steps: { type: "higher_better", red: 3000, yellow: 7000, green: 10000 },
+  habits_total: { type: "higher_better", red: 2, yellow: 4, green: 6 },
+  day_rating: { type: "higher_better", red: 1, yellow: 5.5, green: 10 },
+  morning_energy: { type: "higher_better", red: 1, yellow: 5.5, green: 10 },
+  cognition: { type: "higher_better", red: 1, yellow: 5, green: 10 },
+  deep_pct: { type: "higher_better", red: 12, yellow: 18, green: 22 },
+  rem_pct: { type: "higher_better", red: 15, yellow: 20, green: 25 },
+  bedtime_var: { type: "lower_better", green: 30, yellow: 60, red: 90 },
+  wake_var: { type: "lower_better", green: 30, yellow: 60, red: 90 },
+  workout_duration: { type: "higher_better", red: 15, yellow: 35, green: 60 },
+  workout_calories: { type: "higher_better", red: 100, yellow: 400, green: 900 },
+  aerobic_te: { type: "higher_better", red: 1, yellow: 2.5, green: 4 },
+  awake_min: { type: "lower_better", green: 15, yellow: 30, red: 60 },
+  session_avg_hr: { type: "higher_better", red: 90, yellow: 120, green: 150 },
+  session_distance: { type: "higher_better", red: 1, yellow: 5, green: 15 },
+};
+
+const SLEEP_STAGE_TARGETS = {
+  deep_pct: 22,
+  rem_pct: 25,
+  awake_max: 15,
+};
+
+// ============================================
+// SAMPLE_DATA — initialized with static parts,
+// live data filled by initData()
+// ============================================
+
+let SAMPLE_DATA = {
+  thresholds: THRESHOLDS,
+  sleep_stage_targets: SLEEP_STAGE_TARGETS,
+  today: null,
+  history: [],
+  sessions_history: [],
+  profile: { name: "Sek" },
+  _error: null,
+  _loaded: false,
+};
+
+// ============================================
+// Date helpers
+// ============================================
+
+function _todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function _dayOfWeek(dateStr) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const d = new Date(dateStr + 'T12:00:00');
+  return days[d.getDay()];
+}
+
+function _daysAgoStr(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+// Safe numeric accessor — returns the value or a fallback
+function _num(val, fallback = 0) {
+  if (val === null || val === undefined || val === '') return fallback;
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+}
+
+// ============================================
+// Fetch functions
+// ============================================
+
+/**
+ * Fetch today's data from all relevant tables.
+ * Returns the SAMPLE_DATA.today object structure.
+ */
+async function fetchToday() {
+  const today = _todayStr();
+  const day = _dayOfWeek(today);
+
+  // Parallel fetch from all tables for today's date — resilient to individual failures
+  const _todayResults = await Promise.allSettled([
+    supabaseQuery('garmin', { date: `eq.${today}`, limit: '1' }),
+    supabaseQuery('sleep', { date: `eq.${today}`, limit: '1' }),
+    supabaseQuery('overall_analysis', { date: `eq.${today}`, limit: '1' }),
+    supabaseQuery('daily_log', { date: `eq.${today}`, limit: '1' }),
+    supabaseQuery('session_log', { date: `eq.${today}`, order: 'activity_name.asc' }),
+    supabaseQuery('nutrition', { date: `eq.${today}`, limit: '1' }),
+    supabaseQuery('strength_log', { date: `eq.${today}`, order: 'id.asc' }),
+  ]);
+
+  const _todayTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log', 'nutrition', 'strength_log'];
+  _todayResults.forEach((r, i) => {
+    if (r.status === 'rejected') console.error(`[data-loader] fetchToday ${_todayTables[i]} failed:`, r.reason);
+  });
+
+  const garminRows = _todayResults[0].status === 'fulfilled' ? _todayResults[0].value : [];
+  const sleepRows = _todayResults[1].status === 'fulfilled' ? _todayResults[1].value : [];
+  const analysisRows = _todayResults[2].status === 'fulfilled' ? _todayResults[2].value : [];
+  const dailyLogRows = _todayResults[3].status === 'fulfilled' ? _todayResults[3].value : [];
+  const sessionRows = _todayResults[4].status === 'fulfilled' ? _todayResults[4].value : [];
+  const nutritionRows = _todayResults[5].status === 'fulfilled' ? _todayResults[5].value : [];
+  const strengthRows = _todayResults[6].status === 'fulfilled' ? _todayResults[6].value : [];
+
+  const g = garminRows[0] || {};
+  const sl = sleepRows[0] || {};
+  const oa = analysisRows[0] || {};
+  const dl = dailyLogRows[0] || {};
+  const nut = nutritionRows[0] || {};
+
+  // Parse key_insights and recommendations — stored as newline-separated "- " bullet text
+  let keyInsights = _parseBulletText(oa.key_insights);
+  let recommendations = _parseBulletText(oa.recommendations);
+
+  // Determine readiness label from score
+  const readinessScore = _num(oa.readiness_score);
+  const readinessLabel = oa.readiness_label || _readinessLabel(readinessScore);
+  const confidence = oa.confidence || 'Medium';
+
+  // Parse cognitive/energy assessment
+  const cogAssessment = oa.cognitive_energy_assessment || '';
+  const sleepContext = oa.sleep_context || '';
+
+  // Build expect block from cognitive assessment text
+  const expectBlock = _parseExpectBlock(cogAssessment);
+
+  // Build sleep feedback from analysis text
+  const sleepAnalysis = sl.sleep_analysis || '';
+  const sleepFeedback = sl.sleep_feedback || _sleepFeedbackFromScore(_num(sl.sleep_analysis_score));
+
+  // Build flags and do_items from insights/recommendations
+  const flags = keyInsights.length > 0 ? keyInsights : [];
+  const doItems = recommendations.length > 0 ? recommendations : [];
+
+  // Build sleep context items
+  const sleepContextItems = _buildSleepContextItems(sl);
+
+  // Build briefing sleep line
+  const sleepLine = `${sleepFeedback} | ${_num(sl.total_sleep_hrs)}h | Deep ${_num(sl.deep_pct)}% | REM ${_num(sl.rem_pct)}% | HRV ${_num(sl.overnight_hrv_ms)}ms | Bed ${sl.bedtime || '--'}`;
+
+  // Map sessions to expected format
+  const sessions = sessionRows.map(s => ({
+    activity_name: s.activity_name || '',
+    activity_type: (s.session_type || s.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+    duration_min: _num(s.duration_min),
+    distance_mi: _num(s.distance_mi),
+    avg_hr: _num(s.avg_hr),
+    max_hr: _num(s.max_hr),
+    calories: _num(s.calories),
+    aerobic_te: _num(s.aerobic_te),
+    anaerobic_te: _num(s.anaerobic_te),
+    zone_1_min: _num(s.zone_1_min),
+    zone_2_min: _num(s.zone_2_min),
+    zone_3_min: _num(s.zone_3_min),
+    zone_4_min: _num(s.zone_4_min),
+    zone_5_min: _num(s.zone_5_min),
+    perceived_effort: _num(s.perceived_effort),
+    post_workout_energy: _num(s.post_workout_energy),
+    notes: s.notes || '',
+  }));
+
+  // Map strength to expected format
+  const strength = strengthRows.map(s => ({
+    muscle_group: s.muscle_group || '',
+    exercise: s.exercise || '',
+    weight: _num(s.weight_lbs),
+    reps: _num(s.reps),
+    rpe: _num(s.rpe),
+    notes: s.notes || '',
+  }));
+
+  return {
+    date: today,
+    day: day,
+
+    readiness: {
+      score: readinessScore,
+      label: readinessLabel,
+      confidence: confidence,
+      cognitive_assessment: cogAssessment,
+      sleep_context: sleepContext,
+      key_insights: keyInsights,
+      recommendations: recommendations,
+      training_load: oa.training_load_status || '',
+      cognition: _num(oa.cognition),
+      cognition_notes: oa.cognition_notes || '',
+    },
+
+    sleep: {
+      garmin_score: _num(g.sleep_score),
+      analysis_score: _num(sl.sleep_analysis_score),
+      total_sleep_hrs: _num(sl.total_sleep_hrs),
+      bedtime: sl.bedtime || '',
+      wake_time: sl.wake_time || '',
+      time_in_bed_hrs: _num(sl.time_in_bed_hrs),
+      deep_min: _num(sl.deep_sleep_min),
+      light_min: _num(sl.light_sleep_min),
+      rem_min: _num(sl.rem_min),
+      awake_min: _num(sl.awake_during_sleep_min),
+      deep_pct: _num(sl.deep_pct),
+      rem_pct: _num(sl.rem_pct),
+      sleep_cycles: _num(sl.sleep_cycles),
+      awakenings: _num(sl.awakenings),
+      avg_hr: _num(sl.avg_hr),
+      avg_respiration: _num(sl.avg_respiration),
+      overnight_hrv: _num(sl.overnight_hrv_ms),
+      body_battery_gained: _num(sl.body_battery_gained),
+      bedtime_var_7d: _num(sl.bedtime_variability_7d),
+      wake_var_7d: _num(sl.wake_variability_7d),
+      notes: sl.notes || '',
+      sleep_feedback: sleepFeedback,
+      analysis_text: sleepAnalysis,
+    },
+
+    garmin: {
+      hrv_overnight: _num(sl.overnight_hrv_ms || g.hrv_overnight_avg),
+      hrv_7day_avg: _num(g.hrv_7day_avg),
+      resting_hr: _num(g.resting_hr),
+      body_battery: _num(g.body_battery),
+      body_battery_wake: _num(g.body_battery_at_wake),
+      body_battery_high: _num(g.body_battery_high),
+      body_battery_low: _num(g.body_battery_low),
+      steps: _num(g.steps),
+      floors: _num(g.floors_ascended),
+      total_calories: _num(g.total_calories_burned),
+      active_calories: _num(g.active_calories_burned),
+      bmr_calories: _num(g.bmr_calories),
+      avg_stress: _num(g.avg_stress_level),
+      stress_qualifier: g.stress_qualifier || '',
+      moderate_intensity_min: _num(g.moderate_intensity_min),
+      vigorous_intensity_min: _num(g.vigorous_intensity_min),
+    },
+
+    daily_log: {
+      morning_energy: _num(dl.morning_energy),
+      habits: {
+        wake_930: !!dl.wake_at_930,
+        no_morning_screens: !!dl.no_morning_screens,
+        creatine_hydrate: !!dl.creatine_hydrate,
+        walk_breathing: !!dl.walk_breathing,
+        physical_activity: !!dl.physical_activity,
+        no_screens_bed: !!dl.no_screens_before_bed,
+        bed_10pm: !!dl.bed_at_10pm,
+      },
+      habits_total: _num(dl.habits_total),
+      midday: {
+        energy: _num(dl.midday_energy),
+        focus: _num(dl.midday_focus),
+        mood: _num(dl.midday_mood),
+        body_feel: _num(dl.midday_body_feel),
+        notes: dl.midday_notes || '',
+      },
+      evening: {
+        energy: _num(dl.evening_energy),
+        focus: _num(dl.evening_focus),
+        mood: _num(dl.evening_mood),
+      },
+      perceived_stress: _num(dl.perceived_stress),
+      day_rating: _num(dl.day_rating),
+      evening_notes: dl.evening_notes || '',
+    },
+
+    sessions: sessions,
+    strength: strength,
+
+    nutrition: {
+      total_calories_burned: _num(nut.total_calories_burned || g.total_calories_burned),
+      active_calories: _num(nut.active_calories_burned || g.active_calories_burned),
+      bmr_calories: _num(nut.bmr_calories || g.bmr_calories),
+      breakfast: nut.breakfast || '',
+      lunch: nut.lunch || '',
+      dinner: nut.dinner || '',
+      snacks: nut.snacks || '',
+      total_calories_consumed: _num(nut.total_calories_consumed),
+      protein_g: _num(nut.protein_g),
+      carbs_g: _num(nut.carbs_g),
+      fats_g: _num(nut.fats_g),
+      water_l: _num(nut.water_l),
+      calorie_balance: _num(nut.calorie_balance),
+      notes: nut.notes || '',
+    },
+
+    briefing: {
+      expect: expectBlock,
+      sleep_line: sleepLine,
+      sleep_debt: '0h',
+      sleep_context_items: sleepContextItems,
+      sleep_context: sleepContext,
+      flags: flags,
+      do_items: doItems,
+    },
+  };
+}
+
+/**
+ * Fetch history for the last N days from key tables.
+ * Returns array matching SAMPLE_DATA.history structure.
+ */
+async function fetchHistory(days = 90) {
+  const startDate = _daysAgoStr(days);
+
+  const _histResults = await Promise.allSettled([
+    supabaseQuery('garmin', {
+      select: 'date,body_battery,steps,avg_stress_level,resting_hr,hrv_overnight_avg',
+      date: `gte.${startDate}`,
+      order: 'date.asc',
+    }),
+    supabaseQuery('sleep', {
+      select: 'date,sleep_analysis_score,total_sleep_hrs,overnight_hrv_ms',
+      date: `gte.${startDate}`,
+      order: 'date.asc',
+    }),
+    supabaseQuery('overall_analysis', {
+      select: 'date,readiness_score,cognition',
+      date: `gte.${startDate}`,
+      order: 'date.asc',
+    }),
+    supabaseQuery('daily_log', {
+      select: 'date,habits_total,day_rating,morning_energy',
+      date: `gte.${startDate}`,
+      order: 'date.asc',
+    }),
+  ]);
+
+  const _histTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log'];
+  _histResults.forEach((r, i) => {
+    if (r.status === 'rejected') console.error(`[data-loader] fetchHistory ${_histTables[i]} failed:`, r.reason);
+  });
+
+  const garminRows = _histResults[0].status === 'fulfilled' ? _histResults[0].value : [];
+  const sleepRows = _histResults[1].status === 'fulfilled' ? _histResults[1].value : [];
+  const analysisRows = _histResults[2].status === 'fulfilled' ? _histResults[2].value : [];
+  const dailyLogRows = _histResults[3].status === 'fulfilled' ? _histResults[3].value : [];
+
+  // Index by date for merging
+  const garminMap = {};
+  garminRows.forEach(r => { garminMap[r.date] = r; });
+  const sleepMap = {};
+  sleepRows.forEach(r => { sleepMap[r.date] = r; });
+  const analysisMap = {};
+  analysisRows.forEach(r => { analysisMap[r.date] = r; });
+  const dailyLogMap = {};
+  dailyLogRows.forEach(r => { dailyLogMap[r.date] = r; });
+
+  // Collect all unique dates
+  const allDates = new Set();
+  [garminRows, sleepRows, analysisRows, dailyLogRows].forEach(rows => {
+    rows.forEach(r => allDates.add(r.date));
+  });
+
+  // Build merged history array sorted by date
+  const history = Array.from(allDates).sort().map(date => {
+    const g = garminMap[date] || {};
+    const s = sleepMap[date] || {};
+    const a = analysisMap[date] || {};
+    const dl = dailyLogMap[date] || {};
+
+    return {
+      date: date,
+      readiness: _num(a.readiness_score),
+      sleep_score: _num(s.sleep_analysis_score),
+      total_sleep: _num(s.total_sleep_hrs),
+      hrv: _num(s.overnight_hrv_ms || g.hrv_overnight_avg),
+      rhr: _num(g.resting_hr),
+      body_battery: _num(g.body_battery),
+      steps: _num(g.steps),
+      stress: _num(g.avg_stress_level),
+      habits: _num(dl.habits_total),
+      day_rating: _num(dl.day_rating),
+      morning_energy: _num(dl.morning_energy),
+      cognition: _num(a.cognition),
+    };
+  });
+
+  return history;
+}
+
+/**
+ * Fetch recent workout sessions for the sessions_history array.
+ * Returns array matching SAMPLE_DATA.sessions_history structure.
+ */
+async function fetchSessions(days = 60) {
+  const startDate = _daysAgoStr(days);
+
+  const rows = await supabaseQuery('session_log', {
+    date: `gte.${startDate}`,
+    order: 'date.desc',
+    limit: '5',
+  });
+
+  return rows.map(s => ({
+    date: s.date,
+    activity_name: s.activity_name || '',
+    type: (s.session_type || s.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+    duration: _num(s.duration_min),
+    distance: _num(s.distance_mi),
+    calories: _num(s.calories),
+    avg_hr: _num(s.avg_hr),
+  }));
+}
+
+// ============================================
+// Internal helpers
+// ============================================
+
+function _parseBulletText(text) {
+  if (!text) return [];
+  // Try JSON first (legacy format)
+  try { const arr = JSON.parse(text); if (Array.isArray(arr)) return arr; } catch (e) {}
+  // Parse "- " bullet point text (one item per line starting with "- ")
+  return text.split('\n')
+    .map(line => line.trim())
+    .filter(line => line.startsWith('- '))
+    .map(line => line.substring(2).trim());
+}
+
+function _readinessLabel(score) {
+  if (score >= 8.5) return 'Optimal';
+  if (score >= 7) return 'Good';
+  if (score >= 5.5) return 'Fair';
+  if (score >= 4) return 'Low';
+  return 'Poor';
+}
+
+function _sleepFeedbackFromScore(score) {
+  if (score >= 80) return 'GREAT';
+  if (score >= 65) return 'GOOD';
+  if (score >= 50) return 'FAIR';
+  return 'POOR';
+}
+
+function _parseExpectBlock(cogAssessment) {
+  // Try to parse "Above baseline. Mind: ... Energy: ..." format
+  const result = { level: '', effects: [] };
+  if (!cogAssessment) return result;
+
+  // Extract level (first sentence or phrase before first period)
+  const firstDot = cogAssessment.indexOf('.');
+  if (firstDot > 0) {
+    result.level = cogAssessment.substring(0, firstDot).trim();
+  } else {
+    result.level = cogAssessment.trim();
+    return result;
+  }
+
+  // Extract Mind and Energy domains
+  const remainder = cogAssessment.substring(firstDot + 1);
+  const mindMatch = remainder.match(/Mind:\s*([^.]*(?:\.[^A-Z])*)/i);
+  const energyMatch = remainder.match(/Energy:\s*([^.]*(?:\.[^A-Z])*)/i);
+
+  if (mindMatch) {
+    result.effects.push({ domain: 'Mind', text: mindMatch[1].trim().replace(/\.$/, '') });
+  }
+  if (energyMatch) {
+    result.effects.push({ domain: 'Energy', text: energyMatch[1].trim().replace(/\.$/, '') });
+  }
+
+  // If no domains parsed, put the full remainder as a single effect
+  if (result.effects.length === 0 && remainder.trim()) {
+    result.effects.push({ domain: 'Status', text: remainder.trim() });
+  }
+
+  return result;
+}
+
+function _buildSleepContextItems(sl) {
+  const items = [];
+
+  // Bedtime variability
+  const bedVar = _num(sl.bedtime_variability_7d);
+  if (bedVar > 0) {
+    let status = 'green';
+    if (bedVar > 60) status = 'red';
+    else if (bedVar > 30) status = 'yellow';
+    items.push({ label: 'Bed variability', value: `+-${bedVar}min`, status: status });
+  }
+
+  // Wake variability
+  const wakeVar = _num(sl.wake_variability_7d);
+  if (wakeVar > 0) {
+    let status = 'green';
+    if (wakeVar > 60) status = 'red';
+    else if (wakeVar > 30) status = 'yellow';
+    items.push({ label: 'Wake variability', value: `+-${wakeVar}min`, status: status });
+  }
+
+  // Body battery gained
+  const bbGained = _num(sl.body_battery_gained);
+  if (bbGained > 0) {
+    let status = 'green';
+    if (bbGained < 15) status = 'red';
+    else if (bbGained < 40) status = 'yellow';
+    items.push({ label: 'Battery gained', value: `+${bbGained}`, status: status });
+  }
+
+  // If no items could be built, return a placeholder
+  if (items.length === 0) {
+    items.push({ label: 'Sleep data', value: 'loading...', status: 'yellow' });
+  }
+
+  return items;
+}
+
+// ============================================
+// Initialization
+// ============================================
+
+/**
+ * Fetch all live data from Supabase and populate SAMPLE_DATA.
+ * Call this before rendering any page.
+ *
+ * Returns a promise that resolves when data is ready.
+ * On failure, SAMPLE_DATA._error will contain the error message
+ * and today/history/sessions will be null/empty (pages should
+ * handle gracefully).
+ */
+async function initData() {
+  // Flush any offline-queued writes from previous session
+  await flushOfflineQueue();
+
+  try {
+    const results = await Promise.allSettled([
+      fetchToday(),
+      fetchHistory(90),
+      fetchSessions(14),
+    ]);
+
+    const [todayResult, historyResult, sessionsResult] = results;
+
+    if (todayResult.status === 'fulfilled') {
+      SAMPLE_DATA.today = todayResult.value;
+    } else {
+      console.error('[data-loader] fetchToday failed:', todayResult.reason);
+      SAMPLE_DATA.today = _buildFallbackToday();
+    }
+
+    if (historyResult.status === 'fulfilled') {
+      SAMPLE_DATA.history = historyResult.value;
+    } else {
+      console.error('[data-loader] fetchHistory failed:', historyResult.reason);
+    }
+
+    if (sessionsResult.status === 'fulfilled') {
+      SAMPLE_DATA.sessions_history = sessionsResult.value;
+    } else {
+      console.error('[data-loader] fetchSessions failed:', sessionsResult.reason);
+    }
+
+    SAMPLE_DATA._loaded = true;
+    const anyFailed = results.some(r => r.status === 'rejected');
+    if (anyFailed) {
+      SAMPLE_DATA._error = 'Some queries failed — check console';
+    } else {
+      SAMPLE_DATA._error = null;
+    }
+
+    console.log(`[data-loader] Loaded: today=${SAMPLE_DATA.today?.date}, history=${SAMPLE_DATA.history.length} days, sessions=${SAMPLE_DATA.sessions_history.length}`);
+  } catch (err) {
+    console.error('[data-loader] Critical failure:', err);
+    SAMPLE_DATA._error = err.message;
+    SAMPLE_DATA._loaded = false;
+    SAMPLE_DATA.today = _buildFallbackToday();
+  }
+
+  // Show error banner if any queries failed
+  _showDataError();
+
+  return SAMPLE_DATA;
+}
+
+/**
+ * Show a visible error banner at the top of the page if data loading failed.
+ */
+function _showDataError() {
+  if (!SAMPLE_DATA._error) return;
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:8px 16px;background:#F87171;color:white;font-size:12px;z-index:9999;text-align:center;font-family:system-ui,sans-serif;';
+  banner.textContent = 'Data load error: ' + SAMPLE_DATA._error;
+  document.body.prepend(banner);
+}
+
+/**
+ * Build a minimal empty today object so pages don't throw on property access.
+ */
+function _buildFallbackToday() {
+  const today = _todayStr();
+  return {
+    date: today,
+    day: _dayOfWeek(today),
+    readiness: { score: 0, label: '--', confidence: '--', cognitive_assessment: '', sleep_context: '', key_insights: [], recommendations: [], training_load: '', cognition: 0, cognition_notes: '' },
+    sleep: { garmin_score: 0, analysis_score: 0, total_sleep_hrs: 0, bedtime: '', wake_time: '', time_in_bed_hrs: 0, deep_min: 0, light_min: 0, rem_min: 0, awake_min: 0, deep_pct: 0, rem_pct: 0, sleep_cycles: 0, awakenings: 0, avg_hr: 0, avg_respiration: 0, overnight_hrv: 0, body_battery_gained: 0, bedtime_var_7d: 0, wake_var_7d: 0, notes: '', sleep_feedback: '--', analysis_text: '' },
+    garmin: { hrv_overnight: 0, hrv_7day_avg: 0, resting_hr: 0, body_battery: 0, body_battery_wake: 0, body_battery_high: 0, body_battery_low: 0, steps: 0, floors: 0, total_calories: 0, active_calories: 0, bmr_calories: 0, avg_stress: 0, stress_qualifier: '', moderate_intensity_min: 0, vigorous_intensity_min: 0 },
+    daily_log: { morning_energy: 0, habits: { wake_930: false, no_morning_screens: false, creatine_hydrate: false, walk_breathing: false, physical_activity: false, no_screens_bed: false, bed_10pm: false }, habits_total: 0, midday: { energy: 0, focus: 0, mood: 0, body_feel: 0, notes: '' }, evening: { energy: 0, focus: 0, mood: 0 }, perceived_stress: 0, day_rating: 0, evening_notes: '' },
+    sessions: [],
+    strength: [],
+    nutrition: { total_calories_burned: 0, active_calories: 0, bmr_calories: 0, breakfast: '', lunch: '', dinner: '', snacks: '', total_calories_consumed: 0, protein_g: 0, carbs_g: 0, fats_g: 0, water_l: 0, calorie_balance: 0, notes: '' },
+    briefing: { expect: { level: '--', effects: [] }, sleep_line: '--', sleep_debt: '0h', sleep_context_items: [{ label: 'No data', value: '--', status: 'yellow' }], sleep_context: '', flags: [], do_items: [] },
+  };
+}
+
+// ============================================
+// Color Utility Functions
+// Ported from dashboard_template.html getColor()
+// ============================================
+
+function getStatusColor(value, metric) {
+  const t = SAMPLE_DATA.thresholds[metric];
+  if (!t) return '#9CA3AF';
+
+  let ratio;
+  if (t.type === 'higher_better') {
+    if (value <= t.red) ratio = 0;
+    else if (value >= t.green) ratio = 1;
+    else if (value <= t.yellow) ratio = (value - t.red) / (t.yellow - t.red) * 0.5;
+    else ratio = 0.5 + (value - t.yellow) / (t.green - t.yellow) * 0.5;
+  } else {
+    if (value >= t.red) ratio = 0;
+    else if (value <= t.green) ratio = 1;
+    else if (value >= t.yellow) ratio = (t.red - value) / (t.red - t.yellow) * 0.5;
+    else ratio = 0.5 + (t.yellow - value) / (t.yellow - t.green) * 0.5;
+  }
+
+  ratio = Math.max(0, Math.min(1, ratio));
+
+  // HSL interpolation (from dashboard getColor)
+  let h, s, l;
+  if (ratio <= 0.5) {
+    const p = ratio / 0.5;
+    h = 0 + p * 45;       // coral red (0) -> yellow (45)
+    s = 86 - p * 16;      // 86% -> 70%
+    l = 71 - p * 11;      // 71% -> 60%
+  } else {
+    const p = (ratio - 0.5) / 0.5;
+    h = 45 + p * 95;
+    s = 70 - p * 25;
+    l = 46 + p * 4;
+  }
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+// Simple status class (green/yellow/red)
+function getStatusClass(value, metric) {
+  const t = SAMPLE_DATA.thresholds[metric];
+  if (!t) return '';
+
+  if (t.type === 'higher_better') {
+    if (value >= t.green) return 'green';
+    if (value >= t.yellow) return 'yellow';
+    return 'red';
+  } else {
+    if (value <= t.green) return 'green';
+    if (value <= t.yellow) return 'yellow';
+    return 'red';
+  }
+}
+
+// Create SVG circular gauge with gradient stroke
+// gradientId must be unique per gauge instance
+let _gaugeCounter = 0;
+function createGauge(value, max, color, size = 'lg', gradientColors = null) {
+  const sizes = { lg: { r: 54, sw: 8, w: 130 }, md: { r: 36, sw: 7, w: 90 }, sm: { r: 24, sw: 6, w: 60 } };
+  const s = sizes[size];
+  const circumference = 2 * Math.PI * s.r;
+  const pct = Math.min(value / max, 1);
+  const offset = circumference * (1 - pct);
+  const gId = `gaugeGrad${_gaugeCounter++}`;
+
+  const gradDef = gradientColors
+    ? `<defs><linearGradient id="${gId}" x1="0%" y1="0%" x2="100%" y2="100%">
+        ${gradientColors.map((c, i) => `<stop offset="${Math.round(i / (gradientColors.length - 1) * 100)}%" stop-color="${c}" />`).join('')}
+       </linearGradient></defs>`
+    : '';
+  const strokeAttr = gradientColors ? `url(#${gId})` : color;
+
+  return `
+    <svg width="${s.w}" height="${s.w}" viewBox="0 0 ${s.w} ${s.w}">
+      ${gradDef}
+      <circle cx="${s.w / 2}" cy="${s.w / 2}" r="${s.r}" class="gauge-track" stroke-width="${s.sw}" />
+      <circle cx="${s.w / 2}" cy="${s.w / 2}" r="${s.r}" class="gauge-fill"
+        stroke="${strokeAttr}" stroke-width="${s.sw}"
+        stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
+        stroke-linecap="round" />
+    </svg>`;
+}

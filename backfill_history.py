@@ -338,11 +338,12 @@ def _fetch_data(client, target_date):
             data["sleep_duration"] = round(secs / 3600, 2) if secs else ""
             overall = scores.get("overall", {})
             data["sleep_score"] = overall.get("value", "") if isinstance(overall, dict) else ""
-            start_local = dto.get("sleepStartTimestampLocal")
-            end_local   = dto.get("sleepEndTimestampLocal")
-            data["sleep_bedtime"]   = datetime.fromtimestamp(start_local/1000).strftime("%H:%M") if start_local else ""
-            data["sleep_wake_time"] = datetime.fromtimestamp(end_local/1000).strftime("%H:%M") if end_local   else ""
-            data["sleep_time_in_bed"] = round((end_local - start_local)/1000/3600, 2) if start_local and end_local else ""
+            # Use GMT timestamps — fromtimestamp() converts UTC epoch to system local time.
+            start_gmt = dto.get("sleepStartTimestampGMT")
+            end_gmt   = dto.get("sleepEndTimestampGMT")
+            data["sleep_bedtime"]   = datetime.fromtimestamp(start_gmt/1000).strftime("%H:%M") if start_gmt else ""
+            data["sleep_wake_time"] = datetime.fromtimestamp(end_gmt/1000).strftime("%H:%M") if end_gmt   else ""
+            data["sleep_time_in_bed"] = round((end_gmt - start_gmt)/1000/3600, 2) if start_gmt and end_gmt else ""
             data["sleep_deep_min"]  = round(dto.get("deepSleepSeconds",  0)/60, 1)
             data["sleep_light_min"] = round(dto.get("lightSleepSeconds", 0)/60, 1)
             data["sleep_rem_min"]   = round(dto.get("remSleepSeconds",   0)/60, 1)
@@ -385,9 +386,22 @@ def _fetch_data(client, target_date):
         data["total_calories"]   = stats.get("totalKilocalories", "")
         data["active_calories"]  = stats.get("activeKilocalories", "")
         data["bmr_calories"]     = stats.get("bmrKilocalories", "")
-        data["avg_stress"]       = stats.get("averageStressLevel", "")
+        avg_stress = stats.get("averageStressLevel", "")
+        data["avg_stress"] = avg_stress
         raw_sq = stats.get("stressQualifier", "") or ""
-        data["stress_qualifier"] = raw_sq.replace("_"," ").title() if raw_sq and raw_sq.upper() != "UNKNOWN" else ""
+        if raw_sq and raw_sq.upper() != "UNKNOWN":
+            data["stress_qualifier"] = raw_sq.replace("_", " ").title()
+        elif isinstance(avg_stress, (int, float)) and avg_stress >= 0:
+            if avg_stress <= 25:
+                data["stress_qualifier"] = "Rest"
+            elif avg_stress <= 50:
+                data["stress_qualifier"] = "Balanced"
+            elif avg_stress <= 75:
+                data["stress_qualifier"] = "Stressful"
+            else:
+                data["stress_qualifier"] = "Very Stressful"
+        else:
+            data["stress_qualifier"] = ""
         data["floors_ascended"]  = round(stats.get("floorsAscended", 0) or 0)
         data["moderate_min"]     = stats.get("moderateIntensityMinutes", "")
         data["vigorous_min"]     = stats.get("vigorousIntensityMinutes", "")

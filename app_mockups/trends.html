@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#8B5CF6">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Trends</title>
   <link rel="stylesheet" href="design-system.css">
   <style>
@@ -211,18 +216,18 @@
       <!-- Tab Bar -->
       <div class="tab-bar">
         <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
-          <div class="tab-icon">&#8962;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
         <div class="tab-item tab-item-active">
-          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
         <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
           <div class="tab-center-button">+</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
-          <div class="tab-icon">&#9883;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
@@ -234,14 +239,29 @@
     </div>
   </div>
 
-  <script src="sample-data.js"></script>
+  <script src="data-loader.js"></script>
   <script>
+    // --- Global functions for onclick handlers ---
     function navigateTo(page) { window.location.href = page; }
+    function setMetric(key, el) {
+      currentMetric = metrics.find(m => m.key === key);
+      document.querySelectorAll('#metricPills .pill').forEach(p => p.classList.remove('pill-active'));
+      el.classList.add('pill-active');
+      renderChart();
+      renderHeatmap();
+    }
+    function setRange(days, el) {
+      currentRange = days;
+      document.querySelectorAll('#rangePills .pill').forEach(p => p.classList.remove('pill-active'));
+      el.classList.add('pill-active');
+      renderChart();
+    }
+    function toggleHeatmap() {
+      document.getElementById('heatmapContent').classList.toggle('expanded');
+      document.getElementById('heatmapChevron').classList.toggle('expanded');
+    }
 
-    // ============================================
-    // Metrics available for charting
-    // ============================================
-
+    // --- Metrics available for charting ---
     const metrics = [
       { key: 'readiness', label: 'Readiness', field: 'readiness', threshold: 'readiness_score', category: 'readiness' },
       { key: 'sleep_score', label: 'Sleep Score', field: 'sleep_score', threshold: 'sleep_analysis_score', category: 'sleep' },
@@ -260,6 +280,12 @@
     let currentMetric = metrics[0];
     let currentRange = 14;
 
+    // Declare renderChart and renderHeatmap in outer scope so onclick handlers can call them
+    let renderChart, renderHeatmap;
+
+    // --- Render after data loads ---
+    initData().then(() => {
+
     // ============================================
     // Render metric pills
     // ============================================
@@ -270,26 +296,11 @@
       ).join('');
     })();
 
-    function setMetric(key, el) {
-      currentMetric = metrics.find(m => m.key === key);
-      document.querySelectorAll('#metricPills .pill').forEach(p => p.classList.remove('pill-active'));
-      el.classList.add('pill-active');
-      renderChart();
-      renderHeatmap();
-    }
-
-    function setRange(days, el) {
-      currentRange = days;
-      document.querySelectorAll('#rangePills .pill').forEach(p => p.classList.remove('pill-active'));
-      el.classList.add('pill-active');
-      renderChart();
-    }
-
     // ============================================
     // Render chart
     // ============================================
 
-    function renderChart() {
+    renderChart = function() {
       const data = SAMPLE_DATA.history.slice(-currentRange);
       const values = data.map(d => d[currentMetric.field]);
       const t = SAMPLE_DATA.thresholds[currentMetric.threshold];
@@ -314,11 +325,11 @@
       if (t.type === 'higher_better') {
         svg += `<rect x="${pad}" y="0" width="${w-2*pad}" height="${Math.max(0,yG)}" fill="rgba(34,197,94,0.06)" />`;
         svg += `<rect x="${pad}" y="${yG}" width="${w-2*pad}" height="${Math.max(0,yY-yG)}" fill="rgba(245,158,11,0.06)" />`;
-        svg += `<rect x="${pad}" y="${yY}" width="${w-2*pad}" height="${h-yY-pad}" fill="rgba(239,68,68,0.06)" />`;
+        svg += `<rect x="${pad}" y="${yY}" width="${w-2*pad}" height="${h-yY-pad}" fill="rgba(248,113,113,0.06)" />`;
         svg += `<line x1="${pad}" y1="${yG}" x2="${w-pad}" y2="${yG}" stroke="var(--status-green)" stroke-width="0.5" stroke-dasharray="4"/>`;
         svg += `<line x1="${pad}" y1="${yY}" x2="${w-pad}" y2="${yY}" stroke="var(--status-yellow)" stroke-width="0.5" stroke-dasharray="4"/>`;
       } else {
-        svg += `<rect x="${pad}" y="0" width="${w-2*pad}" height="${Math.max(0,yR)}" fill="rgba(239,68,68,0.06)" />`;
+        svg += `<rect x="${pad}" y="0" width="${w-2*pad}" height="${Math.max(0,yR)}" fill="rgba(248,113,113,0.06)" />`;
         svg += `<rect x="${pad}" y="${yR}" width="${w-2*pad}" height="${Math.max(0,yG-yR)}" fill="rgba(245,158,11,0.06)" />`;
         svg += `<rect x="${pad}" y="${yG}" width="${w-2*pad}" height="${h-yG-pad}" fill="rgba(34,197,94,0.06)" />`;
         svg += `<line x1="${pad}" y1="${yG}" x2="${w-pad}" y2="${yG}" stroke="var(--status-green)" stroke-width="0.5" stroke-dasharray="4"/>`;
@@ -426,7 +437,7 @@
     // Calendar Heatmap
     // ============================================
 
-    function renderHeatmap() {
+    renderHeatmap = function() {
       document.getElementById('heatmapMetricLabel').textContent = '— ' + currentMetric.label;
       const grid = document.getElementById('heatmapGrid');
       const hist = SAMPLE_DATA.history;
@@ -470,17 +481,15 @@
       grid.innerHTML = html;
     }
 
-    function toggleHeatmap() {
-      document.getElementById('heatmapContent').classList.toggle('expanded');
-      document.getElementById('heatmapChevron').classList.toggle('expanded');
-    }
-
     // ============================================
     // Initial render
     // ============================================
 
     renderChart();
     renderHeatmap();
+
+    }); // end initData().then()
   </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>

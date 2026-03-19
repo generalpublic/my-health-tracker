@@ -6,8 +6,18 @@
 
 :root {
   /* Core palette */
-  --bg: #F3EEF8;
-  --bg-gradient: linear-gradient(180deg, #EDE5F7 0%, #F3EEF8 30%, #F7F2FB 100%);
+  --bg: #FFFFFF;
+  --bg-gradient: none;
+  --bg-vibrant:
+    radial-gradient(ellipse at 15% 85%, rgba(255,0,102,0.12) 0%, rgba(255,0,102,0.07) 25%, transparent 55%),
+    radial-gradient(ellipse at 0% 50%, rgba(155,0,232,0.10) 0%, rgba(155,0,232,0.05) 30%, transparent 55%),
+    radial-gradient(ellipse at 40% 60%, rgba(217,70,239,0.08) 0%, rgba(217,70,239,0.04) 25%, transparent 50%),
+    radial-gradient(ellipse at 70% 20%, rgba(249,115,22,0.10) 0%, rgba(249,115,22,0.05) 25%, transparent 50%),
+    radial-gradient(ellipse at 85% 40%, rgba(6,214,160,0.12) 0%, rgba(6,214,160,0.07) 25%, transparent 50%),
+    radial-gradient(ellipse at 95% 70%, rgba(34,211,238,0.10) 0%, rgba(34,211,238,0.05) 25%, transparent 50%),
+    radial-gradient(ellipse at 50% 10%, rgba(255,107,107,0.08) 0%, rgba(255,107,107,0.04) 20%, transparent 45%),
+    radial-gradient(ellipse at 30% 30%, rgba(255,20,147,0.06) 0%, rgba(255,20,147,0.03) 20%, transparent 50%),
+    #F3EEF8;
   --surface: rgba(255, 255, 255, 0.65);
   --surface-solid: #FFFFFF;
   --surface-frosted: rgba(255, 255, 255, 0.55);
@@ -28,7 +38,7 @@
   --gradient-iridescent: linear-gradient(135deg, #8B5CF6, #6366F1, #A855F7, #EC4899);
   --gradient-iridescent-subtle: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(99,102,241,0.06), rgba(236,72,153,0.04));
   --gradient-mind: linear-gradient(135deg, #6366F1, #06B6D4);
-  --gradient-energy: linear-gradient(135deg, #F59E0B, #EF4444);
+  --gradient-energy: linear-gradient(135deg, #10B981, #06B6D4);
   --gradient-gauge: conic-gradient(from 0deg, #8B5CF6, #6366F1, #06B6D4, #22C55E);
 
   /* Text */
@@ -44,9 +54,9 @@
   --status-yellow: #F59E0B;
   --status-yellow-bg: rgba(245, 158, 11, 0.1);
   --status-yellow-light: #FCD34D;
-  --status-red: #EF4444;
-  --status-red-bg: rgba(239, 68, 68, 0.1);
-  --status-red-light: #FCA5A5;
+  --status-red: #F87171;
+  --status-red-bg: rgba(248, 113, 113, 0.1);
+  --status-red-light: #FECACA;
 
   /* Sleep stage colors */
   --sleep-deep: #4338CA;
@@ -138,7 +148,7 @@ body {
   margin: 40px auto;
   border-radius: 50px;
   border: 6px solid #1a1a1a;
-  background: var(--bg);
+  background: var(--bg-vibrant);
   overflow: hidden;
   position: relative;
   box-shadow:
@@ -182,7 +192,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-gradient);
+  background: var(--bg-vibrant);
 }
 
 .screen-content {
@@ -207,8 +217,8 @@ body {
 
 .greeting {
   font-size: var(--text-2xl);
-  font-weight: 800;
-  color: var(--text);
+  font-weight: 700;
+  color: #6B6280;
   letter-spacing: -0.5px;
 }
 
@@ -252,16 +262,18 @@ body {
 
 .card-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: var(--space-md);
+  position: relative;
 }
 
 .card-title {
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.2px;
+  text-align: center;
 }
 
 .card-subtitle {
@@ -290,14 +302,17 @@ body {
 }
 
 .card-chevron {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  position: absolute;
+  right: 0;
+  color: var(--text-secondary);
   transition: transform 0.4s var(--ease-spring);
-  font-size: var(--text-sm);
+  font-size: 1.25rem;
+  font-weight: 700;
 }
 
 .card-chevron.expanded {
@@ -568,9 +583,9 @@ body {
 }
 
 .status-pill-red {
-  background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.06));
+  background: linear-gradient(135deg, rgba(248,113,113,0.12), rgba(248,113,113,0.06));
   color: var(--status-red);
-  border: 1px solid rgba(239,68,68,0.2);
+  border: 1px solid rgba(248,113,113,0.2);
 }
 
 /* Confidence badge */
@@ -808,7 +823,7 @@ body {
 /* Center "Log" tab — raised, gradient glow */
 .tab-center {
   position: relative;
-  top: -12px;
+  top: -6px;
 }
 
 .tab-center-button {
@@ -823,7 +838,10 @@ body {
   justify-content: center;
   box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4), 0 0 24px rgba(139, 92, 246, 0.15);
   color: var(--text-inverse);
-  font-size: 24px;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1;
+  padding-bottom: 2px;
   cursor: pointer;
   transition: transform 0.2s var(--ease-spring);
 }
@@ -865,7 +883,7 @@ input[type="range"] {
   width: 100%;
   height: 6px;
   border-radius: var(--radius-full);
-  background: linear-gradient(to right, #EF4444, #F59E0B 40%, #22C55E);
+  background: linear-gradient(to right, #F87171, #F59E0B 40%, #22C55E);
   outline: none;
   opacity: 0.9;
 }
@@ -887,7 +905,7 @@ input[type="range"]::-webkit-slider-thumb:active {
 }
 
 input[type="range"].slider-inverted {
-  background: linear-gradient(to right, #22C55E, #F59E0B 60%, #EF4444);
+  background: linear-gradient(to right, #22C55E, #F59E0B 60%, #F87171);
 }
 
 /* Toggle switch */
@@ -1371,3 +1389,79 @@ textarea.text-input {
 .stagger > :nth-child(7) { animation-delay: 0.35s; }
 .stagger > :nth-child(8) { animation-delay: 0.4s; }
 .stagger > :nth-child(9) { animation-delay: 0.45s; }
+
+/* ============================================
+   PWA Standalone Mode
+   When added to home screen, remove the desktop
+   phone frame and use the real device screen.
+   ============================================ */
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .phone-frame {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  .phone-frame::before {
+    display: none; /* hide fake dynamic island */
+  }
+
+  .status-bar {
+    display: none; /* real iOS status bar takes over */
+  }
+
+  .screen-content {
+    padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-lg));
+    padding-left: calc(env(safe-area-inset-left, 0px) + var(--space-lg));
+    padding-right: calc(env(safe-area-inset-right, 0px) + var(--space-lg));
+    padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px) + var(--space-lg));
+  }
+
+  .tab-bar {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  body {
+    background: var(--bg-vibrant);
+  }
+}
+
+/* Also apply on mobile Safari (not yet installed) */
+@media (max-width: 430px) {
+  .phone-frame {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .phone-frame::before {
+    display: none;
+  }
+
+  .status-bar {
+    display: none;
+  }
+
+  .screen-content {
+    padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-lg));
+    padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px) + var(--space-lg));
+  }
+
+  .tab-bar {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  body {
+    background: var(--bg-vibrant);
+  }
+}

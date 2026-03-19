@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#8B5CF6">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Log Entry</title>
   <link rel="stylesheet" href="design-system.css">
   <style>
@@ -332,7 +337,7 @@
           <div id="morningHabits"></div>
 
           <div style="margin-top:var(--space-2xl)">
-            <button class="btn-primary" onclick="saveForm('Morning check-in saved')">Save Morning Check-in</button>
+            <button class="btn-primary" onclick="saveForm('morning', 'Morning check-in saved')">Save Morning Check-in</button>
           </div>
         </div>
 
@@ -382,7 +387,7 @@
           <textarea class="text-input" placeholder="Any notes..." rows="2"></textarea>
 
           <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('Midday check-in saved')">Save Midday Check-in</button>
+            <button class="btn-primary" onclick="saveForm('midday', 'Midday check-in saved')">Save Midday Check-in</button>
           </div>
         </div>
 
@@ -444,7 +449,7 @@
           <textarea class="text-input" placeholder="Evening notes..." rows="3" style="margin-top:var(--space-lg)"></textarea>
 
           <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('Evening review saved')">Save Evening Review</button>
+            <button class="btn-primary" onclick="saveForm('evening', 'Evening review saved')">Save Evening Review</button>
           </div>
         </div>
 
@@ -525,7 +530,7 @@
           <textarea class="text-input" placeholder="Nutrition notes..." rows="2"></textarea>
 
           <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('Nutrition saved')">Save Nutrition</button>
+            <button class="btn-primary" onclick="saveForm('nutrition', 'Nutrition saved')">Save Nutrition</button>
           </div>
         </div>
 
@@ -554,7 +559,7 @@
           <textarea class="text-input" placeholder="Mental clarity, focus, brain fog notes..." rows="3">Sharp focus, good recall</textarea>
 
           <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('Cognition saved')">Save Cognition</button>
+            <button class="btn-primary" onclick="saveForm('cognition', 'Cognition saved')">Save Cognition</button>
           </div>
         </div>
 
@@ -572,7 +577,7 @@
           <textarea class="text-input" placeholder="Late caffeine, alcohol, stress, new mattress, noise, temperature..." rows="5"></textarea>
 
           <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('Sleep notes saved')">Save Sleep Notes</button>
+            <button class="btn-primary" onclick="saveForm('sleep_notes', 'Sleep notes saved')">Save Sleep Notes</button>
           </div>
         </div>
 
@@ -581,18 +586,18 @@
       <!-- Tab Bar -->
       <div class="tab-bar">
         <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
-          <div class="tab-icon">&#8962;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
-          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,4 16,10 12,6 2,16"/></svg></div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
         <div class="tab-item tab-center">
           <div class="tab-center-button" onclick="showHub()" style="background:var(--primary-gradient);">+</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
-          <div class="tab-icon">&#9883;</div>
+          <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
         <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
@@ -607,14 +612,9 @@
     <div class="toast" id="toast"></div>
   </div>
 
-  <script src="sample-data.js"></script>
+  <script src="data-loader.js"></script>
   <script>
-    const D = SAMPLE_DATA.today;
-
-    // ============================================
-    // Navigation
-    // ============================================
-
+    // --- Global functions for onclick handlers ---
     function showHub() {
       document.querySelectorAll('.form-view').forEach(v => v.classList.remove('active'));
       document.getElementById('hubView').classList.add('active');
@@ -631,10 +631,6 @@
       window.location.href = page;
     }
 
-    // ============================================
-    // Slider updates
-    // ============================================
-
     function updateSlider(input, valueId, metric) {
       const val = parseInt(input.value);
       const el = document.getElementById(valueId);
@@ -646,14 +642,9 @@
       const val = parseInt(input.value);
       const el = document.getElementById(valueId);
       el.textContent = val;
-      // Inverted: low = green, high = red
-      const color = getStatusColor(val, 'avg_stress_level'); // reuse lower_better threshold pattern
+      const color = getStatusColor(val, 'avg_stress_level');
       el.style.color = color;
     }
-
-    // ============================================
-    // Cognition stepper
-    // ============================================
 
     let cognitionScore = 8;
 
@@ -664,24 +655,47 @@
       el.style.color = getStatusColor(cognitionScore, 'cognition');
     }
 
-    // Initialize cognition color
-    document.getElementById('cognitionVal').style.color = getStatusColor(8, 'cognition');
+    async function saveForm(formType, message) {
+      const toast = document.getElementById('toast');
+      toast.innerHTML = '&#10003; ' + message;
+      toast.style.background = '';
+      toast.classList.add('show');
 
-    // ============================================
-    // Habit toggles
-    // ============================================
+      try {
+        let result;
+        switch (formType) {
+          case 'morning': result = await saveMorningCheckin(); break;
+          case 'midday': result = await saveMiddayCheckin(); break;
+          case 'evening': result = await saveEveningReview(); break;
+          case 'nutrition': result = await saveNutrition(); break;
+          case 'cognition': result = await saveCognition(); break;
+          case 'sleep_notes': result = await saveSleepNotes(); break;
+          default: console.warn('[save] Unknown form type:', formType);
+        }
+        if (result === null) {
+          toast.innerHTML = '&#128246; Saved offline — will sync when connected';
+        }
+      } catch (err) {
+        console.error(`[save] ${formType} failed:`, err);
+        toast.innerHTML = '&#10007; Save failed — ' + err.message;
+        toast.style.background = '#F87171';
+      }
 
-    const habits = [
-      { key: 'wake_930', label: 'Wake at 9:30 AM', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>' },
-      { key: 'no_morning_screens', label: 'No morning screens', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M1 1l22 22"/></svg>' },
-      { key: 'creatine_hydrate', label: 'Creatine & Hydrate', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6l-3 8a5 5 0 0 0 6 0l-3-8V2"/><path d="M6 18.5a9 9 0 0 0 12 0"/></svg>' },
-      { key: 'walk_breathing', label: '20 min walk + breathing', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M7 21l3-4 2.5 1 3.5-7-2-1.5L12 6l-3 4 2 1-2 4-3 2"/></svg>' },
-      { key: 'physical_activity', label: 'Physical Activity', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M22 14l-4.5-2.5L14 14l-4-4-4 4"/><path d="M2 18h20"/></svg>' },
-      { key: 'no_screens_bed', label: 'No screens before bed', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/><path d="M1 1l22 22"/></svg>' },
-      { key: 'bed_10pm', label: 'Bed at 10 PM', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>' }
-    ];
+      setTimeout(() => { toast.classList.remove('show'); toast.style.background = ''; }, 2500);
+      setTimeout(() => showHub(), 2000);
+    }
 
     function renderHabits(containerId) {
+      const D = SAMPLE_DATA.today;
+      const habits = [
+        { key: 'wake_930', label: 'Wake at 9:30 AM', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>' },
+        { key: 'no_morning_screens', label: 'No morning screens', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M1 1l22 22"/></svg>' },
+        { key: 'creatine_hydrate', label: 'Creatine & Hydrate', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6l-3 8a5 5 0 0 0 6 0l-3-8V2"/><path d="M6 18.5a9 9 0 0 0 12 0"/></svg>' },
+        { key: 'walk_breathing', label: '20 min walk + breathing', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M7 21l3-4 2.5 1 3.5-7-2-1.5L12 6l-3 4 2 1-2 4-3 2"/></svg>' },
+        { key: 'physical_activity', label: 'Physical Activity', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M22 14l-4.5-2.5L14 14l-4-4-4 4"/><path d="M2 18h20"/></svg>' },
+        { key: 'no_screens_bed', label: 'No screens before bed', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/><path d="M1 1l22 22"/></svg>' },
+        { key: 'bed_10pm', label: 'Bed at 10 PM', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>' }
+      ];
       const container = document.getElementById(containerId);
       container.innerHTML = habits.map(h => {
         const done = D.daily_log.habits[h.key];
@@ -696,21 +710,16 @@
       }).join('');
     }
 
+    // --- Render after data loads ---
+    initData().then(() => {
+
+    const D = SAMPLE_DATA.today;
+
+    // Initialize cognition color
+    document.getElementById('cognitionVal').style.color = getStatusColor(8, 'cognition');
+
     renderHabits('morningHabits');
     renderHabits('eveningHabits');
-
-    // ============================================
-    // Save + Toast
-    // ============================================
-
-    function saveForm(message) {
-      const toast = document.getElementById('toast');
-      toast.textContent = '&#10003; ' + message;
-      toast.innerHTML = '&#10003; ' + message;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-      setTimeout(() => showHub(), 1500);
-    }
 
     // ============================================
     // Initialize slider colors
@@ -728,6 +737,9 @@
     if (stressEl) {
       stressEl.style.color = getStatusColor(parseInt(stressEl.textContent), 'avg_stress_level');
     }
+
+    }); // end initData().then()
   </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>

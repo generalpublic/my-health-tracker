@@ -272,3 +272,46 @@ Updated the `getBedtimeColor()` JavaScript function's hardcoded threshold values
 **Running weekly total**: 31.5h
 
 ---
+
+## 2026-03-18 — Session 13 (12:11 PM → 11:38 PM, ~5.5h active)
+
+### Task Scheduler Fix + Partial Garmin Data Correction (~2h 46m)
+
+The morning started with a bug report: the user's Pushover sleep notification didn't fire. Investigation traced the failure to Windows Task Scheduler — both registered tasks had `LastTaskResult: 2147942402` (ERROR_FILE_NOT_FOUND). The root cause was a missing `-WorkingDirectory` parameter in `create_schedule.ps1`, causing PowerShell to launch `garmin_sync.py` without the correct working directory, so `.env` and the JSON key file couldn't be found. Fixed the script and had the user re-register both tasks via admin PowerShell, confirming both now show "Ready" status with correct triggers (12 AM prep, 11 AM notify, 8 PM sync).
+
+This discovery cascaded into a deeper problem: because the 8 PM scheduled sync had been broken, the user had been running `--today` manually during the day, which captured partial-day data. A full audit revealed 4 dates (March 8, 9, 16, 17) with corrupted partial-day stats — steps as low as 76 (real value was 7,831), calories 200-500 below actuals, and stress scores from half-day windows. Re-synced all 11 dates (March 7-17) via `--range` and verified every field against the Garmin Connect API. A critical process lesson was learned and saved to memory: the initial investigation incorrectly validated 76 steps as correct by checking Sheets against Raw Data Archive — circular validation since both had the same wrong value from the same broken source. The user had to provide a Garmin app screenshot to disprove the data. Rule established: always verify against the external source of truth first, never validate internal data against itself.
+
+### Sleep Variability Fix + Nutrition Cleanup + Charts Overhaul (~11m)
+
+Three quick fixes in rapid succession. The sleep variability bug was in `writers.py` — the `_update_sleep_variability()` function used position-based row lookups that broke when a new row was appended at the bottom before the sort operation placed it chronologically. Fixed to sort data by date in-memory before collecting values, and repaired March 18's variability values (BedVar=87.8, WakeVar=51.3). Added `--fix-variability` flag to garmin_sync.py for batch recomputation. Nutrition cleanup deleted 1,027 rows dated March 6 and older that had no manual data (only auto-populated calorie fields), shrinking the tab from 1,038 to 11 active rows. Added `--cleanup-nutrition` flag. The charts overhaul discovered all 5 existing embedded charts had wrong column indices (off by 1 from a "Day" column that was added in a previous session). Rewrote `setup_charts.py` entirely with schema-based `headers.index()` lookups instead of hardcoded indices, added 4 new cross-tab charts (Sleep Analysis Score, Sleep Stages, Bedtime Consistency, Readiness Trend), and fixed a falsy `sheetId=0` bug. Now 9 charts total.
+
+### Spreadsheet Recovery + Full Rebuild from SQLite (~1h 56m)
+
+The user's Health Tracker Google Spreadsheet was accidentally deleted. This was the biggest infrastructure test of the project. Confirmed the SQLite backup had all data intact: 1,052 garmin rows, 879 sleep, 574 session_log, 32 daily_log, 12 overall_analysis, 8 strength_log — including all manually-entered data (cognition notes, sleep notes, meal descriptions, daily log habits). Wrote `restore_from_sqlite.py` from scratch — reads all 8 SQLite tables, maps column names to Sheets headers (accounting for naming differences), writes with RAW mode for dates then USER_ENTERED for numerics, and adds formulas for Calorie Balance and Habits Total. Hit Google Sheets API rate limit on first run due to per-column numeric writes; fixed by grouping contiguous numeric columns into range batches for a single API call per group.
+
+The user created a new spreadsheet, shared it with the service account, and updated `.env` with the new Sheet ID. Ran all setup scripts (setup_analysis.py, setup_daily_log.py, setup_overall_analysis.py), then restored all 8 tabs from SQLite. Fixed Daily Log columns D-J which had 0/1 instead of TRUE/FALSE checkboxes (converted values and applied boolean data validation). Reordered all tabs to match the canonical order defined in CLAUDE.md. Discovered and fixed the CREAM background color — was `(1.0, 0.992, 0.929)` (nearly invisible) instead of the CLAUDE.md spec `(1.0, 1.0, 0.8)`. Also fixed BAND_EVEN to `(0.95, 0.95, 0.95)`. Re-ran reformat_style.py and setup_charts.py (9 embedded charts). Full verification: verify_sheets.py all PASS, verify_formatting.py all PASS, all manual data confirmed present.
+
+### PWA Calendar/Activity Root Cause Analysis + Fix (~25m)
+
+The user reported that after migrating the PWA from static sample-data.js to live Supabase queries via data-loader.js, the Calendar view shows only metric pills (no calendar grid) and Activity shows no workout sessions. A debug.html page created in the previous session proved that data-loader.js works correctly — `initData()` returns 91 days of history and 3 sessions with no errors. Yet the calendar remained blank.
+
+Deep investigation revealed the fix from the previous session was incomplete. While `initData()` was changed to `Promise.allSettled`, the functions it calls — `fetchHistory()` and `fetchToday()` — still use `Promise.all` internally. `fetchHistory()` fires 4 parallel queries (garmin, sleep, overall_analysis, daily_log). If ANY single query fails (rate limit, network timeout, intermittent error), the entire function throws. `initData()`'s `Promise.allSettled` catches this as "rejected" and leaves `SAMPLE_DATA.history` as `[]`. The calendar's `renderCalendar()` checks `history.length > 0` and produces zero months — blank grid. The pills still render because they're hardcoded metrics, not data-dependent, which is why the user sees "just the slicers."
+
+Fixed both `fetchHistory()` (4 queries) and `fetchToday()` (7 queries) to use `Promise.allSettled` internally with per-table error logging. Bumped the service worker from v3 to v4 with a resilient install handler — the old `cache.addAll()` would fail entirely if a single asset returned 404, preventing the new service worker from activating and keeping the stale old one in control. Now uses `Promise.allSettled` with individual `cache.add()` calls. Added diagnostic `console.log` to calendar.html and activity.html showing exact data counts after `initData()` resolves. Changes saved locally but not yet deployed to Netlify.
+
+---
+
+**Session 13 Grand Totals:**
+
+| Session | Time | Hours | Primary Categories |
+|---------|------|-------|--------------------|
+| Session 13 | 12:11 PM → 11:38 PM | 5.5h | Fix, Debug, Infra, Feature |
+| **Day Total (updated)** | | **8.0h** | |
+
+**By category**: Fix (~4h), Infra (~1h), Debug (~0.25h), Feature (~0.25h)
+
+**Key deliverables**: Task Scheduler fix (both tasks operational), spreadsheet full recovery from SQLite (all 8 tabs, all manual data preserved), restore_from_sqlite.py utility, partial data correction (4 dates re-synced), 9 embedded charts rebuilt, PWA data resilience fix (triple-layer Promise.allSettled), service worker v4.
+
+**Running weekly total**: 37.0h
+
+---

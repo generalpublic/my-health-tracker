@@ -15,3 +15,6 @@ dashboard/dashboard_data.json
 *.db
 profiles/
 Priv*/
+
+# Local Netlify folder
+.netlify

@@ -36,7 +36,21 @@ Time estimates are approximate. Categories: `feature` | `fix` | `refactor` | `an
 | | | | |
 | **Session 12 Total** | | **~1.5h** | **4 tasks: fix, refactor, feature** |
 
-**Day Total (Mar 18): ~2.5h**
+### Session 13 (~12:11 PM → 11:38 PM)
+
+| Task | Category | Time | Description |
+|------|----------|------|-------------|
+| Task Scheduler fix + partial data correction | fix, debug, infra | ~2h 46m | Diagnosed notification failure (file not found error), fixed create_schedule.ps1 missing -WorkingDirectory. Discovered 4 dates with partial Garmin data from broken scheduler. Re-synced 11 dates via --range, all verified against Garmin API. |
+| Sleep variability fix + nutrition cleanup + charts overhaul | fix, feature | ~11m | Fixed writers.py position-based row lookup bug. Cleaned 1,027 stale nutrition rows. Rewrote 9 charts with schema-based column lookups, added 4 new cross-tab charts. |
+| Stress qualifier investigation | debug | ~4m | Confirmed data present in Garmin tab — no code change needed. |
+| --today partial data warning | fix | ~4m | Added pre-8PM warning for partial daily stats, updated module docstring with all flags. |
+| Spreadsheet recovery + full rebuild from SQLite | fix, infra | ~1h 56m | User's spreadsheet accidentally deleted. Wrote restore_from_sqlite.py, rebuilt all 8 tabs from SQLite backup. Fixed checkboxes, tab ordering, colors. All manual data preserved. |
+| App background gradient fix | fix | ~2m | Removed purple page gradient from design-system.css, fixed today.html gradient bleed. |
+| PWA Calendar/Activity root cause + fix | fix | ~25m | Discovered nested Promise.all in fetchHistory() and fetchToday() — single sub-query failure zeros all data. Fixed both to Promise.allSettled. Bumped sw.js to v4 with resilient install. Added diagnostic logging to calendar.html and activity.html. |
+| | | | |
+| **Session 13 Total** | | **~5.5h** | **7 tasks: fix, debug, infra, feature** |
+
+**Day Total (Mar 18): ~8.0h**
 
 ---
 
