@@ -57,21 +57,20 @@ def load_and_merge(wb):
     garmin = load_sheet_as_df(wb, "Garmin")
     garmin = garmin.rename(columns={"Date": "date"})
     garmin = to_numeric_cols(garmin, exclude=["date", "Stress Qualifier", "Activity Name",
-                                               "Activity Type", "Start Time", "Sleep Feedback"])
+                                               "Activity Type", "Start Time", "Sleep Descriptor"])
 
     print("Loading Sleep tab...")
     sleep = load_sheet_as_df(wb, "Sleep")
     sleep = sleep.rename(columns={"Date": "date"})
-    sleep = to_numeric_cols(sleep, exclude=["date", "Sleep Feedback", "Notes",
+    sleep = to_numeric_cols(sleep, exclude=["date", "Sleep Descriptor", "Notes",
                                               "Sleep Analysis", "Cognition Notes"])
 
     print("Loading Daily Log tab...")
     daily = load_sheet_as_df(wb, "Daily Log")
     daily = daily.rename(columns={"Date": "date"})
-    # Convert habit checkboxes to 1/0
-    habit_cols = ["Wake at 9:30 AM", "No Morning Screens", "Creatine & Hydrate",
-                  "20 Min Walk + Breathing", "Physical Activity",
-                  "No Screens Before Bed", "Bed at 10 PM"]
+    # Convert habit checkboxes to 1/0 (dynamic from config)
+    from schema import get_habit_columns
+    habit_cols = get_habit_columns()
     for col in habit_cols:
         if col in daily.columns:
             daily[col] = daily[col].map({"TRUE": 1.0, "FALSE": 0.0}).astype(float)
@@ -158,40 +157,47 @@ RENAME = {
     "Morning Energy (1-10)":         "Morning Energy",
     "Midday Body Feel (1-10)":       "Midday Body Feel",
     "Day Rating (1-10)":             "Day Rating",
-    "Wake at 9:30 AM":               "Habit: Wake 9:30",
-    "No Morning Screens":            "Habit: No AM Screens",
-    "Creatine & Hydrate":            "Habit: Creatine/Hydrate",
-    "20 Min Walk + Breathing":       "Habit: Walk/Breathing",
-    "Physical Activity":             "Habit: Physical Activity",
-    "No Screens Before Bed":         "Habit: No PM Screens",
-    "Bed at 10 PM":                  "Habit: Bed 10 PM",
-    "Habits Total (0-7)":            "Habits Total",
     "Total Calories Consumed":       "Calories Consumed",
     "Protein (g)":                   "Protein (g)",
     "Water (L)":                     "Water (L)",
     "Calorie Balance":               "Calorie Balance",
 }
 
-PREDICTOR_COLS = [
-    # Garmin activity
-    "Steps", "Total Calories Burned", "Active Calories Burned",
-    "Avg Stress Level", "Floors Ascended", "Moderate Intensity Min", "Vigorous Intensity Min",
-    "Body Battery at Wake", "Body Battery High", "Body Battery Low",
-    "Duration (min)", "Avg HR_garmin", "Aerobic Training Effect", "Anaerobic Training Effect",
-    # Sleep metrics
-    "Time in Bed (hrs)", "Total Sleep (hrs)",
-    "Deep Sleep (min)", "Light Sleep (min)", "REM (min)", "Awake During Sleep (min)",
-    "Deep %", "REM %", "Sleep Cycles", "Awakenings",
-    "Avg HR_sleep", "Avg Respiration", "Overnight HRV (ms)", "Body Battery Gained",
-    # Daily Log — individual habits (binary)
-    "Wake at 9:30 AM", "No Morning Screens", "Creatine & Hydrate",
-    "20 Min Walk + Breathing", "Physical Activity",
-    "No Screens Before Bed", "Bed at 10 PM",
-    # Daily Log — subjective
-    "Midday Body Feel (1-10)", "Habits Total (0-7)",
-    # Nutrition — numeric
-    "Total Calories Consumed", "Protein (g)", "Water (L)", "Calorie Balance",
-]
+
+def _build_predictor_cols():
+    """Build PREDICTOR_COLS with dynamic habit columns from config."""
+    from schema import get_habit_columns
+    habits = get_habit_columns()
+    n = len(habits)
+    habits_total_col = f"Habits Total (0-{n})"
+
+    # Add habit display names to RENAME mapping
+    for h in habits:
+        short = h if len(h) <= 20 else h[:17] + "..."
+        RENAME[h] = f"Habit: {short}"
+    RENAME[habits_total_col] = "Habits Total"
+
+    return [
+        # Garmin activity
+        "Steps", "Total Calories Burned", "Active Calories Burned",
+        "Avg Stress Level", "Floors Ascended", "Moderate Intensity Min", "Vigorous Intensity Min",
+        "Body Battery at Wake", "Body Battery High", "Body Battery Low",
+        "Duration (min)", "Avg HR_garmin", "Aerobic Training Effect", "Anaerobic Training Effect",
+        # Sleep metrics
+        "Time in Bed (hrs)", "Total Sleep (hrs)",
+        "Deep Sleep (min)", "Light Sleep (min)", "REM (min)", "Awake During Sleep (min)",
+        "Deep %", "REM %", "Sleep Cycles", "Awakenings",
+        "Avg HR_sleep", "Avg Respiration", "Overnight HRV (ms)", "Body Battery Gained",
+        # Daily Log — individual habits (binary, dynamic from config)
+    ] + habits + [
+        # Daily Log — subjective
+        "Midday Body Feel (1-10)", habits_total_col,
+        # Nutrition — numeric
+        "Total Calories Consumed", "Protein (g)", "Water (L)", "Calorie Balance",
+    ]
+
+
+PREDICTOR_COLS = _build_predictor_cols()
 
 
 def _pearson_pvalue(r, n):
@@ -455,11 +461,14 @@ def print_top_findings(df, cached_results=None):
         # New: Day Rating drivers
         ("Day Rating (1-10)",          "Total Sleep (hrs)",         "More sleep -> better day rating"),
         ("Day Rating (1-10)",          "Overnight HRV (ms)",        "Higher HRV -> better day rating"),
-        # New: Habit-driven outcomes
-        ("Sleep Score_sleep",          "Bed at 10 PM",              "Bedtime habit -> better sleep score"),
-        ("Sleep Score_sleep",          "No Screens Before Bed",     "Screen-free evenings -> better sleep"),
-        ("HRV (overnight avg)",        "Bed at 10 PM",              "Bedtime habit -> higher HRV"),
+        # Habit-driven outcomes (dynamic — checks each configured habit vs key outcomes)
     ]
+    # Dynamically add habit vs outcome correlations for all configured habits
+    from schema import get_habit_columns
+    _habits = get_habit_columns()
+    for _h in _habits:
+        checks.append(("Sleep Score_sleep", _h, f"{_h} -> better sleep score"))
+        checks.append(("HRV (overnight avg)", _h, f"{_h} -> higher HRV"))
 
     for a, b, label in checks:
         r, n = _lookup_corr(a, b)

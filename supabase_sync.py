@@ -51,8 +51,10 @@ def _day_from_date(date_str):
 # ---------------------------------------------------------------------------
 
 def init_supabase():
-    """Load SUPABASE_URL and SUPABASE_ANON_KEY from .env, return a Supabase client.
+    """Load Supabase credentials from .env, return a Supabase client.
 
+    Uses SUPABASE_SERVICE_ROLE_KEY for server-side writes (bypasses RLS).
+    Falls back to SUPABASE_ANON_KEY if service role key is not set.
     Returns None if credentials are missing or the supabase package is not installed.
     """
     global _client
@@ -64,15 +66,17 @@ def init_supabase():
         load_dotenv(Path(__file__).parent / ".env")
 
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
+        # Prefer service role key for server writes (bypasses RLS)
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
         if not url or not key:
-            print("[Supabase] SUPABASE_URL or SUPABASE_ANON_KEY not set in .env - skipping")
+            print("[Supabase] SUPABASE_URL or key not set in .env - skipping")
             return None
 
         from supabase import create_client
         _client = create_client(url, key)
-        print("[Supabase] Client initialized")
+        key_type = "service_role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anon"
+        print(f"[Supabase] Client initialized ({key_type} key)")
         return _client
     except ImportError:
         print("[Supabase] supabase package not installed - run: pip install supabase")
@@ -129,6 +133,8 @@ def upsert_garmin(client, date_str, data):
             "zone_3_min": _to_num(data.get("zone_3")),
             "zone_4_min": _to_num(data.get("zone_4")),
             "zone_5_min": _to_num(data.get("zone_5")),
+            "spo2_avg": _to_num(data.get("spo2_avg")),
+            "spo2_min": _to_num(data.get("spo2_min")),
         }
         client.table("garmin").upsert(row, on_conflict="date").execute()
         print(f"[Supabase] garmin upserted for {date_str}")
@@ -163,7 +169,7 @@ def upsert_sleep(client, date_str, data):
             "avg_respiration": _to_num(data.get("sleep_avg_respiration")),
             "overnight_hrv_ms": _to_num(data.get("hrv")),
             "body_battery_gained": _to_num(data.get("sleep_body_battery_gained")),
-            "sleep_feedback": _to_text(data.get("sleep_feedback")),
+            "sleep_feedback": _to_text(data.get("sleep_descriptor") or data.get("sleep_feedback")),
             "sleep_analysis_score": _to_num(data.get("sleep_analysis_score")),
             "sleep_analysis": _to_text(data.get("sleep_analysis_text")),
             "bedtime_variability_7d": _to_num(data.get("bedtime_variability_7d")),
@@ -309,6 +315,165 @@ def upsert_daily_log(client, date_str, data):
 
 
 # ---------------------------------------------------------------------------
+# Forward sync: Sheets -> Supabase for Daily Log
+# ---------------------------------------------------------------------------
+
+# Map Sheets Daily Log column headers to Supabase column names
+_DAILY_LOG_SHEET_TO_SUPA = {
+    "Morning Energy (1-10)": "morning_energy",
+    "Wake at 9:30 AM": "wake_at_930",
+    "No Morning Screens": "no_morning_screens",
+    "Creatine & Hydrate": "creatine_hydrate",
+    "20 Min Walk + Breathing": "walk_breathing",
+    "Physical Activity": "physical_activity",
+    "No Screens Before Bed": "no_screens_before_bed",
+    "Bed at 10 PM": "bed_at_10pm",
+    "Habits Total (0-7)": "habits_total",
+    "Midday Energy (1-10)": "midday_energy",
+    "Midday Focus (1-10)": "midday_focus",
+    "Midday Mood (1-10)": "midday_mood",
+    "Midday Body Feel (1-10)": "midday_body_feel",
+    "Midday Notes": "midday_notes",
+    "Evening Energy (1-10)": "evening_energy",
+    "Evening Focus (1-10)": "evening_focus",
+    "Evening Mood (1-10)": "evening_mood",
+    "Perceived Stress (1-10)": "perceived_stress",
+    "Day Rating (1-10)": "day_rating",
+    "Evening Notes": "evening_notes",
+}
+
+
+def push_daily_log_from_sheets(client, wb, date_str):
+    """Read one day's Daily Log row from Sheets and push to Supabase.
+
+    Only writes columns that have actual values in Sheets (skips empty cells).
+    Never overwrites PWA-entered data — if Supabase row has manual_source='pwa',
+    only writes columns that are empty in Supabase.
+    """
+    if client is None or wb is None:
+        return
+
+    try:
+        sheet = wb.worksheet("Daily Log")
+    except Exception:
+        return
+
+    all_data = sheet.get_all_values()
+    if len(all_data) < 2:
+        return
+
+    headers = all_data[0]
+    # Find the row for this date
+    date_col = headers.index("Date") if "Date" in headers else 1
+    target_row = None
+    for row in all_data[1:]:
+        if len(row) > date_col and row[date_col] == date_str:
+            target_row = row
+            break
+
+    if target_row is None:
+        return  # No row for this date
+
+    # Build data dict from Sheets row
+    data = {}
+    has_any_value = False
+    for header, supa_col in _DAILY_LOG_SHEET_TO_SUPA.items():
+        if header in headers:
+            idx = headers.index(header)
+            if idx < len(target_row):
+                val = target_row[idx]
+                if val not in (None, ""):
+                    # Convert TRUE/FALSE strings to 1/0 for habit checkboxes
+                    if val == "TRUE":
+                        val = 1
+                    elif val == "FALSE":
+                        val = 0
+                    data[supa_col] = val
+                    has_any_value = True
+
+    if not has_any_value:
+        return  # All cells empty — nothing to push
+
+    # Check if Supabase already has PWA data for this date — don't overwrite
+    try:
+        existing = client.table("daily_log").select("manual_source").eq("date", date_str).execute()
+        if existing.data and existing.data[0].get("manual_source") == "pwa":
+            # PWA data exists — only fill in columns that are NULL in Supabase
+            supa_row = client.table("daily_log").select("*").eq("date", date_str).execute()
+            if supa_row.data:
+                existing_row = supa_row.data[0]
+                filtered = {}
+                for k, v in data.items():
+                    if existing_row.get(k) is None:
+                        filtered[k] = v
+                if not filtered:
+                    return  # All columns already filled by PWA
+                data = filtered
+    except Exception:
+        pass  # If check fails, proceed with full upsert
+
+    upsert_daily_log(client, date_str, data)
+
+
+def backfill_daily_log_from_sheets(client, wb):
+    """Push ALL existing Daily Log rows from Sheets to Supabase (one-time backfill).
+
+    Skips rows where Supabase already has PWA-entered data.
+    """
+    if client is None or wb is None:
+        print("[Backfill] Missing client or workbook")
+        return
+
+    try:
+        sheet = wb.worksheet("Daily Log")
+    except Exception:
+        print("[Backfill] Daily Log tab not found")
+        return
+
+    all_data = sheet.get_all_values()
+    if len(all_data) < 2:
+        print("[Backfill] No data rows in Daily Log")
+        return
+
+    headers = all_data[0]
+    date_col = headers.index("Date") if "Date" in headers else 1
+
+    synced = 0
+    skipped = 0
+    for row in all_data[1:]:
+        if len(row) <= date_col:
+            continue
+        date_str = row[date_col]
+        if not date_str or not date_str.startswith("20"):
+            continue
+
+        # Build data dict
+        data = {}
+        has_value = False
+        for header, supa_col in _DAILY_LOG_SHEET_TO_SUPA.items():
+            if header in headers:
+                idx = headers.index(header)
+                if idx < len(row):
+                    val = row[idx]
+                    if val not in (None, ""):
+                        if val == "TRUE":
+                            val = 1
+                        elif val == "FALSE":
+                            val = 0
+                        data[supa_col] = val
+                        has_value = True
+
+        if not has_value:
+            skipped += 1
+            continue
+
+        upsert_daily_log(client, date_str, data)
+        synced += 1
+
+    print(f"[Backfill] Daily Log: {synced} rows pushed to Supabase, {skipped} empty rows skipped")
+
+
+# ---------------------------------------------------------------------------
 # Convenience — call all upserts in one shot
 # ---------------------------------------------------------------------------
 
@@ -338,3 +503,48 @@ def sync_all(client, date_str, garmin_data, sleep_data, nutrition_data, sessions
             # List of sessions
             for session in sessions_data:
                 upsert_session_log(client, date_str, session)
+
+
+# ---------------------------------------------------------------------------
+# Illness state sync
+# ---------------------------------------------------------------------------
+
+def upsert_illness_state(client, data):
+    """Upsert an illness episode to Supabase."""
+    if client is None:
+        client = get_client()
+    if client is None:
+        return
+    try:
+        row = {
+            "onset_date": data.get("onset_date"),
+            "confirmed_date": data.get("confirmed_date"),
+            "resolved_date": data.get("resolved_date"),
+            "resolution_method": data.get("resolution_method"),
+            "peak_score": _to_num(data.get("peak_score")),
+            "notes": _to_text(data.get("notes")),
+        }
+        client.table("illness_state").upsert(row, on_conflict="onset_date").execute()
+        print(f"[Supabase] illness_state upserted for {row['onset_date']}")
+    except Exception as e:
+        print(f"[Supabase] illness_state upsert failed: {e}")
+
+
+def upsert_illness_daily(client, date_str, data):
+    """Upsert a daily illness anomaly log to Supabase."""
+    if client is None:
+        client = get_client()
+    if client is None:
+        return
+    try:
+        import json
+        row = {
+            "date": date_str,
+            "illness_state_id": _to_num(data.get("illness_state_id")),
+            "anomaly_score": _to_num(data.get("anomaly_score")),
+            "signals": json.dumps(data.get("signals", [])),
+            "label": _to_text(data.get("label")),
+        }
+        client.table("illness_daily_log").upsert(row, on_conflict="date").execute()
+    except Exception as e:
+        print(f"[Supabase] illness_daily_log upsert failed for {date_str}: {e}")

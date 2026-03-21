@@ -315,3 +315,56 @@ Fixed both `fetchHistory()` (4 queries) and `fetchToday()` (7 queries) to use `P
 **Running weekly total**: 37.0h
 
 ---
+
+
+---
+
+## March 20, 2026 (Sessions 14-20 | ~11.5h)
+
+### Daily Log + Garmin Formatting Fixes + Header White Text (Fix + Feature, ~51m)
+
+The day started with a series of formatting and data integrity fixes across the Google Sheets backend. The Daily Log Habits Total column (K) was empty for March 18-20 because the COUNTIF formula was only applied during migration/restore operations, not during the daily sync pipeline. Fixed write_to_daily_log() in writers.py to write the formula after every new row append, then backfilled the 3 existing empty rows. In the Garmin tab, discovered that upsert_row() was writing all values as RAW text, which meant the number format had no effect. Added _rewrite_garmin_numerics() helper that re-writes 30+ numeric columns with USER_ENTERED after every Garmin upsert. Re-synced March 19 to fix partial data from the broken scheduler (Steps jumped from 63 to the correct 3,535). Applied white foreground text to the Daily Log header row, and fixed bold_headers() field mask to prevent clobbering foreground color. All tabs verified PASS.
+
+### Task Scheduler Fix + Sleep Timestamp Bug (Fix + Debug + Infra, ~41m)
+
+Diagnosed why all 3 Windows Task Scheduler tasks were not running -- they showed Ready status but were failing with error -2147024894 (file not found). Root cause: bare python does not resolve in Task Scheduler non-interactive context; the full python.exe path is required. Updated both create_schedule.ps1 and create_schedule.bat with full python path, -StartWhenAvailable, and -AllowStartIfOnBatteries.
+
+Then fixed a sleep timestamp bug where March 19 wake time showed 05:47 AM instead of the actual 9:47 AM -- a 4-hour offset matching the EDT timezone. Root cause traced to the v2.1 code review which removed tz=timezone.utc from fromtimestamp() calls on sleepStartTimestampLocal fields. Fixed by switching to sleepStartTimestampGMT/sleepEndTimestampGMT fields. Re-synced March 18-19, both verified correct. Downstream impact: plus/minus 15 point sleep analysis score swing and inverted color grading for affected dates. Updated CLAUDE.md with the definitive Garmin API timezone rule.
+
+### HRV Threshold Recalibration (Analysis + Fix, ~13m)
+
+Queried 180 days of overnight HRV data from SQLite: mean 40.7ms, median 41ms, standard deviation 3.6ms, range 33-57ms. The old color grading thresholds (red below 30, green at or above 48) put 96.7% of all days in orange -- zero discriminating value. Computed percentile-based personal thresholds: red below 37, green at or above 44. Updated 7 files across the entire stack. All 75 unit tests pass.
+
+### Sleep Descriptor Feature (Feature, ~29m)
+
+The user identified a contradiction: the PWA was showing Garmin Long and refreshing feedback alongside a score of 78 with deep sleep at only 12% -- half the 22% clinical target. Added a descriptor field to generate_sleep_analysis() returning a 3-tuple (score, analysis_text, descriptor). Designed 18 descriptor labels across POOR/FAIR/GOOD verdicts, each priority-matched to the dominant sleep finding. Updated 12 files, 75/75 tests pass including 2 new descriptor-specific tests. Verified in production: Supabase shows Light on Deep for March 20 (score 77).
+
+### Multi-User Generalization: Milestone 2 (Feature, ~2h)
+
+Completed the second milestone of making the Health Tracker configurable for any user. Phase 4 (Dynamic Habits): schema.py builds Daily Log headers dynamically from user_config.json, writers.py adjusts formula ranges, overall_analysis.py iterates over configured habits dynamically. Phase 5 (Feature Flags): optional tab writes gated behind features.* flags with graceful degradation. Phase 6 (Data Source Adapters): created data_sources/ package with BaseAdapter ABC, GarminAdapter, ManualAdapter, and StravaAdapter. All garmin_sync.py data fetches route through _fetch_via_adapter(). Full backward compatibility verified. 75/75 tests pass.
+
+### Bidirectional PWA Sync -- Full Implementation (Feature, ~4h)
+
+The largest task of the day: enabling the PWA to write data back to Supabase, not just read. Created Supabase schema v2 migration (updated_at triggers, manual_source column, DELETE policy lockdown). Built ~250 lines of write functionality in data-loader.js: generic supabaseMutate() upsert, 8 specialized save functions, and an offline queue with auto-flush on reconnect. Rewired form submission in log-entry.html and activity.html. Protected the auto-pipeline by removing cognition/cognition_notes from upsert_overall_analysis(). Built sync_pwa_to_stores.py (~300 lines) pulling PWA entries from Supabase and writing to SQLite + Sheets. All 7 form types tested end-to-end: Supabase write PASS, partial upsert preservation PASS, conflict test PASS.
+
+### Key Insights Fix + Phone Distillation + UI Polish (Fix + Feature, ~1h 16m)
+
+Fixed Key Insights displaying nothing -- root cause was join delimiter mismatch between backend and frontend. Rewrote phone distillation logic with priority hierarchy (stress budget > physio signals > sleep verdict > habits) and 200-character condensation. UI polish: sleep card chevron, dynamic date, consistency subtitle.
+
+### PWA UI Tweaks + Stress Qualifier Bug Fix (Feature + Fix, ~16m)
+
+Quick UI refinements: centered card titles, bumped font size, fixed Status label gradient. Fixed Stress Qualifier column always empty -- Garmin API returns UNKNOWN for partial days; now derives qualifier from averageStressLevel using standard thresholds.
+
+### GitHub Pages Migration: Security Audit + Template Architecture + Deploy (Infra + Feature, ~2h)
+
+Migrated PWA from Netlify (hitting deploy limits) to GitHub Pages for public distribution to 70k social media followers. Full impact-driven security audit of all credentials. Implemented template architecture: config.example.js (committed with placeholders) and config.js (gitignored with real credentials). Modified data-loader.js for config check with user-friendly Setup Required error. Added config.js script tag to all 7 HTML files. Removed all hardcoded Sek references. Deleted old repo with tainted git history, created fresh public template. Rotated Supabase anon key. Set up personal deployment using GitHub Actions secrets -- workflow injects config.js from 3 repository secrets at deploy time. Two repos now live: public template and personal deployment on GitHub Pages.
+
+### Grand Totals
+
+| Session | Date | Hours | Categories |
+|---------|------|-------|------------|
+| Sessions 14-20 | 2026-03-20 | ~11.5h | feature, fix, infra, analysis, debug |
+
+Category breakdown: Feature (~8h) | Fix (~2h) | Infrastructure + Security (~1.5h)
+
+Key deliverables: Bidirectional PWA sync (8 save functions + offline queue + sync pipeline) | Multi-user generalization milestone 2 (dynamic habits, feature flags, data source adapters) | GitHub Pages migration with template architecture for public distribution | Sleep descriptor feature (18 analysis-derived labels) | HRV threshold recalibration from 180-day personal data | Task Scheduler + sleep timestamp fixes

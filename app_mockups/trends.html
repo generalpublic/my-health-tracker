@@ -21,6 +21,19 @@
       margin-bottom: var(--space-md);
     }
 
+    /* Override pill-row wrap for trends — horizontal scroll saves vertical space */
+    .trends-header .pill-row {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: var(--space-xs);
+    }
+
+    .trends-header .pill-row::-webkit-scrollbar {
+      display: none;
+    }
+
     /* Chart area */
     .chart-container {
       padding: var(--space-lg) 0;
@@ -239,6 +252,7 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // --- Global functions for onclick handlers ---
@@ -422,13 +436,13 @@
 
       const trendEl = document.getElementById('statTrend');
       if (Math.abs(slope) < 0.1) {
-        trendEl.textContent = '-> Stable';
+        trendEl.textContent = 'Stable';
         trendEl.className = 'stat-trend trend-flat';
       } else if ((slope > 0 && t.type === 'higher_better') || (slope < 0 && t.type === 'lower_better')) {
-        trendEl.textContent = '^ Improving';
+        trendEl.textContent = 'Improving';
         trendEl.className = 'stat-trend trend-up';
       } else {
-        trendEl.textContent = 'v Declining';
+        trendEl.textContent = 'Declining';
         trendEl.className = 'stat-trend trend-down';
       }
     }

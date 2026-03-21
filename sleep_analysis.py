@@ -6,8 +6,15 @@ Uses research-based thresholds from Perfecting Sleep 2.md.
 """
 
 import re
+import sqlite3
+from pathlib import Path
 
 from utils import _safe_float
+
+_DB_PATH = Path(__file__).parent / "health_tracker.db"
+
+# Module-level cache for circadian profile (computed once per process)
+_circadian_cache = {"profile": None, "loaded": False}
 
 
 def _parse_bedtime_hour(bedtime_str):
@@ -21,67 +28,278 @@ def _parse_bedtime_hour(bedtime_str):
     return h + mi / 60.0
 
 
-def compute_independent_score(data):
+def _bedtime_target_hour(thresholds):
+    """Parse bedtime_target from thresholds into float hour (18-30 range)."""
+    target_str = thresholds.get("bedtime_target", "23:00")
+    target = _parse_bedtime_hour(target_str)
+    if target is None:
+        return 23.0
+    return target if target >= 18 else target + 24
+
+
+def _to_effective_hour(h):
+    """Convert hour (0-24) to effective hour (18-42 range) for sleep math."""
+    return h if h >= 18 else h + 24
+
+
+def compute_circadian_profile(sleep_history, min_days=30):
+    """Compute empirical chronotype from observed bedtime/wake history.
+
+    Analyzes the user's actual sleep timing over the last 60 days to determine
+    their personal circadian window, rather than using a fixed target.
+
+    Args:
+        sleep_history: list of dicts with "Bedtime" and "Wake Time" keys (HH:MM)
+        min_days: minimum nights needed for reliable estimation (default 30)
+
+    Returns dict:
+        chronotype: "early" | "intermediate" | "late"
+        median_bedtime_hr: float (effective hour, 18-30 range)
+        median_wake_hr: float
+        sleep_midpoint_hr: float
+        bedtime_std_min: float (variability in minutes)
+        optimal_window_center: float (effective hour)
+        n_nights: int
+    Returns None if insufficient data.
+
+    Chronotype classification (Roenneberg et al. 2003, MSFsc):
+        Early:        sleep midpoint < 2:30 AM (26.5 effective)
+        Intermediate: sleep midpoint 2:30-3:30 AM (26.5-27.5)
+        Late:         sleep midpoint > 3:30 AM (27.5+)
+    """
+    bedtimes = []
+    waketimes = []
+
+    for row in sleep_history:
+        bt = _parse_bedtime_hour(row.get("Bedtime") or row.get("sleep_bedtime", ""))
+        wk = _parse_bedtime_hour(row.get("Wake Time") or row.get("sleep_wake_time", ""))
+        if bt is not None and wk is not None:
+            bedtimes.append(_to_effective_hour(bt))
+            waketimes.append(_to_effective_hour(wk))
+
+    if len(bedtimes) < min_days:
+        return None
+
+    # Median bedtime and wake time (robust to outliers)
+    bedtimes_sorted = sorted(bedtimes)
+    waketimes_sorted = sorted(waketimes)
+    n = len(bedtimes_sorted)
+    median_bt = (bedtimes_sorted[n // 2] + bedtimes_sorted[(n - 1) // 2]) / 2
+    median_wk = (waketimes_sorted[n // 2] + waketimes_sorted[(n - 1) // 2]) / 2
+
+    # Sleep midpoint = (bedtime + wake) / 2
+    sleep_midpoint = (median_bt + median_wk) / 2
+
+    # Chronotype classification
+    if sleep_midpoint < 26.5:      # midpoint before 2:30 AM
+        chronotype = "early"
+    elif sleep_midpoint <= 27.5:   # midpoint 2:30-3:30 AM
+        chronotype = "intermediate"
+    else:                          # midpoint after 3:30 AM
+        chronotype = "late"
+
+    # Bedtime variability (SD in minutes)
+    bt_mean = sum(bedtimes) / len(bedtimes)
+    bt_variance = sum((b - bt_mean) ** 2 for b in bedtimes) / (len(bedtimes) - 1)
+    bt_std_min = (bt_variance ** 0.5) * 60  # convert hours to minutes
+
+    return {
+        "chronotype": chronotype,
+        "median_bedtime_hr": round(median_bt, 2),
+        "median_wake_hr": round(median_wk, 2),
+        "sleep_midpoint_hr": round(sleep_midpoint, 2),
+        "bedtime_std_min": round(bt_std_min, 1),
+        "optimal_window_center": round(median_bt, 2),
+        "n_nights": len(bedtimes),
+    }
+
+
+def circadian_bedtime_score(bt_hour, circadian_profile, thresholds=None):
+    """Score tonight's bedtime against the user's personal circadian window.
+
+    Replaces the fixed bonus/penalty with a continuous curve centered on the
+    user's empirical bedtime. Deviation is penalized smoothly rather than
+    with a binary threshold.
+
+    Scoring:
+        Within 15 min of personal median:  +5 pts (full bonus)
+        15-45 min deviation:               +5 to 0 (linear taper)
+        45-90 min deviation:               0 to -5 (mild penalty)
+        90+ min deviation:                 -5 to -10 (strong penalty, capped)
+
+    Also applies a circadian consistency bonus/penalty:
+        Bedtime variability < 30 min SD:  +2 pts
+        Bedtime variability > 60 min SD:  -3 pts
+
+    Falls back to fixed-target scoring if no circadian profile available.
+    """
+    t = thresholds or {}
+
+    if circadian_profile is None:
+        # Fallback: use fixed target (backward compatible)
+        effective = _to_effective_hour(bt_hour)
+        target_effective = _bedtime_target_hour(t)
+        offset_min = (effective - target_effective) * 60
+        if offset_min <= 0:
+            return t.get("bedtime_bonus_before_target", 5)
+        elif offset_min >= t.get("bedtime_penalty_offset_min", 90):
+            return t.get("bedtime_penalty_points", -10)
+        return 0
+
+    effective = _to_effective_hour(bt_hour)
+    median = circadian_profile["optimal_window_center"]
+    deviation_min = abs(effective - median) * 60
+
+    # Continuous scoring curve
+    if deviation_min <= 15:
+        timing_score = 5.0
+    elif deviation_min <= 45:
+        # Linear taper from +5 to 0
+        timing_score = 5.0 * (1.0 - (deviation_min - 15) / 30.0)
+    elif deviation_min <= 90:
+        # Linear penalty from 0 to -5
+        timing_score = -5.0 * ((deviation_min - 45) / 45.0)
+    else:
+        # Strong penalty from -5 to -10, capped at -10
+        timing_score = -5.0 - min(5.0, 5.0 * ((deviation_min - 90) / 90.0))
+
+    # Consistency bonus/penalty
+    consistency_score = 0.0
+    variability = circadian_profile.get("bedtime_std_min", 0)
+    if variability < 30:
+        consistency_score = 2.0
+    elif variability > 60:
+        consistency_score = -3.0
+
+    return round(timing_score + consistency_score, 1)
+
+
+def load_circadian_profile():
+    """Load circadian profile from SQLite sleep history (cached per process).
+
+    Queries the last 90 days of bedtime/wake time data from SQLite and
+    computes the user's empirical chronotype. Returns None if insufficient
+    data (< 30 nights) or database unavailable.
+    """
+    if _circadian_cache["loaded"]:
+        return _circadian_cache["profile"]
+
+    _circadian_cache["loaded"] = True
+
+    if not _DB_PATH.exists():
+        return None
+
+    try:
+        conn = sqlite3.connect(str(_DB_PATH))
+        rows = conn.execute(
+            "SELECT bedtime, wake_time FROM sleep "
+            "WHERE bedtime IS NOT NULL AND wake_time IS NOT NULL "
+            "AND bedtime != '' AND wake_time != '' "
+            "ORDER BY date DESC LIMIT 90"
+        ).fetchall()
+        conn.close()
+
+        history = [{"Bedtime": r[0], "Wake Time": r[1]} for r in rows]
+        profile = compute_circadian_profile(history)
+        _circadian_cache["profile"] = profile
+        if profile:
+            print(f"  Circadian profile: {profile['chronotype']} chronotype "
+                  f"(midpoint {profile['sleep_midpoint_hr']:.1f}h, "
+                  f"variability {profile['bedtime_std_min']:.0f}min, "
+                  f"n={profile['n_nights']})")
+        return profile
+    except Exception as e:
+        print(f"  Circadian profile warning: {e}")
+        return None
+
+
+def compute_independent_score(data, thresholds=None, circadian_profile=None):
     """Compute a 0-100 independent sleep quality score from raw metrics.
 
+    Args:
+        data: dict of sleep metrics (from Garmin API or data dict)
+        thresholds: optional dict from get_scoring_thresholds() for personalized
+                    floors/ceilings. When None, uses hardcoded population defaults.
+        circadian_profile: optional dict from compute_circadian_profile() for
+                    personalized bedtime scoring. When None, falls back to fixed target.
+
     Weighted composite:
-      Total sleep:       25 pts (0 at <=4h, max at >=7h)
-      Deep %:            20 pts (0 at <=10%, max at >=20%)
-      REM %:             20 pts (0 at <=10%, max at >=20%)
-      HRV:               15 pts (0 at <=30ms, max at >=45ms)
-      Awakenings:        10 pts (max at 0, 0 at >=8)
-      Body battery:      10 pts (0 at 0, max at >=60)
-      Bedtime modifier:  +5 before midnight, -10 after 1:30 AM
+      Total sleep:       25 pts (floor -> ceiling)
+      Deep %:            20 pts (floor -> ceiling)
+      REM %:             20 pts (floor -> ceiling)
+      HRV:               15 pts (floor -> ceiling)
+      Awakenings:        10 pts (max at 0, 0 at >=awakenings_max)
+      Body battery:      10 pts (0 at 0, max at >=ceiling)
+      Bedtime modifier:  circadian-aware scoring (personalized) or fixed target (fallback)
     """
+    # Default thresholds (backward compatible with original hardcoded values)
+    t = thresholds or {
+        "sleep_duration_floor": 4.0, "sleep_duration_ceiling": 7.0,
+        "deep_pct_floor": 10.0, "deep_pct_ceiling": 20.0,
+        "rem_pct_floor": 10.0, "rem_pct_ceiling": 20.0,
+        "hrv_floor": 37.0, "hrv_ceiling": 44.0,
+        "awakenings_max": 8.0,
+        "body_battery_ceiling": 60.0,
+        "bedtime_target": "23:00",
+        "bedtime_bonus_before_target": 5,
+        "bedtime_penalty_offset_min": 90,
+        "bedtime_penalty_points": -10,
+    }
+
     score = 0.0
     metrics_found = 0
 
     # Total sleep (25 pts)
     total = _safe_float(data.get("sleep_duration"))
-    if total is not None:
-        score += min(25, max(0, (total - 4) / (7 - 4) * 25))
+    slp_floor = t["sleep_duration_floor"]
+    slp_ceil = t["sleep_duration_ceiling"]
+    if total is not None and slp_ceil > slp_floor:
+        score += min(25, max(0, (total - slp_floor) / (slp_ceil - slp_floor) * 25))
         metrics_found += 1
 
     # Deep % (20 pts)
     deep = _safe_float(data.get("sleep_deep_pct"))
-    if deep is not None:
-        score += min(20, max(0, (deep - 10) / (20 - 10) * 20))
+    d_floor = t["deep_pct_floor"]
+    d_ceil = t["deep_pct_ceiling"]
+    if deep is not None and d_ceil > d_floor:
+        score += min(20, max(0, (deep - d_floor) / (d_ceil - d_floor) * 20))
         metrics_found += 1
 
     # REM % (20 pts)
     rem = _safe_float(data.get("sleep_rem_pct"))
-    if rem is not None:
-        score += min(20, max(0, (rem - 10) / (20 - 10) * 20))
+    r_floor = t["rem_pct_floor"]
+    r_ceil = t["rem_pct_ceiling"]
+    if rem is not None and r_ceil > r_floor:
+        score += min(20, max(0, (rem - r_floor) / (r_ceil - r_floor) * 20))
         metrics_found += 1
 
     # HRV (15 pts)
     hrv = _safe_float(data.get("hrv"))
-    if hrv is not None:
-        score += min(15, max(0, (hrv - 30) / (45 - 30) * 15))
+    h_floor = t["hrv_floor"]
+    h_ceil = t["hrv_ceiling"]
+    if hrv is not None and h_ceil > h_floor:
+        score += min(15, max(0, (hrv - h_floor) / (h_ceil - h_floor) * 15))
         metrics_found += 1
 
     # Awakenings (10 pts) — fewer is better
     awake = _safe_float(data.get("sleep_awakenings"))
-    if awake is not None:
-        score += min(10, max(0, (8 - awake) / 8 * 10))
+    awk_max = t["awakenings_max"]
+    if awake is not None and awk_max > 0:
+        score += min(10, max(0, (awk_max - awake) / awk_max * 10))
         metrics_found += 1
 
     # Body battery gained (10 pts)
     bb = _safe_float(data.get("sleep_body_battery_gained"))
-    if bb is not None:
-        score += min(10, max(0, bb / 60 * 10))
+    bb_ceil = t["body_battery_ceiling"]
+    if bb is not None and bb_ceil > 0:
+        score += min(10, max(0, bb / bb_ceil * 10))
         metrics_found += 1
 
-    # Bedtime modifier
+    # Bedtime modifier — circadian-aware (personalized) or fixed target (fallback)
     bedtime_str = data.get("sleep_bedtime")
     bt_hour = _parse_bedtime_hour(bedtime_str)
     if bt_hour is not None:
-        if bt_hour < 24:
-            effective = bt_hour if bt_hour >= 18 else bt_hour + 24
-            if effective <= 24:      # before midnight
-                score += 5
-            elif effective >= 25.5:  # after 1:30 AM
-                score -= 10
+        score += circadian_bedtime_score(bt_hour, circadian_profile, t)
 
     if metrics_found == 0:
         return None
@@ -89,13 +307,20 @@ def compute_independent_score(data):
     return round(max(0, min(100, score)))
 
 
-def generate_sleep_analysis(data):
+def generate_sleep_analysis(data, thresholds=None, circadian_profile=None):
     """Generate an interpretive sleep analysis from Garmin metrics.
+
+    Args:
+        data: dict of sleep metrics (from Garmin API or data dict)
+        thresholds: optional dict from get_scoring_thresholds() for personalized
+                    floors/ceilings. When None, uses hardcoded population defaults.
+        circadian_profile: optional dict from compute_circadian_profile() for
+                    personalized bedtime scoring. When None, falls back to fixed target.
 
     Uses research-based thresholds to evaluate sleep architecture and produce
     cross-metric pattern analysis with specific, actionable guidance.
 
-    Returns (independent_score, analysis_text).
+    Returns (independent_score, analysis_text, descriptor).
     """
     findings = []      # (severity, short_text)
     insights = []      # cross-metric interpretations
@@ -119,7 +344,7 @@ def generate_sleep_analysis(data):
 
     has_data = any(v is not None for v in [total, deep_pct, rem_pct])
     if not has_data:
-        return None, "Insufficient data for analysis"
+        return None, "Insufficient data for analysis", ""
 
     # Derive effective deep/rem percentages (prefer reported, compute from minutes)
     eff_deep_pct = deep_pct
@@ -181,14 +406,12 @@ def generate_sleep_analysis(data):
 
     # 4. HRV
     if hrv is not None:
-        if hrv < 30:
-            findings.append(("poor", f"HRV {hrv:.0f}ms - very low; body under significant stress or not recovered"))
-        elif hrv < 38:
-            findings.append(("fair", f"HRV {hrv:.0f}ms - below your 38ms baseline; autonomic recovery incomplete"))
-        elif hrv >= 48:
-            findings.append(("good", f"HRV {hrv:.0f}ms - excellent parasympathetic recovery"))
-        elif hrv >= 42:
-            findings.append(("good", f"HRV {hrv:.0f}ms - above target, strong nervous system recovery"))
+        if hrv < 37:
+            findings.append(("poor", f"HRV {hrv:.0f}ms - below your baseline; autonomic recovery incomplete"))
+        elif hrv >= 44:
+            findings.append(("good", f"HRV {hrv:.0f}ms - strong parasympathetic recovery"))
+        elif hrv >= 41:
+            findings.append(("good", f"HRV {hrv:.0f}ms - normal range, solid recovery"))
 
     # 5. Respiration
     if resp is not None and resp > 18:
@@ -273,7 +496,8 @@ def generate_sleep_analysis(data):
         insights.append(f"Low HRV ({hrv:.0f}ms) combined with low deep sleep ({eff_deep_pct:.0f}%) suggests the body is under significant physiological stress - possible overtraining, illness, or accumulated sleep debt")
 
     # --- Compute independent score and discrepancy ---
-    ind_score = compute_independent_score(data)
+    ind_score = compute_independent_score(data, thresholds=thresholds,
+                                          circadian_profile=circadian_profile)
     discrepancy_note = ""
     if ind_score is not None and garmin_score is not None:
         diff = garmin_score - ind_score
@@ -296,6 +520,53 @@ def generate_sleep_analysis(data):
         verdict = "GOOD"
     else:
         verdict = "FAIR"
+
+    # --- Generate short descriptor (2-4 words) congruent with analysis ---
+    descriptor = ""
+    if verdict == "POOR":
+        if total is not None and total < 6 and eff_deep_pct is not None and eff_deep_pct < 15:
+            descriptor = "Shallow & Short"
+        elif hrv is not None and hrv < 33 and eff_deep_pct is not None and eff_deep_pct < 17:
+            descriptor = "Poor Recovery"
+        elif awakenings is not None and awakenings > 5:
+            descriptor = "Fragmented"
+        elif bb_gained is not None and bb_gained < 20:
+            descriptor = "Low Restoration"
+        elif total is not None and total < 6:
+            descriptor = "Too Short"
+        elif eff_deep_pct is not None and eff_deep_pct < 15:
+            descriptor = "Deep Deficit"
+        elif eff_rem_pct is not None and eff_rem_pct < 15:
+            descriptor = "Low REM"
+        else:
+            descriptor = "Poor Quality"
+    elif verdict == "FAIR":
+        if is_late_bed and eff_deep_pct is not None and eff_deep_pct < 20:
+            descriptor = "Late Bedtime"
+        elif eff_deep_pct is not None and eff_deep_pct < 17:
+            descriptor = "Light on Deep"
+        elif eff_rem_pct is not None and eff_rem_pct < 15:
+            descriptor = "Low REM"
+        elif total is not None and total < 7:
+            descriptor = "Slightly Short"
+        elif awakenings is not None and awakenings >= 4:
+            descriptor = "Restless Night"
+        elif ((eff_deep_pct is not None and eff_deep_pct >= 20 and eff_rem_pct is not None and eff_rem_pct < 15)
+              or (eff_rem_pct is not None and eff_rem_pct >= 20 and eff_deep_pct is not None and eff_deep_pct < 17)):
+            descriptor = "Stage Imbalance"
+        else:
+            descriptor = "Adequate Rest"
+    else:  # GOOD
+        if (eff_deep_pct is not None and eff_deep_pct >= 20
+                and eff_rem_pct is not None and eff_rem_pct >= 20
+                and cycles is not None and cycles >= 4):
+            descriptor = "Full Architecture"
+        elif eff_deep_pct is not None and eff_deep_pct >= 20 and awakenings is not None and awakenings <= 1:
+            descriptor = "Deep & Restful"
+        elif total is not None and total >= 8:
+            descriptor = "Long & Solid"
+        else:
+            descriptor = "Solid Recovery"
 
     # --- Generate specific actions based on what went wrong ---
     if not actions:
@@ -343,4 +614,4 @@ def generate_sleep_analysis(data):
     body = body.replace("..", ".").replace("  ", " ").strip()
     analysis = f"{verdict} - {body}"
 
-    return ind_score, analysis
+    return ind_score, analysis, descriptor

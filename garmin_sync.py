@@ -6,21 +6,22 @@ backs up to SQLite, runs overall analysis, and sends push notifications.
 
 Usage:
     python garmin_sync.py                    # Sync yesterday (default scheduled mode)
-    python garmin_sync.py --today            # Sync today (WARNING: partial data before 8 PM)
+    python garmin_sync.py --today            # Sync today (WARNING: partial data before midnight)
     python garmin_sync.py --date 2026-03-15  # Sync specific date
     python garmin_sync.py --range 2026-03-01 2026-03-15  # Sync date range
     python garmin_sync.py --sleep-notify     # Morning sleep notification mode
     python garmin_sync.py --fix-sleep-types  # Fix Sleep tab numeric types
     python garmin_sync.py --fix-variability   # Recompute bedtime/wake variability for all Sleep rows
-    python garmin_sync.py --prep-day                      # Create empty Nutrition + Daily Log rows for today
-    python garmin_sync.py --prep-day 2026-03-18           # Create empty rows for specific date
+    python garmin_sync.py --prep-day                      # Sync yesterday + create today's empty rows
+    python garmin_sync.py --prep-day 2026-03-18           # Sync day before + create empty rows for date
     python garmin_sync.py --cleanup-nutrition 2026-03-06  # Delete Nutrition rows on or before date
     python garmin_sync.py --migrate-sleep-col  # Migrate Sleep tab columns
+    python garmin_sync.py --probe              # Probe Garmin API for available data sources
+    python garmin_sync.py --recalibrate        # Force adaptive weight recalibration
 
-Scheduled tasks (3 triggers):
-    12:00 AM  --prep-day       Empty Nutrition + Daily Log rows for manual entry
+Scheduled tasks (2 triggers):
+    12:05 AM  --prep-day       Sync yesterday's finalized data + create today's empty rows
     11:00 AM  --sleep-notify   Sleep analysis + morning health briefing via Pushover
-     8:00 PM  (default)        Full sync of yesterday's finalized Garmin data
 """
 
 from datetime import date, timedelta
@@ -39,8 +40,26 @@ from schema import (  # noqa: F401
     SL_EFFORT, SL_ENERGY, SL_NOTES, SL_ACTIVITY,
     TAB_ARCHIVE as ARCHIVE_TAB,
 )
-from garmin_client import get_garmin_data
-from sleep_analysis import generate_sleep_analysis, compute_independent_score, _parse_bedtime_hour  # noqa: F401
+from garmin_client import get_garmin_data  # direct import kept for backward compat
+
+
+def _fetch_via_adapter(target_date, yesterday=None):
+    """Fetch data using the configured adapter from user_config.json.
+
+    Falls back to direct get_garmin_data() if data_source is "garmin" or unset,
+    so existing behavior is unchanged for current users.
+    """
+    from utils import load_user_config
+    source = load_user_config().get("user", {}).get("data_source", "garmin")
+    if source == "garmin":
+        # Direct call — avoids extra wrapper overhead for the common case
+        return get_garmin_data(target_date, yesterday or target_date)
+    from data_sources import get_adapter
+    adapter = get_adapter(source)
+    adapter.authenticate()
+    return adapter.fetch_data(target_date, yesterday)
+from sleep_analysis import generate_sleep_analysis, compute_independent_score, _parse_bedtime_hour, load_circadian_profile  # noqa: F401
+from utils import get_scoring_thresholds as _get_scoring_thresholds
 from notifications import send_pushover_notification, compose_briefing_notification
 from sheets_formatting import (
     sort_sheet_by_date_desc, auto_resize_rows, bold_headers,
@@ -53,7 +72,8 @@ from writers import (
     setup_headers, upsert_row, build_garmin_row,
     write_to_session_log, write_to_sleep_log, write_to_nutrition_log,
     write_to_daily_log,
-    get_or_create_archive_sheet, write_to_archive, find_missing_dates,
+    get_or_create_archive_sheet, write_to_archive,
+    find_stale_or_missing_dates,
 )
 from sqlite_backup import (
     get_db as _get_sqlite_db,
@@ -71,6 +91,7 @@ from supabase_sync import (
     upsert_nutrition as _supa_upsert_nutrition,
     upsert_session_log as _supa_upsert_session_log,
     upsert_overall_analysis as _supa_upsert_overall_analysis,
+    upsert_daily_log as _supa_upsert_daily_log,
 )
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -112,7 +133,7 @@ def _retry_pending_syncs(wb, sheet):
     for date_str in pending:
         try:
             target_date = date.fromisoformat(date_str)
-            data = get_garmin_data(target_date, target_date)
+            data = _fetch_via_adapter(target_date)
             sync_single_date(wb, sheet, target_date, data)
             print(f"    -> {date_str} synced successfully (SQLite + Sheets)")
         except Exception as e:
@@ -135,11 +156,15 @@ def sync_single_date(wb, sheet, target_date, data):
     # Pre-compute sleep analysis score + text so all stores get it
     if data.get("sleep_duration") and "sleep_analysis_score" not in data:
         try:
-            score, analysis_text = generate_sleep_analysis(data)
+            scoring_t = _get_scoring_thresholds()
+            circ = load_circadian_profile()
+            score, analysis_text, descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
             if score is not None:
                 data["sleep_analysis_score"] = score
             if analysis_text:
                 data["sleep_analysis_text"] = analysis_text
+            if descriptor:
+                data["sleep_descriptor"] = descriptor
         except Exception as e:
             print(f"  Sleep analysis score computation warning: {e}")
 
@@ -165,14 +190,29 @@ def sync_single_date(wb, sheet, target_date, data):
     except Exception as e:
         print(f"  Supabase write warning: {e}")
 
+    # 1c. Supabase Daily Log -- push existing Sheets habit data so PWA can read it
+    try:
+        if _supa_client is not None:
+            from supabase_sync import push_daily_log_from_sheets
+            push_daily_log_from_sheets(_supa_client, wb, date_str)
+    except Exception as e:
+        print(f"  Supabase daily_log sync warning: {e}")
+
     # 2. Google Sheets -- retry-safe, queues on failure
+    #    Feature flags control which optional tabs get written
+    from utils import load_user_config
+    _cfg = load_user_config()
+    _features = _cfg.get("features", {})
     try:
         row = build_garmin_row(target_date, data)
         upsert_row(sheet, date_str, row)
-        write_to_session_log(wb, target_date, data)
+        if _features.get("session_log", True):
+            write_to_session_log(wb, target_date, data)
         write_to_sleep_log(wb, target_date, data)
-        write_to_nutrition_log(wb, target_date, data)
-        write_to_daily_log(wb, target_date)
+        if _features.get("nutrition", True):
+            write_to_nutrition_log(wb, target_date, data)
+        if _features.get("daily_log", True):
+            write_to_daily_log(wb, target_date)
 
         archive_sheet = get_or_create_archive_sheet(wb)
         write_to_archive(archive_sheet, date_str, data)
@@ -192,7 +232,7 @@ def sleep_notify_mode():
 
     for attempt in range(1, max_attempts + 1):
         print(f"\n[Sleep Notify] Attempt {attempt}/{max_attempts}: checking sleep data for {today}...")
-        data = get_garmin_data(today, today)
+        data = _fetch_via_adapter(today)
 
         has_score = data.get("sleep_score") not in (None, "", 0)
         has_deep = data.get("sleep_deep_pct") not in (None, "", 0)
@@ -224,7 +264,9 @@ def sleep_notify_mode():
         sheet.update(range_name="A1", values=[SLEEP_HEADERS])
 
     write_to_sleep_log(wb, today, data)
-    ind_score, analysis = generate_sleep_analysis(data)
+    scoring_t = _get_scoring_thresholds()
+    circ = load_circadian_profile()
+    ind_score, analysis, _descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
 
     # Run morning briefing: full overall analysis + send notification
     try:
@@ -291,7 +333,7 @@ def migrate_sleep_analysis_col():
         "sleep_avg_respiration":     ["Avg Respiration"],
         "hrv":                       ["Overnight HRV (ms)"],
         "sleep_body_battery_gained": ["Body Battery Gained"],
-        "sleep_feedback":            ["Sleep Feedback"],
+        "sleep_feedback":            ["Sleep Descriptor", "Sleep Feedback"],
     }
 
     def _find_old_idx(possible_names):
@@ -324,7 +366,9 @@ def migrate_sleep_analysis_col():
             return ""
 
         data = {k: _old_cell(k) for k in METRIC_HEADER_MAP}
-        ind_score, analysis = generate_sleep_analysis(data)
+        scoring_t = _get_scoring_thresholds()
+        circ = load_circadian_profile()
+        ind_score, analysis, _descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
 
         notes = ""
         if notes_idx is not None and notes_idx < len(old_row):
@@ -391,43 +435,15 @@ def migrate_sleep_analysis_col():
 
 # --- Main ---
 
-def main():
-    global _supa_client
+def _run_full_sync(target_date, do_backfill=True):
+    """Full sync pipeline for a single date: fetch -> write all tabs -> analysis -> dashboard.
 
-    if "--sleep-notify" in sys.argv or "--morning-briefing" in sys.argv:
-        sleep_notify_mode()
-        return
+    Called by both main() (CLI) and prep_day() (midnight scheduled task).
+    """
+    global _supa_client
 
     # Initialize Supabase client (None if not configured — all calls become no-ops)
     _supa_client = _init_supabase()
-
-    today     = date.today()
-    yesterday = today - timedelta(days=1)
-
-    range_mode = False
-    if "--range" in sys.argv:
-        idx = sys.argv.index("--range")
-        range_start = date.fromisoformat(sys.argv[idx + 1])
-        range_end = date.fromisoformat(sys.argv[idx + 2])
-        range_mode = True
-        print(f"\nRange sync -- pulling Garmin data for {range_start} to {range_end}...")
-    elif "--date" in sys.argv:
-        idx = sys.argv.index("--date")
-        target_date = date.fromisoformat(sys.argv[idx + 1])
-        print(f"\nManual refresh -- pulling Garmin data for {target_date}...")
-    elif "--today" in sys.argv:
-        target_date = today
-        from datetime import datetime
-        now = datetime.now()
-        if now.hour < 20:  # before 8 PM
-            print(f"\n  WARNING: Running --today at {now.strftime('%I:%M %p')}.")
-            print(f"  Daily stats (steps, calories, stress) are still accumulating.")
-            print(f"  This data WILL be partial. The 8 PM sync will overwrite with final values.")
-            print(f"  To sync finalized data, use: --date {(today - timedelta(days=1)).isoformat()}")
-        print(f"\nManual refresh -- pulling Garmin data for {target_date}...")
-    else:
-        target_date = yesterday
-        print(f"\nPulling Garmin data for {target_date} (sleep/HRV and steps from {target_date})...")
 
     wb    = get_workbook()
     sheet = get_sheet(wb)
@@ -435,34 +451,25 @@ def main():
 
     _retry_pending_syncs(wb, sheet)
 
-    if range_mode:
-        current = range_start
-        count = 0
-        while current <= range_end:
-            count += 1
-            print(f"\n  [{count}] Syncing {current}...")
-            data = get_garmin_data(current, current)
-            sync_single_date(wb, sheet, current, data)
-            print(f"    -> HRV: {data.get('hrv', 'N/A')} ms | Score: {data.get('sleep_score', 'N/A')}")
-            current += timedelta(days=1)
-            if current <= range_end:
-                time.sleep(3)
-        target_date = range_end
-        data = get_garmin_data(target_date, target_date)
-    else:
-        data = get_garmin_data(target_date, target_date)
-        sync_single_date(wb, sheet, target_date, data)
+    data = _fetch_via_adapter(target_date)
+    sync_single_date(wb, sheet, target_date, data)
 
-        # Auto-backfill: check last 7 days for gaps
-        if "--date" not in sys.argv and "--today" not in sys.argv:
-            missing = find_missing_dates(sheet)
-            if missing:
-                print(f"\n  Gap detected! Backfilling {len(missing)} missed date(s): {[str(d) for d in missing]}")
-                for missed_date in missing:
-                    print(f"  Backfilling {missed_date}...")
-                    missed_data = get_garmin_data(missed_date, missed_date)
-                    sync_single_date(wb, sheet, missed_date, missed_data)
-                    print(f"    -> {missed_date} done (HRV: {missed_data.get('hrv', 'N/A')}, Score: {missed_data.get('sleep_score', 'N/A')})")
+    # Auto-backfill: check last 7 days for gaps AND stale data
+    if do_backfill:
+        result = find_stale_or_missing_dates(sheet)
+        if result["stale"]:
+            for d, steps in result["stale"]:
+                print(f"\n  STALE DATA: {d} has only {steps} steps — re-fetching finalized data")
+        if result["all"]:
+            print(f"\n  Backfilling {len(result['all'])} date(s): "
+                  f"{len(result['missing'])} missing + {len(result['stale'])} stale")
+            for missed_date in result["all"]:
+                print(f"  Backfilling {missed_date}...")
+                missed_data = _fetch_via_adapter(missed_date)
+                sync_single_date(wb, sheet, missed_date, missed_data)
+                print(f"    -> {missed_date} done (HRV: {missed_data.get('hrv', 'N/A')}, "
+                      f"Steps: {missed_data.get('steps', 'N/A')}, "
+                      f"Score: {missed_data.get('sleep_score', 'N/A')})")
 
     apply_yellow_columns(wb, "Session Log", SESSION_MANUAL_COLS)
     for tab in ["Garmin", "Sleep", "Session Log", "Nutrition", "Daily Log", "Raw Data Archive"]:
@@ -524,6 +531,45 @@ def main():
     except Exception as e:
         print(f"\n  Formatting verification skipped (non-fatal): {e}")
 
+    # Auto-calibration check: run after 14+ days if never calibrated
+    try:
+        from utils import load_user_config
+        cfg = load_user_config()
+        cal_date = cfg.get("thresholds", {}).get("calibration_date")
+        if cal_date is None:
+            # Check if we have enough data
+            import sqlite3
+            _db = sqlite3.connect(str(Path(__file__).parent / "health_tracker.db"))
+            _count = _db.execute("SELECT COUNT(*) FROM sleep WHERE overnight_hrv_ms IS NOT NULL").fetchone()[0]
+            _db.close()
+            if _count >= 14:
+                print("\n  14+ days of data available. Running auto-calibration...")
+                from calibrate_thresholds import calibrate
+                calibrate()
+        elif cal_date:
+            # Re-calibrate monthly
+            from datetime import datetime as _dt
+            cal_dt = _dt.strptime(cal_date, "%Y-%m-%d")
+            if (_dt.now() - cal_dt).days >= 30:
+                print("\n  Monthly recalibration triggered...")
+                from calibrate_thresholds import calibrate
+                calibrate()
+    except Exception as e:
+        print(f"\n  Auto-calibration skipped (non-fatal): {e}")
+
+    # Behavioral correlations (weekly or on-demand)
+    if "--correlations" in sys.argv or target_date.weekday() == 6:  # Sunday auto-run
+        try:
+            from behavioral_correlations import run_analysis as run_correlations
+            include_lags = "--correlations" in sys.argv  # full lag analysis only on demand
+            print("\n  Running behavioral correlation engine...")
+            corr_output = run_correlations(include_lags=include_lags)
+            top = corr_output.get("top_findings", [])
+            if top:
+                print(f"  Top finding: {top[0]}")
+        except Exception as e:
+            print(f"\n  Behavioral correlations skipped (non-fatal): {e}")
+
     print(f"\nDone! Data written for {target_date}")
     print(f"  HRV:   {data.get('hrv', 'N/A')} ms  |  7-day avg: {data.get('hrv_7day', 'N/A')} ms")
     print(f"  Sleep: {data.get('sleep_duration', 'N/A')} hrs  |  Score: {data.get('sleep_score', 'N/A')}")
@@ -542,6 +588,85 @@ def main():
         _close_sqlite_db()
     except Exception:
         pass
+
+
+def main():
+    global _supa_client
+
+    if "--sleep-notify" in sys.argv or "--morning-briefing" in sys.argv:
+        sleep_notify_mode()
+        return
+
+    today     = date.today()
+    yesterday = today - timedelta(days=1)
+
+    if "--range" in sys.argv:
+        # Range mode: sync each date in the range sequentially
+        _supa_client = _init_supabase()
+        idx = sys.argv.index("--range")
+        range_start = date.fromisoformat(sys.argv[idx + 1])
+        range_end = date.fromisoformat(sys.argv[idx + 2])
+        print(f"\nRange sync -- pulling Garmin data for {range_start} to {range_end}...")
+
+        wb    = get_workbook()
+        sheet = get_sheet(wb)
+        setup_headers(sheet)
+        _retry_pending_syncs(wb, sheet)
+
+        current = range_start
+        count = 0
+        while current <= range_end:
+            count += 1
+            print(f"\n  [{count}] Syncing {current}...")
+            data = _fetch_via_adapter(current)
+            sync_single_date(wb, sheet, current, data)
+            print(f"    -> HRV: {data.get('hrv', 'N/A')} ms | Score: {data.get('sleep_score', 'N/A')}")
+            current += timedelta(days=1)
+            if current <= range_end:
+                time.sleep(3)
+
+        # Post-range formatting
+        apply_yellow_columns(wb, "Session Log", SESSION_MANUAL_COLS)
+        for tab in ["Garmin", "Sleep", "Session Log", "Nutrition", "Daily Log", "Raw Data Archive"]:
+            bold_headers(wb, tab)
+            sort_sheet_by_date_desc(wb, tab)
+        fix_sleep_numeric_types(wb)
+        apply_sleep_color_grading(wb)
+        apply_session_log_color_grading(wb)
+        from reformat_style import apply_weekly_banding_to_tab
+        for tab in ["Garmin", "Sleep", "Session Log", "Nutrition", "Daily Log"]:
+            apply_weekly_banding_to_tab(wb, tab)
+        for tab in _TEXT_HEAVY_TABS:
+            auto_resize_rows(wb, tab)
+        print(f"\nDone! Range sync complete for {range_start} to {range_end}.")
+    elif "--probe" in sys.argv:
+        from garmin_client import probe_available_data, GARMIN_EMAIL as _probe_email
+        from garminconnect import Garmin as _Garmin
+        import keyring
+        _pw = keyring.get_password("garmin_connect", _probe_email)
+        _client = _Garmin(_probe_email, _pw)
+        _client.login()
+        probe_available_data(_client, yesterday.isoformat())
+    elif "--date" in sys.argv:
+        idx = sys.argv.index("--date")
+        target_date = date.fromisoformat(sys.argv[idx + 1])
+        print(f"\nManual refresh -- pulling Garmin data for {target_date}...")
+        _run_full_sync(target_date, do_backfill=False)
+    elif "--today" in sys.argv:
+        target_date = today
+        from datetime import datetime
+        now = datetime.now()
+        if now.hour < 23:  # before 11 PM
+            print(f"\n  WARNING: Running --today at {now.strftime('%I:%M %p')}.")
+            print(f"  Daily stats (steps, calories, stress) are still accumulating.")
+            print(f"  This data WILL be partial. The midnight sync will overwrite with final values.")
+            print(f"  To sync finalized data, use: --date {(today - timedelta(days=1)).isoformat()}")
+        print(f"\nManual refresh -- pulling Garmin data for {target_date}...")
+        _run_full_sync(target_date, do_backfill=False)
+    else:
+        target_date = yesterday
+        print(f"\nPulling Garmin data for {target_date} (sleep/HRV and steps from {target_date})...")
+        _run_full_sync(target_date, do_backfill=True)
 
 
 def fix_all_variability():
@@ -629,23 +754,43 @@ def fix_all_variability():
 
 
 def prep_day(target_date=None):
-    """Create empty Nutrition + Daily Log skeleton rows for a date (default: today).
+    """Sync yesterday's finalized Garmin data, then create empty rows for today.
 
-    Meant to run at midnight so rows are available for manual entry throughout the day.
-    The 8 PM sync will upsert Garmin calorie data into the existing Nutrition row.
+    Runs at 12:05 AM via Task Scheduler. Two phases:
+      Phase 1: Full sync of the previous day's complete data (all tabs + analysis)
+      Phase 2: Create empty Nutrition + Daily Log skeleton rows for manual entry
     """
     if target_date is None:
         target_date = date.today()
+
+    # Phase 1: Sync yesterday's finalized data
+    yesterday = target_date - timedelta(days=1)
+    print(f"\n=== Phase 1: Syncing finalized data for {yesterday} ===")
+    _run_full_sync(yesterday, do_backfill=True)
+
+    # Phase 2: Create empty rows for today
+    print(f"\n=== Phase 2: Prepping empty rows for {target_date} ===")
     from reformat_style import apply_weekly_banding_to_tab
-    print(f"\nPrepping rows for {target_date}...")
+    from utils import load_user_config
+    _cfg = load_user_config()
+    _features = _cfg.get("features", {})
     wb = get_workbook()
-    write_to_nutrition_log(wb, target_date, {})  # Empty data -> no calorie values, just skeleton
-    write_to_daily_log(wb, target_date)
-    sort_sheet_by_date_desc(wb, "Nutrition")
-    sort_sheet_by_date_desc(wb, "Daily Log")
-    apply_weekly_banding_to_tab(wb, "Nutrition")
-    apply_weekly_banding_to_tab(wb, "Daily Log")
-    print(f"Done — Nutrition + Daily Log rows ready for {target_date}.")
+    if _features.get("nutrition", True):
+        write_to_nutrition_log(wb, target_date, {})  # Empty data -> no calorie values, just skeleton
+        sort_sheet_by_date_desc(wb, "Nutrition")
+    if _features.get("daily_log", True):
+        write_to_daily_log(wb, target_date)
+        sort_sheet_by_date_desc(wb, "Daily Log")
+    if _features.get("nutrition", True):
+        apply_weekly_banding_to_tab(wb, "Nutrition")
+    if _features.get("daily_log", True):
+        apply_weekly_banding_to_tab(wb, "Daily Log")
+    active = []
+    if _features.get("nutrition", True):
+        active.append("Nutrition")
+    if _features.get("daily_log", True):
+        active.append("Daily Log")
+    print(f"Done — {yesterday} synced, {' + '.join(active) or 'no tabs'} rows ready for {target_date}.")
 
 
 def cleanup_nutrition(cutoff_date_str):
@@ -738,5 +883,14 @@ if __name__ == "__main__":
         cleanup_nutrition(cutoff)
     elif "--migrate-sleep-col" in sys.argv:
         migrate_sleep_analysis_col()
+    elif "--backfill-daily-log" in sys.argv:
+        print("\n=== Backfilling Daily Log from Sheets to Supabase ===")
+        supa = _init_supabase()
+        if supa is None:
+            print("ERROR: Supabase not configured. Set SUPABASE_URL and key in .env")
+            sys.exit(1)
+        wb = get_workbook()
+        from supabase_sync import backfill_daily_log_from_sheets
+        backfill_daily_log_from_sheets(supa, wb)
     else:
         main()

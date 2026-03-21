@@ -133,13 +133,171 @@ def _get_date_col(row_dict, tab_name):
 
 
 def read_all_data(wb):
-    """Read all tabs into a unified data structure keyed by tab name."""
+    """Read all tabs into a unified data structure keyed by tab name.
+
+    Respects feature flags from user_config.json — disabled tabs return empty
+    lists so downstream code gracefully skips their analysis.
+    """
+    from utils import load_user_config
+    features = load_user_config().get("features", {})
     return {
         "garmin": _read_tab_as_dicts(wb, "Garmin"),
         "sleep": _read_tab_as_dicts(wb, "Sleep"),
-        "daily_log": _read_tab_as_dicts(wb, "Daily Log"),
-        "session_log": _read_tab_as_dicts(wb, "Session Log"),
-        "nutrition": _read_tab_as_dicts(wb, "Nutrition"),
+        "daily_log": _read_tab_as_dicts(wb, "Daily Log") if features.get("daily_log", True) else [],
+        "session_log": _read_tab_as_dicts(wb, "Session Log") if features.get("session_log", True) else [],
+        "nutrition": _read_tab_as_dicts(wb, "Nutrition") if features.get("nutrition", True) else [],
+    }
+
+
+def read_all_data_from_supabase():
+    """Read all data from Supabase instead of Google Sheets.
+
+    Returns same dict structure as read_all_data(wb) with Sheets-compatible
+    header names so downstream analysis code works unchanged.
+
+    Used by GitHub Actions (--cloud flag) when Google Sheets is not available.
+    """
+    from supabase import create_client
+
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    if not url or not key:
+        raise RuntimeError("SUPABASE_URL and key must be set for --cloud mode")
+
+    client = create_client(url, key)
+
+    def _query_all(table, order_col="date"):
+        """Fetch all rows from a Supabase table, ordered by date desc."""
+        rows = []
+        offset = 0
+        batch = 1000
+        while True:
+            resp = client.table(table).select("*").order(
+                order_col, desc=True
+            ).range(offset, offset + batch - 1).execute()
+            rows.extend(resp.data)
+            if len(resp.data) < batch:
+                break
+            offset += batch
+        return rows
+
+    # Supabase column -> Sheets header mappings
+    _GARMIN_MAP = {
+        "day": "Day", "date": "Date", "sleep_score": "Sleep Score",
+        "hrv_overnight_avg": "HRV (overnight avg)", "hrv_7day_avg": "HRV 7-day avg",
+        "resting_hr": "Resting HR", "sleep_duration_hrs": "Sleep Duration (hrs)",
+        "body_battery": "Body Battery", "steps": "Steps",
+        "total_calories_burned": "Total Calories Burned",
+        "active_calories_burned": "Active Calories Burned",
+        "bmr_calories": "BMR Calories", "avg_stress_level": "Avg Stress Level",
+        "stress_qualifier": "Stress Qualifier", "floors_ascended": "Floors Ascended",
+        "moderate_intensity_min": "Moderate Intensity Min",
+        "vigorous_intensity_min": "Vigorous Intensity Min",
+        "body_battery_at_wake": "Body Battery at Wake",
+        "body_battery_high": "Body Battery High", "body_battery_low": "Body Battery Low",
+        "activity_name": "Activity Name", "activity_type": "Activity Type",
+        "start_time": "Start Time", "distance_mi": "Distance (mi)",
+        "duration_min": "Duration (min)", "avg_hr": "Avg HR", "max_hr": "Max HR",
+        "calories": "Calories", "elevation_gain_m": "Elevation Gain (m)",
+        "avg_speed_mph": "Avg Speed (mph)",
+        "aerobic_training_effect": "Aerobic Training Effect",
+        "anaerobic_training_effect": "Anaerobic Training Effect",
+        "zone_1_min": "Zone 1 - Warm Up (min)", "zone_2_min": "Zone 2 - Easy (min)",
+        "zone_3_min": "Zone 3 - Aerobic (min)", "zone_4_min": "Zone 4 - Threshold (min)",
+        "zone_5_min": "Zone 5 - Max (min)",
+        "spo2_avg": "SpO2 Avg", "spo2_min": "SpO2 Min",
+    }
+
+    _SLEEP_MAP = {
+        "day": "Day", "date": "Date", "garmin_sleep_score": "Garmin Sleep Score",
+        "sleep_analysis_score": "Sleep Analysis Score",
+        "total_sleep_hrs": "Total Sleep (hrs)", "sleep_analysis": "Sleep Analysis",
+        "notes": "Notes", "bedtime": "Bedtime", "wake_time": "Wake Time",
+        "bedtime_variability_7d": "Bedtime Variability (7d)",
+        "wake_variability_7d": "Wake Variability (7d)",
+        "time_in_bed_hrs": "Time in Bed (hrs)", "deep_sleep_min": "Deep Sleep (min)",
+        "light_sleep_min": "Light Sleep (min)", "rem_min": "REM (min)",
+        "awake_during_sleep_min": "Awake During Sleep (min)",
+        "deep_pct": "Deep %", "rem_pct": "REM %",
+        "sleep_cycles": "Sleep Cycles", "awakenings": "Awakenings",
+        "avg_hr": "Avg HR", "avg_respiration": "Avg Respiration",
+        "overnight_hrv_ms": "Overnight HRV (ms)",
+        "body_battery_gained": "Body Battery Gained",
+        "sleep_feedback": "Sleep Descriptor",
+    }
+
+    _SESSION_MAP = {
+        "day": "Day", "date": "Date", "session_type": "Session Type",
+        "activity_name": "Activity", "duration_min": "Duration (min)",
+        "distance_mi": "Distance (mi)", "avg_hr": "Avg HR", "max_hr": "Max HR",
+        "calories": "Calories", "aerobic_te": "Aerobic Training Effect",
+        "anaerobic_te": "Anaerobic Training Effect",
+        "zone_1_min": "Zone 1 (min)", "zone_2_min": "Zone 2 (min)",
+        "zone_3_min": "Zone 3 (min)", "zone_4_min": "Zone 4 (min)",
+        "zone_5_min": "Zone 5 (min)", "zone_ranges": "Zone Ranges",
+        "source": "Source", "elevation_m": "Elevation (m)",
+        "perceived_effort": "Perceived Effort",
+        "post_workout_energy": "Post-Workout Energy (1-10)",
+        "notes": "Notes",
+    }
+
+    _NUTRITION_MAP = {
+        "day": "Day", "date": "Date",
+        "total_calories_burned": "Total Calories Burned",
+        "active_calories_burned": "Active Calories Burned",
+        "bmr_calories": "BMR Calories",
+        "breakfast": "Breakfast", "lunch": "Lunch", "dinner": "Dinner",
+        "snacks": "Snacks", "total_calories_consumed": "Total Calories Consumed",
+        "protein_g": "Protein (g)", "carbs_g": "Carbs (g)", "fats_g": "Fats (g)",
+        "water_l": "Water (L)", "calorie_balance": "Calorie Balance",
+        "notes": "Notes",
+    }
+
+    _DAILY_LOG_MAP = {
+        "day": "Day", "date": "Date", "morning_energy": "Morning Energy (1-10)",
+        "wake_at_930": "Wake at 9:30 AM", "no_morning_screens": "No Morning Screens",
+        "creatine_hydrate": "Creatine & Hydrate",
+        "walk_breathing": "20 Min Walk + Breathing",
+        "physical_activity": "Physical Activity",
+        "no_screens_before_bed": "No Screens Before Bed",
+        "bed_at_10pm": "Bed at 10 PM", "habits_total": "Habits Total (0-7)",
+        "midday_energy": "Midday Energy (1-10)", "midday_focus": "Midday Focus (1-10)",
+        "midday_mood": "Midday Mood (1-10)",
+        "midday_body_feel": "Midday Body Feel (1-10)", "midday_notes": "Midday Notes",
+        "evening_energy": "Evening Energy (1-10)", "evening_focus": "Evening Focus (1-10)",
+        "evening_mood": "Evening Mood (1-10)",
+        "perceived_stress": "Perceived Stress (1-10)",
+        "day_rating": "Day Rating (1-10)", "evening_notes": "Evening Notes",
+    }
+
+    def _remap(rows, col_map):
+        """Convert Supabase rows to Sheets-header-keyed dicts."""
+        result = []
+        for row in rows:
+            d = {}
+            for supa_col, sheet_header in col_map.items():
+                val = row.get(supa_col)
+                d[sheet_header] = str(val) if val is not None else ""
+            result.append(d)
+        return result
+
+    print("[cloud] Reading data from Supabase...")
+    garmin_rows = _query_all("garmin")
+    sleep_rows = _query_all("sleep")
+    daily_log_rows = _query_all("daily_log")
+    session_rows = _query_all("session_log")
+    nutrition_rows = _query_all("nutrition")
+
+    print(f"[cloud] Loaded: garmin={len(garmin_rows)}, sleep={len(sleep_rows)}, "
+          f"daily_log={len(daily_log_rows)}, sessions={len(session_rows)}, "
+          f"nutrition={len(nutrition_rows)}")
+
+    return {
+        "garmin": _remap(garmin_rows, _GARMIN_MAP),
+        "sleep": _remap(sleep_rows, _SLEEP_MAP),
+        "daily_log": _remap(daily_log_rows, _DAILY_LOG_MAP),
+        "session_log": _remap(session_rows, _SESSION_MAP),
+        "nutrition": _remap(nutrition_rows, _NUTRITION_MAP),
     }
 
 
@@ -411,6 +569,415 @@ def analyze_sleep_context(by_date_sleep, by_date_garmin, target_date, baselines)
 
 
 # ---------------------------------------------------------------------------
+# Dynamic Sleep Need Calculator
+# ---------------------------------------------------------------------------
+
+def compute_sleep_need(baselines, sleep_debt, acwr, target_date):
+    """Compute tonight's personalized sleep need based on training load and debt.
+
+    Formula: tonight_need = base_need + strain_adjustment + debt_payoff
+
+    Where:
+      - base_need = user's 30-day average sleep duration (natural equilibrium)
+      - strain_adjustment = 0-45 min based on ACWR
+      - debt_payoff = recover 30% of debt per night, capped at 60 min
+
+    Returns dict with sleep_need_hrs, recommended_bedtime, breakdown, or None.
+    """
+    base_need = baselines.get("sleep_duration", {}).get("mean")
+    if base_need is None:
+        return None
+
+    # Strain adjustment based on ACWR
+    strain_min = 0
+    if acwr is not None:
+        if acwr > 1.5:
+            strain_min = 45
+        elif acwr > 1.3:
+            strain_min = 30
+        elif acwr >= 0.8:
+            strain_min = 15
+        # acwr < 0.8 = low training, no extra sleep needed
+
+    # Debt payoff: recover 30% of accumulated debt per night, capped at 60 min
+    debt_min = 0
+    if sleep_debt is not None and sleep_debt > 0.25:
+        debt_min = min(sleep_debt * 0.3 * 60, 60)  # convert hours to minutes, cap at 60
+
+    tonight_need_hrs = base_need + (strain_min + debt_min) / 60.0
+
+    # Recommended bedtime: assume default wake target of 9:30 AM (from habits)
+    wake_target_hr = 9.5  # 9:30 AM as decimal hours
+    recommended_bedtime_hr = wake_target_hr - tonight_need_hrs
+    if recommended_bedtime_hr < 0:
+        recommended_bedtime_hr += 24  # wrap around
+
+    # Format bedtime as HH:MM
+    bt_h = int(recommended_bedtime_hr)
+    bt_m = int((recommended_bedtime_hr - bt_h) * 60)
+    suffix = "PM" if bt_h >= 12 and bt_h < 24 else "AM"
+    bt_h12 = bt_h if bt_h <= 12 else bt_h - 12
+    if bt_h12 == 0:
+        bt_h12 = 12
+    bedtime_str = f"{bt_h12}:{bt_m:02d} {suffix}"
+
+    # Build breakdown explanation
+    breakdown_parts = [f"base {base_need:.1f}h"]
+    if strain_min > 0:
+        breakdown_parts.append(f"+{strain_min}min training load")
+    if debt_min > 0:
+        breakdown_parts.append(f"+{debt_min:.0f}min debt recovery")
+
+    return {
+        "sleep_need_hrs": round(tonight_need_hrs, 2),
+        "recommended_bedtime": bedtime_str,
+        "recommended_bedtime_hr": round(recommended_bedtime_hr, 2),
+        "base_need": round(base_need, 2),
+        "strain_adjustment_min": strain_min,
+        "debt_payoff_min": round(debt_min),
+        "breakdown": " + ".join(breakdown_parts),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Illness Detection Heuristic (Multi-Metric Anomaly Score)
+# ---------------------------------------------------------------------------
+
+def _compute_trend_direction(values):
+    """Determine if a 3-day series is worsening, improving, or stable.
+
+    values: list of numeric values in chronological order (oldest first).
+    Returns: 'worsening', 'improving', or 'stable'
+    """
+    if len(values) < 2:
+        return "stable"
+    first = values[0]
+    last = values[-1]
+    if first is None or first == 0:
+        return "stable"
+    pct_change = (last - first) / abs(first)
+    if pct_change > 0.05:
+        return "worsening"  # values increasing (bad for RHR, stress, resp)
+    elif pct_change < -0.05:
+        return "improving"
+    return "stable"
+
+
+def _get_metric_history(by_date_dict, key, target_date, days=30):
+    """Get historical values for a metric (excludes today)."""
+    values = []
+    for offset in range(1, days + 1):
+        d = str(target_date - timedelta(days=offset))
+        row = by_date_dict.get(d, {})
+        v = _safe_float(row.get(key))
+        if v is not None:
+            values.append(v)
+    return values
+
+
+def _get_recent_values(by_date_dict, key, target_date, days=3):
+    """Get the last N days of values in chronological order (oldest first)."""
+    values = []
+    for offset in range(days - 1, -1, -1):
+        d = str(target_date - timedelta(days=offset))
+        row = by_date_dict.get(d, {})
+        v = _safe_float(row.get(key))
+        values.append(v)
+    return values
+
+
+def detect_illness(baselines, by_date_sleep, daily_log_by_date,
+                   acwr, target_date, by_date_garmin=None, conn=None):
+    """Probabilistic illness detection using multi-metric anomaly scoring.
+
+    This is a PROBABILISTIC system, not a diagnostic tool. Biometrics cannot
+    always accurately indicate illness -- HRV can be high while sick, RHR can
+    stay flat during onset. The system surfaces elevated probability and
+    suggests the user pay attention to how they feel, never diagnoses.
+
+    Uses 10 signals with optional trend context to distinguish illness from
+    overtraining or normal variation. The key differentiator is the "no
+    training explanation" check combined with multi-metric convergence.
+
+    Scoring signals (cumulative, max ~15):
+        RHR > 1.5 SD above baseline:           +2 (+ trend bonus +0.5)
+        HRV > 1.5 SD below baseline:           +2 (+ trend bonus +0.5)
+        Respiratory rate > 1 SD above baseline: +2
+        Stress > 1.0 SD above baseline:        +1
+        BB@Wake > 1.0 SD below baseline:       +1
+        SpO2 > 1.0 SD below baseline or < 94%: +1
+        Body battery gained < p15:              +1
+        Sleep score declined 3+ nights:         +1
+        No high training load (ACWR < 1.0):     +2
+        Subjective energy < 4 for 2 days:       +1
+
+    Classification:
+        0-3: Normal variation
+        4-6: Possible illness -- biometrics suggest something unusual
+        7+:  Likely illness -- multiple indicators significantly disrupted
+
+    State persistence (requires conn):
+        Once 'likely_illness' triggers, an episode is created in SQLite.
+        The episode persists until 5 consecutive normal days OR user
+        confirms recovery via PWA. This prevents premature flag-dropping
+        when biometrics bounce before symptoms resolve.
+    """
+    score = 0.0
+    signals = []
+    if by_date_garmin is None:
+        by_date_garmin = {}
+
+    today_sleep = by_date_sleep.get(str(target_date), {})
+    today_garmin = by_date_garmin.get(str(target_date), {})
+
+    # --- Signal 1: RHR elevated > 1.5 SD above baseline (+2) ---
+    # Trend bonus: +0.5 if z > 0.7 AND 3-day RHR trend is worsening
+    rhr = baselines.get("rhr", {})
+    rhr_z = rhr.get("z")
+    if rhr_z is not None:
+        if rhr_z > 1.5:
+            score += 2
+            rhr_val = rhr.get("today", "?")
+            rhr_mean = rhr.get("mean")
+            delta = f" (+{rhr_val - rhr_mean:.0f} bpm)" if rhr_mean and rhr_val else ""
+            signals.append(f"RHR elevated {rhr_val} bpm{delta} [z={rhr_z:.1f}]")
+        elif rhr_z > 0.7:
+            rhr_recent = _get_recent_values(by_date_garmin, "Resting HR", target_date, 3)
+            rhr_nums = [v for v in rhr_recent if v is not None]
+            if _compute_trend_direction(rhr_nums) == "worsening":
+                score += 0.5
+                signals.append(f"RHR trending up [z={rhr_z:.1f}, worsening]")
+
+    # --- Signal 2: HRV suppressed > 1.5 SD below baseline (+2) ---
+    # Trend bonus: +0.5 if z < -0.7 AND 3-day HRV trend is declining
+    hrv = baselines.get("hrv", {})
+    hrv_z = hrv.get("z")
+    if hrv_z is not None:
+        if hrv_z < -1.5:
+            score += 2
+            hrv_val = hrv.get("today", "?")
+            hrv_mean = hrv.get("mean")
+            delta = f" ({hrv_val - hrv_mean:.0f} ms)" if hrv_mean and hrv_val else ""
+            signals.append(f"HRV suppressed {hrv_val} ms{delta} [z={hrv_z:.1f}]")
+        elif hrv_z < -0.7:
+            hrv_recent = _get_recent_values(by_date_sleep, "Overnight HRV (ms)", target_date, 3)
+            hrv_nums = [v for v in hrv_recent if v is not None]
+            # For HRV, decreasing = worsening, so invert for trend check
+            if len(hrv_nums) >= 2:
+                inverted = [-v for v in hrv_nums]
+                if _compute_trend_direction(inverted) == "worsening":
+                    score += 0.5
+                    signals.append(f"HRV trending down [z={hrv_z:.1f}, worsening]")
+
+    # --- Signal 3: Respiratory rate > 1 SD above baseline (+2) ---
+    resp_history = _get_metric_history(by_date_sleep, "Avg Respiration", target_date, 30)
+    today_resp = _safe_float(today_sleep.get("Avg Respiration"))
+
+    if today_resp is not None and len(resp_history) >= 7:
+        resp_mean = sum(resp_history) / len(resp_history)
+        resp_var = sum((v - resp_mean) ** 2 for v in resp_history) / (len(resp_history) - 1)
+        resp_std = resp_var ** 0.5 if resp_var > 0 else 1.0
+        resp_z = (today_resp - resp_mean) / resp_std if resp_std > 0 else 0
+        if resp_z > 1.0:
+            score += 2
+            signals.append(f"Respiratory rate elevated {today_resp:.1f} brpm "
+                           f"(baseline {resp_mean:.1f}) [z={resp_z:.1f}]")
+
+    # --- Signal 4 (NEW): Stress elevated > 1.0 SD above baseline (+1) ---
+    stress_history = _get_metric_history(by_date_garmin, "Avg Stress Level", target_date, 30)
+    today_stress = _safe_float(today_garmin.get("Avg Stress Level"))
+
+    if today_stress is not None and len(stress_history) >= 7:
+        stress_mean = sum(stress_history) / len(stress_history)
+        stress_var = sum((v - stress_mean) ** 2 for v in stress_history) / (len(stress_history) - 1)
+        stress_std = stress_var ** 0.5 if stress_var > 0 else 1.0
+        stress_z = (today_stress - stress_mean) / stress_std if stress_std > 0 else 0
+        if stress_z > 1.0:
+            score += 1
+            signals.append(f"Stress elevated {today_stress:.0f} "
+                           f"(baseline {stress_mean:.0f}) [z={stress_z:.1f}]")
+
+    # --- Signal 5 (NEW): BB@Wake depressed > 1.0 SD below baseline (+1) ---
+    bbwake_history = _get_metric_history(by_date_garmin, "Body Battery at Wake", target_date, 30)
+    today_bbwake = _safe_float(today_garmin.get("Body Battery at Wake"))
+
+    if today_bbwake is not None and len(bbwake_history) >= 7:
+        bbwake_mean = sum(bbwake_history) / len(bbwake_history)
+        bbwake_var = sum((v - bbwake_mean) ** 2 for v in bbwake_history) / (len(bbwake_history) - 1)
+        bbwake_std = bbwake_var ** 0.5 if bbwake_var > 0 else 1.0
+        bbwake_z = (today_bbwake - bbwake_mean) / bbwake_std if bbwake_std > 0 else 0
+        if bbwake_z < -1.0:
+            score += 1
+            signals.append(f"Body battery at wake low {today_bbwake:.0f} "
+                           f"(baseline {bbwake_mean:.0f}) [z={bbwake_z:.1f}]")
+
+    # --- Signal 5b (NEW): SpO2 depressed > 1.0 SD below baseline (+1) ---
+    spo2_history = _get_metric_history(by_date_garmin, "SpO2 Avg", target_date, 30)
+    today_spo2 = _safe_float(today_garmin.get("SpO2 Avg"))
+
+    if today_spo2 is not None and len(spo2_history) >= 7:
+        spo2_mean = sum(spo2_history) / len(spo2_history)
+        spo2_var = sum((v - spo2_mean) ** 2 for v in spo2_history) / (len(spo2_history) - 1)
+        spo2_std = spo2_var ** 0.5 if spo2_var > 0 else 1.0
+        spo2_z = (today_spo2 - spo2_mean) / spo2_std if spo2_std > 0 else 0
+        if spo2_z < -1.0 or today_spo2 < 94:
+            score += 1
+            signals.append(f"SpO2 low {today_spo2:.0f}% "
+                           f"(baseline {spo2_mean:.0f}%) [z={spo2_z:.1f}]")
+
+    # --- Signal 6: Body battery gained during sleep < p15 (+1) ---
+    bb_gained_history = _get_metric_history(by_date_sleep, "Body Battery Gained", target_date, 30)
+    today_bb_gained = _safe_float(today_sleep.get("Body Battery Gained"))
+
+    if today_bb_gained is not None and len(bb_gained_history) >= 7:
+        bb_sorted = sorted(bb_gained_history)
+        p15_idx = max(0, int(len(bb_sorted) * 0.15))
+        p15 = bb_sorted[p15_idx]
+        if today_bb_gained < p15:
+            score += 1
+            signals.append(f"Body battery gained {today_bb_gained:.0f} "
+                           f"(< p15 of {p15:.0f})")
+
+    # --- Signal 7: Sleep score declined 3+ consecutive nights (+1) ---
+    recent_sleep_scores = []
+    for offset in range(3):
+        d = str(target_date - timedelta(days=offset))
+        row = by_date_sleep.get(d, {})
+        v = _safe_float(row.get("Garmin Sleep Score"))
+        if v is not None:
+            recent_sleep_scores.append(v)
+
+    if len(recent_sleep_scores) == 3:
+        if recent_sleep_scores[0] < recent_sleep_scores[1] < recent_sleep_scores[2]:
+            drop = recent_sleep_scores[2] - recent_sleep_scores[0]
+            score += 1
+            signals.append(f"Sleep score declined 3 nights "
+                           f"({recent_sleep_scores[2]:.0f} -> {recent_sleep_scores[0]:.0f}, "
+                           f"-{drop:.0f} pts)")
+
+    # --- Signal 8: No high training load, ACWR < 1.0 (+2) ---
+    # Key differentiator: if markers are disrupted but no heavy training
+    # stimulus, illness becomes a more likely explanation than overtraining.
+    if acwr is not None and acwr < 1.0:
+        if score >= 2:
+            score += 2
+            signals.append(f"No training explanation (ACWR {acwr:.2f} < 1.0)")
+    elif acwr is None:
+        if score >= 2:
+            score += 1
+            signals.append("No session data to explain disruption")
+
+    # --- Signal 9: Subjective energy < 4/10 two consecutive days (+1) ---
+    low_energy_streak = 0
+    for offset in range(2):
+        d = str(target_date - timedelta(days=offset))
+        row = daily_log_by_date.get(d, {})
+        energy = _safe_float(row.get("Morning Energy (1-10)"))
+        if energy is not None and energy < 4:
+            low_energy_streak += 1
+
+    if low_energy_streak >= 2:
+        score += 1
+        signals.append("Low subjective energy (<4) two consecutive days")
+
+    # --- State-aware classification ---
+    active_episode = None
+    if conn is not None:
+        from sqlite_backup import (get_active_illness, start_illness_episode,
+                                   update_illness_peak, resolve_illness_episode,
+                                   upsert_illness_daily, get_recent_illness_scores)
+        active_episode = get_active_illness(conn)
+
+    if active_episode is not None:
+        # Already in an illness episode -- don't drop on one good day.
+        # Require 5 consecutive normal days before suggesting recovery.
+        recent = get_recent_illness_scores(conn, target_date, days=5)
+        if len(recent) >= 5 and all(s < 3 for s in recent):
+            label = "recovering"
+            recommendation = ("Biometrics have been stable for several days. "
+                              "If you feel better, confirm recovery. "
+                              "Ease back in with light activity.")
+        else:
+            label = "illness_ongoing"
+            recommendation = ("Illness episode ongoing -- rest and recovery. "
+                              "Light walking only, extra hydration, earlier bedtime. "
+                              "Low readiness scores are expected during illness.")
+
+        # Update peak if current is higher
+        if score > (active_episode.get("peak_score") or 0):
+            update_illness_peak(conn, active_episode["id"], score)
+
+        # Auto-resolve safety valve: 21 days without user confirmation
+        onset = active_episode.get("onset_date", "")
+        try:
+            from datetime import date as _date_cls
+            onset_d = _date_cls.fromisoformat(onset)
+            days_since = (target_date - onset_d).days
+            if days_since >= 21 and active_episode.get("confirmed_date") is None:
+                resolve_illness_episode(conn, active_episode["id"],
+                                        str(target_date), "auto_expired")
+                label = "normal"
+                recommendation = None
+                active_episode = None
+        except (ValueError, TypeError):
+            pass
+
+    else:
+        # No active episode -- standard probabilistic classification
+        if score >= 7:
+            label = "likely_illness"
+            recommendation = ("Multiple biometric indicators are significantly "
+                              "disrupted -- consider a rest day. Prioritize "
+                              "hydration, sleep, and light activity only.")
+            if conn is not None:
+                ep_id = start_illness_episode(conn, str(target_date), score)
+                active_episode = {"id": ep_id, "onset_date": str(target_date)}
+        elif score >= 4:
+            label = "possible_illness"
+            recommendation = ("Your biometrics suggest something unusual -- "
+                              "pay attention to how you feel. Light activity "
+                              "only, extra hydration, earlier bedtime.")
+        else:
+            label = "normal"
+            recommendation = None
+
+    # Log daily score to SQLite
+    daily_data = {
+        "illness_state_id": active_episode["id"] if active_episode else None,
+        "anomaly_score": score,
+        "signals": [s.split("[")[0].strip() for s in signals],
+        "label": label,
+    }
+    if conn is not None:
+        upsert_illness_daily(conn, str(target_date), daily_data)
+
+    # Mirror to Supabase (best-effort)
+    try:
+        from supabase_sync import (upsert_illness_state as _supa_illness_state,
+                                   upsert_illness_daily as _supa_illness_daily)
+        _supa_illness_daily(None, str(target_date), daily_data)
+        if active_episode:
+            _supa_illness_state(None, {
+                "onset_date": active_episode.get("onset_date"),
+                "peak_score": active_episode.get("peak_score", score),
+            })
+    except Exception:
+        pass  # Supabase failure never breaks pipeline
+
+    if signals:
+        print(f"  Illness check: {score:.1f}/14 ({label}) -- "
+              f"{', '.join(s.split('[')[0].strip() for s in signals[:3])}")
+
+    return {
+        "illness_score": score,
+        "illness_label": label,
+        "signals": signals,
+        "recommendation": recommendation,
+        "active_episode": active_episode,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Training Load (ACWR -- Acute:Chronic Workload Ratio)
 # ---------------------------------------------------------------------------
 
@@ -427,18 +994,36 @@ def compute_acwr(sessions_by_date, target_date):
 
         Prefers sRPE (effort * duration / 10) when Perceived Effort is available
         (Foster 2001 gold standard). Falls back to TRIMP proxy (duration * HR / 100).
+        Zone intensity modifier (0.9x-1.35x) adjusts for training type when zone
+        data is available — high-intensity sessions (>30% Z4-5) count more.
         """
         dur = _safe_float(session.get("Duration (min)"))
         effort = _safe_float(session.get("Perceived Effort (1-10)"))
         hr = _safe_float(session.get("Avg HR"))
         # sRPE is preferred when both effort and duration are available
         if effort and dur:
-            return effort * dur / 10  # sRPE (session RPE)
+            base_load = effort * dur / 10  # sRPE (session RPE)
         elif dur and hr:
-            return dur * hr / 100  # TRIMP-like proxy
+            base_load = dur * hr / 100  # TRIMP-like proxy
         elif dur:
-            return dur  # fallback to duration only
-        return 0
+            base_load = dur  # fallback to duration only
+        else:
+            return 0
+
+        # Zone intensity modifier — adjusts load based on zone distribution
+        z4 = _safe_float(session.get("Zone 4 (min)")) or 0
+        z5 = _safe_float(session.get("Zone 5 (min)")) or 0
+        z1 = _safe_float(session.get("Zone 1 (min)")) or 0
+        z2 = _safe_float(session.get("Zone 2 (min)")) or 0
+        if dur and dur > 0:
+            high_frac = (z4 + z5) / dur
+            low_frac = (z1 + z2) / dur
+            if high_frac > 0.3:
+                base_load *= 1.0 + (high_frac - 0.3) * 0.5  # max ~1.35x
+            elif low_frac > 0.7:
+                base_load *= 0.9
+
+        return base_load
 
     # Calculate weekly loads for last 4 weeks
     weekly_loads = []
@@ -463,13 +1048,13 @@ def compute_acwr(sessions_by_date, target_date):
 
     # Status
     if acwr > 1.5:
-        status = f"ACWR {acwr:.2f} -- SPIKE. Acute load {acute_load:.0f} is {acwr:.1f}x your 28-day average. Elevated injury/illness risk (Gabbett 2016)."
+        status = f"ACWR {acwr:.2f}: Spike. Acute load {acute_load:.0f} is {acwr:.1f}x your 28-day average. Elevated injury/illness risk (Gabbett 2016)."
     elif acwr > ACWR_HIGH:
-        status = f"ACWR {acwr:.2f} -- HIGH. Training this week exceeds your 28-day avg. Monitor recovery closely."
+        status = f"ACWR {acwr:.2f}: High. Training this week exceeds your 28-day avg. Monitor recovery closely."
     elif acwr >= ACWR_LOW:
-        status = f"ACWR {acwr:.2f} -- Sweet spot. Training load is well-matched to your fitness level."
+        status = f"ACWR {acwr:.2f}: Sweet spot. Training load is well-matched to your fitness level."
     else:
-        status = f"ACWR {acwr:.2f} -- LOW. You're training below your recent capacity. Consider increasing load if recovery allows."
+        status = f"ACWR {acwr:.2f}: Low. You're training below your recent capacity. Consider increasing load if recovery allows."
 
     return acwr, status, acute_load, chronic_load
 
@@ -517,9 +1102,11 @@ def parse_notes_for_flags(daily_log_by_date, nutrition_by_date, target_date,
                           days_back=2, sessions_by_date=None, sleep_by_date=None):
     """Scan free-text notes for diet/behavior flags over the lookback window.
 
-    Scans Daily Log, Nutrition, Session Log, and Sleep notes for keyword matches.
-    Returns list of (date, flag_type, matched_keywords) tuples.
+    Uses LLM-based extraction (Claude Haiku) when available, with graceful
+    fallback to keyword matching. Returns list of (date, flag_type, detail) tuples.
     """
+    from notes_extraction import extract_behaviors, behaviors_to_flags
+
     flags = []
 
     for offset in range(0, days_back):
@@ -555,25 +1142,10 @@ def parse_notes_for_flags(daily_log_by_date, nutrition_by_date, target_date,
         if not combined.strip():
             continue
 
-        matches = _search_notes(combined, ALCOHOL_KEYWORDS)
-        if matches:
-            flags.append((d, "alcohol", matches))
-
-        matches = _search_notes(combined, SUGAR_KEYWORDS)
-        if matches:
-            flags.append((d, "sugar/refined_carbs", matches))
-
-        matches = _search_notes(combined, FAST_FOOD_KEYWORDS)
-        if matches:
-            flags.append((d, "fast_food", matches))
-
-        matches = _search_notes(combined, LATE_MEAL_KEYWORDS)
-        if matches:
-            flags.append((d, "late_meal", matches))
-
-        matches = _search_notes(combined, CAFFEINE_LATE_KEYWORDS)
-        if matches:
-            flags.append((d, "late_caffeine", matches))
+        # LLM extraction with keyword fallback
+        behaviors = extract_behaviors(combined)
+        day_flags = behaviors_to_flags(behaviors, d)
+        flags.extend(day_flags)
 
     return flags
 
@@ -595,6 +1167,148 @@ def _z_to_score(z):
     return 1 + 9 / (1 + math.exp(-1.5 * z))
 
 
+def compute_adaptive_weights(conn, min_days=60):
+    """Compute personalized readiness weights via constrained regression.
+
+    Regresses readiness component z-scores against next-day outcomes
+    (morning energy, day rating). Only updates weights if R² improves
+    over evidence-based defaults by > 0.05 — avoids overfitting noise.
+
+    Args:
+        conn: SQLite connection
+        min_days: Minimum paired observations required (default 60)
+
+    Returns:
+        dict with keys {HRV, Sleep, RHR, Subjective, r_squared, r_squared_default,
+        delta_r_squared, date, n} if improvement found, else None.
+    """
+    if conn is None:
+        return None
+
+    try:
+        from scipy.optimize import minimize
+    except ImportError:
+        print("  Adaptive weighting: scipy not installed, skipping")
+        return None
+
+    # Query component z-scores from overall_analysis + next-day outcomes from daily_log
+    cur = conn.execute("""
+        SELECT oa.date,
+               oa.readiness_score,
+               g.hrv_overnight_avg, g.sleep_score, g.resting_hr
+        FROM overall_analysis oa
+        JOIN garmin g ON oa.date = g.date
+        ORDER BY oa.date ASC
+    """)
+    oa_rows = {row[0]: {"readiness": row[1], "hrv": row[2], "sleep": row[3], "rhr": row[4]}
+               for row in cur.fetchall()}
+
+    cur = conn.execute("""
+        SELECT date, morning_energy, day_rating
+        FROM daily_log
+        WHERE morning_energy IS NOT NULL OR day_rating IS NOT NULL
+    """)
+    dl_rows = {row[0]: {"energy": row[1], "rating": row[2]} for row in cur.fetchall()}
+
+    # Pair Day N components → Day N+1 outcomes
+    from datetime import date as date_cls, timedelta
+    pairs = []
+    for d_str, oa in oa_rows.items():
+        try:
+            d = date_cls.fromisoformat(d_str)
+        except (ValueError, TypeError):
+            continue
+        next_d = str(d + timedelta(days=1))
+        if next_d not in dl_rows:
+            continue
+        dl = dl_rows[next_d]
+        outcome_vals = [v for v in [dl.get("energy"), dl.get("rating")] if v is not None]
+        if not outcome_vals:
+            continue
+        outcome = sum(outcome_vals) / len(outcome_vals)
+
+        hrv = oa.get("hrv")
+        sleep = oa.get("sleep")
+        rhr = oa.get("rhr")
+        if hrv is None or sleep is None or rhr is None:
+            continue
+        pairs.append((hrv, sleep, rhr, outcome))
+
+    if len(pairs) < min_days:
+        print(f"  Adaptive weighting: {len(pairs)} paired observations "
+              f"(need {min_days}), keeping defaults")
+        return None
+
+    import numpy as np
+    X = np.array([(p[0], p[1], p[2]) for p in pairs])
+    y = np.array([p[3] for p in pairs])
+
+    # Standardize predictors
+    X_mean = X.mean(axis=0)
+    X_std = X.std(axis=0)
+    X_std[X_std == 0] = 1
+    X_z = (X - X_mean) / X_std
+
+    # Add subjective column as zeros (no data in predictors from garmin)
+    # Subjective weight will be constrained but not data-driven
+    n_components = 4  # HRV, Sleep, RHR, Subjective
+
+    def neg_r_squared(weights_3):
+        """Negative R² for 3 garmin components (Subjective gets remainder)."""
+        w_subj = 1.0 - sum(weights_3)
+        if w_subj < 0.05 or w_subj > 0.50:
+            return 1.0  # penalty
+        pred = X_z @ weights_3
+        ss_res = np.sum((y - pred) ** 2)
+        ss_tot = np.sum((y - y.mean()) ** 2)
+        if ss_tot == 0:
+            return 1.0
+        return -(1 - ss_res / ss_tot)
+
+    # Default weights for comparison (HRV=0.35, Sleep=0.30, RHR=0.20)
+    default_w = np.array([0.35, 0.30, 0.20])
+    default_pred = X_z @ default_w
+    ss_res_default = np.sum((y - default_pred) ** 2)
+    ss_tot = np.sum((y - y.mean()) ** 2)
+    r2_default = 1 - ss_res_default / ss_tot if ss_tot > 0 else 0
+
+    # Optimize with bounds
+    bounds = [(0.05, 0.50), (0.05, 0.50), (0.05, 0.50)]
+    result = minimize(neg_r_squared, default_w, method='L-BFGS-B', bounds=bounds)
+
+    if not result.success:
+        print(f"  Adaptive weighting: optimization failed ({result.message})")
+        return None
+
+    r2_adaptive = -result.fun
+    delta = r2_adaptive - r2_default
+
+    w_hrv, w_sleep, w_rhr = result.x
+    w_subj = 1.0 - sum(result.x)
+
+    # Only update if meaningful improvement
+    if delta <= 0.05:
+        print(f"  Adaptive weighting: no significant improvement "
+              f"(ΔR²={delta:.3f} ≤ 0.05), keeping defaults")
+        return None
+
+    weights = {
+        "HRV": round(float(w_hrv), 3),
+        "Sleep": round(float(w_sleep), 3),
+        "RHR": round(float(w_rhr), 3),
+        "Subjective": round(float(w_subj), 3),
+        "r_squared": round(float(r2_adaptive), 3),
+        "r_squared_default": round(float(r2_default), 3),
+        "delta_r_squared": round(float(delta), 3),
+        "n": len(pairs),
+        "date": str(date_cls.today()),
+    }
+    print(f"  Adaptive weighting: improvement found (ΔR²={delta:.3f})")
+    print(f"    New weights: HRV={w_hrv:.1%}, Sleep={w_sleep:.1%}, "
+          f"RHR={w_rhr:.1%}, Subjective={w_subj:.1%}")
+    return weights
+
+
 def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
                       profile=None):
     """Compute composite readiness score (1-10) from 4 evidence-weighted components.
@@ -612,7 +1326,14 @@ def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
     # Evidence-based weights from thresholds.json: HRV > Sleep > RHR > Subjective
     COMPONENT_WEIGHTS = dict(_THRESHOLDS["component_weights"])  # copy so we can modify
 
-    # Apply profile threshold overrides if available
+    # Apply adaptive weights from user_config.json if available
+    from utils import load_user_config
+    adaptive_cfg = load_user_config().get("adaptive_weights", {})
+    adaptive_weight_overrides = adaptive_cfg.get("readiness_weights")
+    if adaptive_weight_overrides:
+        COMPONENT_WEIGHTS.update(adaptive_weight_overrides)
+
+    # Apply profile threshold overrides (takes precedence over adaptive)
     if profile:
         overrides = get_threshold_overrides(profile)
         weight_overrides = overrides.get("readiness_weights")
@@ -919,7 +1640,7 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
             if entry.get("recommendation"):
                 parts.append(f" Action: {entry['recommendation'][:150]}")
             conf = entry.get("confidence", "Pending")
-            parts.append(f" [{entry['citation']} -- {conf}]")
+            parts.append(f" [{entry['citation']}: {conf}]")
             insights.append("".join(parts))
 
     if fired_ids:
@@ -1040,7 +1761,7 @@ def condense_sleep_analysis(sleep_analysis_text):
         first_action = action.split(". ")[0] if ". " in action else action
         parts.append(f"-> {first_action}")
 
-    return " -- ".join(parts) if parts else None
+    return " ||| ".join(parts) if parts else None
 
 
 # ---------------------------------------------------------------------------
@@ -1075,7 +1796,7 @@ def _compute_stress_budget(baselines, profile):
     pct = (today_stress / ceiling) * 100 if ceiling > 0 else 0
     if pct > 70:
         return (f"Stress budget at {pct:.0f}% of your adjusted capacity. "
-                f"Protect remaining recovery time -- avoid stacking cognitive demands.")
+                f"Protect remaining recovery time. Avoid stacking cognitive demands.")
     return None
 
 
@@ -1261,7 +1982,7 @@ _REFRAME_RULES = [
      "Given your cardiac profile, sustained high-intensity carries elevated risk."),
     (["cognitive", "executive function", "attention"],
      "cognition",
-     "Executive function factors compounding -- expect increased difficulty with planning and working memory today."),
+     "Executive function factors compounding. Expect increased difficulty with planning and working memory today."),
 ]
 
 
@@ -1302,7 +2023,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                       by_date_sleep, sessions_by_date, target_date,
                       knowledge=None, sleep_analysis_text=None,
                       deep_trend=None, rem_trend=None, profile=None,
-                      nutrition_by_date=None):
+                      nutrition_by_date=None, oa_by_date=None):
     """Generate priority-ordered insight text based on all computed data.
 
     Uses health_knowledge.json entries for scientifically-grounded cognitive/energy
@@ -1351,7 +2072,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 f"Mild sleep debt: {sleep_debt:.1f}h below baseline over 5 days. ",
                 f"Mild sleep debt: {sleep_debt:.1f}h below baseline over 5 days. "
                 f"Not yet critical, but if this trend continues, cognitive effects compound "
-                f"non-linearly -- day 5+ of restriction shows accelerating impairment."
+                f"non-linearly. Day 5+ of restriction shows accelerating impairment."
             ))
 
     # --- HRV status ---
@@ -1363,13 +2084,13 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
             # Trend-aware messaging for significantly low HRV
             if hrv_trend == "declining":
                 trend_msg = (
-                    "5-day trend is declining -- this pattern suggests overtraining or accumulated fatigue. "
+                    "5-day trend is declining. This pattern suggests overtraining or accumulated fatigue. "
                     "Prioritize rest and active recovery."
                 )
             elif hrv_trend == "recovering":
                 trend_msg = (
                     "However, 5-day trend shows recovery in progress. "
-                    "Maintain current approach -- HRV is rebounding."
+                    "Maintain current approach. HRV is rebounding."
                 )
             else:
                 trend_msg = (
@@ -1386,16 +2107,16 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
         elif z < -1.0:
             if hrv_trend == "declining":
                 trend_msg = (
-                    "5-day trend is declining -- if this continues, consider reducing training intensity."
+                    "5-day trend is declining. If this continues, consider reducing training intensity."
                 )
             elif hrv_trend == "recovering":
                 trend_msg = (
-                    "5-day trend shows recovery underway -- current approach is working."
+                    "5-day trend shows recovery underway. Current approach is working."
                 )
             else:
                 trend_msg = (
                     "Recovery may be incomplete. "
-                    "Monitor over the next 1-2 days -- if HRV doesn't rebound, consider reducing training intensity."
+                    "Monitor over the next 1-2 days. If HRV doesn't rebound, consider reducing training intensity."
                 )
             insights.append(_kb_insight(
                 knowledge, "hrv_below_baseline",
@@ -1407,7 +2128,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 knowledge, "hrv_above_baseline",
                 f"HRV well above baseline (z={z:+.1f}, {hrv_data['today']:.0f}ms). ",
                 f"HRV well above baseline (z={z:+.1f}, {hrv_data['today']:.0f}ms). "
-                f"Strong parasympathetic recovery -- your body is well-recovered and can handle higher intensity today."
+                f"Strong parasympathetic recovery. Your body is well-recovered and can handle higher intensity today."
             ))
         elif z < -0.5 and hrv_trend == "declining":
             # Mild dip but declining trend -- early warning
@@ -1462,6 +2183,25 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                             f"extended suppression suggests incomplete recovery."
                         ))
                     break
+
+    # --- Weekly zone distribution analysis ---
+    total_zones = {i: 0 for i in range(1, 6)}
+    total_zone_time = 0
+    for offset in range(7):
+        d = str(target_date - timedelta(days=offset))
+        for s in sessions_by_date.get(d, []):
+            for z in range(1, 6):
+                val = _safe_float(s.get(f"Zone {z} (min)")) or 0
+                total_zones[z] += val
+                total_zone_time += val
+    if total_zone_time > 30:
+        high_pct = (total_zones[4] + total_zones[5]) / total_zone_time * 100
+        if high_pct > 30:
+            insights.append(
+                f"High-intensity dominance: {high_pct:.0f}% of this week's training "
+                f"in Zone 4-5. The 80/20 polarized model suggests ~80% in Zone 1-2 "
+                f"for sustainable adaptation without accumulated fatigue."
+            )
 
     # --- Diet/behavior flags ---
     flag_kb_map = {
@@ -1564,104 +2304,183 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 "(Van Dongen cumulative restriction model)."
             ))
 
-    # --- Habit patterns ---
+    # --- Habit patterns (dynamic — reads from user config) ---
+    from schema import get_habit_columns
+    active_habits = get_habit_columns()
+    n_habits = len(active_habits)
+
+    # Find the Habits Total column header dynamically
+    habits_total_header = f"Habits Total (0-{n_habits})"
+
     habit_totals = []
-    screen_broken = 0
-    bedtime_broken = 0
     for offset in range(0, 3):
         d = str(target_date - timedelta(days=offset))
         dl = daily_log_by_date.get(d, {})
-        ht = _safe_float(dl.get("Habits Total (0-7)"))
+        ht = _safe_float(dl.get(habits_total_header))
         if ht is not None:
             habit_totals.append(ht)
-        if dl.get("No Screens Before Bed") in ("FALSE", "0", ""):
-            screen_broken += 1
-        if dl.get("Bed at 10 PM") in ("FALSE", "0", ""):
-            bedtime_broken += 1
 
-    if habit_totals and sum(habit_totals) / len(habit_totals) >= 6:
+    # High-consistency threshold: >= 85% of habits completed
+    high_threshold = max(1, round(n_habits * 0.85))
+    if habit_totals and sum(habit_totals) / len(habit_totals) >= high_threshold:
         avg = sum(habit_totals) / len(habit_totals)
         insights.append(_kb_insight(
             knowledge, "habit_consistency_positive",
-            f"Strong habit consistency ({avg:.1f}/7 avg over last {len(habit_totals)} days). ",
-            f"Strong habit consistency ({avg:.1f}/7 avg over last {len(habit_totals)} days). "
+            f"Strong habit consistency ({avg:.1f}/{n_habits} avg over last {len(habit_totals)} days). ",
+            f"Strong habit consistency ({avg:.1f}/{n_habits} avg over last {len(habit_totals)} days). "
             f"Research on habit stacking shows this level of consistency builds automaticity "
             f"within 2-3 weeks."
         ))
-    elif screen_broken >= 2:
-        insights.append(_kb_insight(
-            knowledge, "screen_time_before_bed",
-            f"Screen time before bed broken {screen_broken} of last 3 days. ",
-            f"Screen time before bed broken {screen_broken} of last 3 days. "
-            f"Blue light suppresses melatonin onset by 30-60 minutes (Huberman). "
-            f"This may be contributing to any sleep onset delay or reduced deep sleep."
-        ))
-    if bedtime_broken >= 3:
-        insights.append(_kb_insight(
-            knowledge, "bedtime_irregularity",
-            "Bedtime target missed 3 consecutive days. ",
-            "Bedtime target missed 3 consecutive days. Circadian rhythm relies on "
-            "consistent sleep/wake timing (Walker). Irregular bedtimes reduce sleep "
-            "efficiency and can shift your circadian clock."
-        ))
 
-    # --- Extended individual habit analysis ---
-    # Check each habit over last 3 days for patterns beyond screens/bedtime
-    habit_check = {
-        "Wake at 9:30 AM":          ("wake_consistency", "wake-up time"),
-        "No Morning Screens":       ("morning_screen_free", "screen-free mornings"),
-        "Creatine & Hydrate":       ("creatine_hydrate", "creatine & hydration"),
-        "20 Min Walk + Breathing":  ("morning_walk", "morning walk/breathing"),
-        "Physical Activity":        ("physical_activity", "physical activity"),
-    }
-    for habit_col, (kb_key, label_text) in habit_check.items():
+    # --- Per-habit missed pattern analysis (dynamic) ---
+    # Check each configured habit over last 3 days
+    for habit_label in active_habits:
         missed = 0
         total = 0
         for offset in range(0, 3):
             d = str(target_date - timedelta(days=offset))
             dl = daily_log_by_date.get(d, {})
-            val = dl.get(habit_col, "")
-            if val.upper() in ("TRUE", "FALSE"):
+            val = dl.get(habit_label, "")
+            if str(val).upper() in ("TRUE", "FALSE"):
                 total += 1
-                if val.upper() == "FALSE":
+                if str(val).upper() == "FALSE":
                     missed += 1
         if total >= 2 and missed >= 2:
+            # Use habit label as knowledge base key (lowercase, spaces to underscores)
+            kb_key = habit_label.lower().replace(" ", "_").replace("&", "and")
             insights.append(_kb_insight(
                 knowledge, kb_key,
-                f"{label_text.capitalize()} missed {missed}/{total} recent days. ",
-                f"{label_text.capitalize()} missed {missed}/{total} recent days. "
+                f"{habit_label} missed {missed}/{total} recent days. ",
+                f"{habit_label} missed {missed}/{total} recent days. "
                 f"Consistency with this habit may be affecting your recovery and readiness."
             ))
 
-    # --- Calorie deficit flagging ---
+    # --- Calorie balance analysis (enhanced) ---
+    # 1. Cumulative weekly deficit
+    weekly_balances = []
+    for offset in range(7):
+        d = str(target_date - timedelta(days=offset))
+        nut = nutrition_by_date.get(d, {})
+        bal = _safe_float(nut.get("Calorie Balance"))
+        if bal is not None:
+            weekly_balances.append((d, bal))
+
+    if len(weekly_balances) >= 3:
+        cumulative = sum(b for _, b in weekly_balances)
+        if cumulative < -3500:
+            insights.append(_kb_insight(
+                knowledge, "sustained_deficit",
+                f"Sustained energy deficit: {cumulative:+.0f} kcal over {len(weekly_balances)} days. ",
+                f"Sustained energy deficit: {cumulative:+.0f} kcal over {len(weekly_balances)} days. "
+                f"Cumulative deficit >3500 kcal/week can impair recovery, suppress immune function, "
+                f"and reduce HRV. Ensure this is intentional."
+            ))
+
+    # 2. Single-day deficit (with training-day context)
     for offset in range(0, 2):
         d = str(target_date - timedelta(days=offset))
         nut = nutrition_by_date.get(d, {})
         cal_balance = _safe_float(nut.get("Calorie Balance"))
         if cal_balance is not None and cal_balance < -500:
-            insights.append(_kb_insight(
-                knowledge, "calorie_deficit",
-                f"Large calorie deficit on {d} ({cal_balance:+.0f} kcal). ",
-                f"Large calorie deficit on {d} ({cal_balance:+.0f} kcal). "
-                f"Deficits >500 kcal can impair next-day energy, cognitive function, "
-                f"and recovery. Consider whether this was intentional."
-            ))
-            break  # Only flag once
+            day_sessions = sessions_by_date.get(d, [])
+            if day_sessions:
+                insights.append(_kb_insight(
+                    knowledge, "underfueling_training_day",
+                    f"Underfueling on training day {d} ({cal_balance:+.0f} kcal). ",
+                    f"Underfueling on training day {d} ({cal_balance:+.0f} kcal). "
+                    f"Training-day deficits impair glycogen replenishment and muscle protein "
+                    f"synthesis more than rest-day deficits."
+                ))
+            else:
+                insights.append(_kb_insight(
+                    knowledge, "calorie_deficit",
+                    f"Large calorie deficit on {d} ({cal_balance:+.0f} kcal). ",
+                    f"Large calorie deficit on {d} ({cal_balance:+.0f} kcal). "
+                    f"Deficits >500 kcal can impair next-day energy, cognitive function, "
+                    f"and recovery."
+                ))
+            break
 
-    # --- Low protein flagging ---
+    # 3. Rest-day surplus (informational)
+    for offset in range(0, 2):
+        d = str(target_date - timedelta(days=offset))
+        nut = nutrition_by_date.get(d, {})
+        cal_balance = _safe_float(nut.get("Calorie Balance"))
+        day_sessions = sessions_by_date.get(d, [])
+        if cal_balance is not None and cal_balance > 500 and not day_sessions:
+            insights.append(
+                f"Calorie surplus on rest day {d} ({cal_balance:+.0f} kcal). "
+                f"Informational -- occasional surpluses on rest days are normal."
+            )
+            break
+
+    # --- Macro nutrition analysis (enhanced) ---
     for offset in range(0, 2):
         d = str(target_date - timedelta(days=offset))
         nut = nutrition_by_date.get(d, {})
         protein = _safe_float(nut.get("Protein (g)"))
-        if protein is not None and protein < 100:
-            insights.append(_kb_insight(
-                knowledge, "low_protein",
-                f"Low protein intake on {d} ({protein:.0f}g). ",
-                f"Low protein intake on {d} ({protein:.0f}g). "
-                f"Protein below 100g may impair muscle recovery and sleep quality "
-                f"(tryptophan pathway). Aim for 1.6-2.2g/kg bodyweight."
-            ))
-            break  # Only flag once
+        carbs = _safe_float(nut.get("Carbs (g)"))
+        fats = _safe_float(nut.get("Fats (g)"))
+        day_sessions = sessions_by_date.get(d, [])
+        flagged = False
+
+        # 1. Body-weight-normalized protein
+        if protein is not None:
+            body_weight_kg = None
+            if profile:
+                body_weight_kg = _safe_float(
+                    profile.get("demographics", {}).get("weight_kg")
+                )
+            if body_weight_kg and body_weight_kg > 0:
+                target_g = (1.6 if day_sessions else 1.2) * body_weight_kg
+                if protein < target_g:
+                    insights.append(_kb_insight(
+                        knowledge, "low_protein_normalized",
+                        f"Low protein on {d}: {protein:.0f}g (target {target_g:.0f}g). ",
+                        f"Low protein on {d}: {protein:.0f}g "
+                        f"(target: {target_g:.0f}g = {1.6 if day_sessions else 1.2}g/kg). "
+                        f"Below target impairs muscle recovery and sleep quality."
+                    ))
+                    flagged = True
+            elif protein < 100:
+                insights.append(_kb_insight(
+                    knowledge, "low_protein",
+                    f"Low protein intake on {d} ({protein:.0f}g). ",
+                    f"Low protein intake on {d} ({protein:.0f}g). "
+                    f"Protein below 100g may impair muscle recovery and sleep quality "
+                    f"(tryptophan pathway). Aim for 1.6-2.2g/kg bodyweight."
+                ))
+                flagged = True
+
+        # 2. Macro ratio analysis
+        if protein is not None and carbs is not None and fats is not None:
+            total_macro_cal = (protein * 4) + (carbs * 4) + (fats * 9)
+            if total_macro_cal > 0:
+                prot_pct = (protein * 4) / total_macro_cal * 100
+                fat_pct = (fats * 9) / total_macro_cal * 100
+                if prot_pct < 25:
+                    insights.append(
+                        f"Low protein ratio on {d}: {prot_pct:.0f}% of macros. "
+                        f"Aim for 25-35% protein for recovery and satiety."
+                    )
+                    flagged = True
+                if fat_pct > 40:
+                    insights.append(
+                        f"High fat ratio on {d}: {fat_pct:.0f}% of macros. "
+                        f"High fat meals close to bedtime may impair sleep quality."
+                    )
+                    flagged = True
+
+        # 3. Training-day carb check
+        if day_sessions and carbs is not None and carbs < 150:
+            insights.append(
+                f"Low carbs on training day {d} ({carbs:.0f}g). "
+                f"Below 150g on training days may impair glycogen replenishment."
+            )
+            flagged = True
+
+        if flagged:
+            break
 
     # --- Low hydration flagging ---
     for offset in range(0, 2):
@@ -1677,6 +2496,20 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 f"cognitive performance. Aim for 2.5-3.5L daily."
             ))
             break  # Only flag once
+
+    # --- CNS fatigue detection (post-workout energy) ---
+    yesterday = str(target_date - timedelta(days=1))
+    for s in sessions_by_date.get(yesterday, []):
+        pwe = _safe_float(s.get("Post-Workout Energy (1-10)"))
+        effort = _safe_float(s.get("Perceived Effort (1-10)"))
+        if pwe is not None and pwe <= 3 and effort is not None and effort >= 7:
+            activity = s.get("Activity Name", "session")
+            insights.append(
+                f"Yesterday's {activity}: high effort ({effort:.0f}/10) but very low "
+                f"post-workout energy ({pwe:.0f}/10). This pattern suggests CNS fatigue "
+                f"-- expect longer recovery. Consider lighter activity today."
+            )
+            break
 
     # --- Stress ---
     stress_data = baselines.get("stress", {})
@@ -1710,7 +2543,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 )
             if rem_min is not None and rem_min < 60:
                 insights.append(
-                    f"REM {rem_min:.0f}min -- emotional regulation and procedural "
+                    f"REM {rem_min:.0f}min: emotional regulation and procedural "
                     f"memory processing reduced. This directly impacts your cognitive "
                     f"recovery pipeline."
                 )
@@ -1780,6 +2613,35 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
         if if_then:
             insights.append(if_then)
 
+    # --- Orthosomnia safeguard (score anxiety prevention) ---
+    if oa_by_date:
+        consecutive_low = 0
+        for offset in range(1, 6):
+            d = str(target_date - timedelta(days=offset))
+            prior = oa_by_date.get(d, {})
+            if prior.get("Readiness Label") in ("Poor", "Low"):
+                consecutive_low += 1
+            else:
+                break
+        if consecutive_low >= 3:
+            insights.append(
+                "Scores have been below baseline for several days. Remember: "
+                "tracking is a tool for awareness, not a verdict. Consider taking "
+                "a day off from checking scores if it's causing anxiety."
+            )
+
+    # --- Day-to-day variability reassurance ---
+    if oa_by_date:
+        d1 = oa_by_date.get(str(target_date - timedelta(days=1)), {})
+        d2 = oa_by_date.get(str(target_date - timedelta(days=2)), {})
+        s1 = _safe_float(d1.get("Readiness Score (1-10)"))
+        s2 = _safe_float(d2.get("Readiness Score (1-10)"))
+        if s1 is not None and s2 is not None and abs(s1 - s2) > 2.0:
+            insights.append(
+                f"Day-to-day readiness variation of {abs(s1 - s2):.1f} points is within "
+                f"normal biological noise. Focus on 7-day trends, not daily scores."
+            )
+
     return insights
 
 
@@ -1789,7 +2651,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
 
 def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
                              baselines, target_date, knowledge=None,
-                             profile=None):
+                             profile=None, sessions_by_date=None):
     """Generate actionable recommendations based on readiness state.
 
     Uses knowledge base for scientifically-grounded cognitive/energy framing.
@@ -1803,7 +2665,7 @@ def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
     if label in ("Poor", "Low"):
         recs.append(
             f"Today ({day_name}): prioritize rest and recovery. Light walking or NSDR "
-            f"(non-sleep deep rest) only -- avoid high-intensity training. "
+            f"(non-sleep deep rest) only. Avoid high-intensity training. "
             f"Cognitive capacity is likely reduced; defer important decisions if possible."
         )
         recs.append(
@@ -1826,13 +2688,13 @@ def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
     elif label == "Fair":
         recs.append(
             f"Today ({day_name}): moderate activity is fine, but avoid maximal efforts. "
-            f"Monitor how you feel mid-workout -- if perceived effort exceeds expected, "
+            f"Monitor how you feel mid-workout. If perceived effort exceeds expected, "
             f"scale back. Cognitive endurance may be reduced; plan demanding mental work "
             f"for your peak hours."
         )
         if sleep_debt and sleep_debt > 0.5:
             recs.append(
-                "Prioritize an earlier bedtime tonight -- even 30 minutes earlier helps "
+                "Prioritize an earlier bedtime tonight. Even 30 minutes earlier helps "
                 "accumulate recovery and restore cognitive function."
             )
     elif label in ("Good", "Optimal"):
@@ -1873,6 +2735,50 @@ def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
                 "with active recovery (Zone 1-2 cardio, mobility work, or yoga)."
             )
 
+    # High-intensity recovery guidance (zone-aware)
+    if sessions_by_date:
+        yesterday = str(target_date - timedelta(days=1))
+        for s in sessions_by_date.get(yesterday, []):
+            anaerobic_te = _safe_float(s.get("Anaerobic TE (0-5)"))
+            z4 = _safe_float(s.get("Zone 4 (min)")) or 0
+            z5 = _safe_float(s.get("Zone 5 (min)")) or 0
+            if (anaerobic_te and anaerobic_te > 3.0) or (z4 + z5 > 15):
+                activity = s.get("Activity Name", "session")
+                detail = []
+                if anaerobic_te:
+                    detail.append(f"Anaerobic TE {anaerobic_te:.1f}")
+                if z4 + z5 > 0:
+                    detail.append(f"{z4 + z5:.0f}min Zone 4-5")
+                recs.append(
+                    f"Yesterday's {activity} was high-intensity ({', '.join(detail)}). "
+                    f"Allow 48-72h before next high-intensity session. "
+                    f"Today is ideal for Zone 2 aerobic work or complete rest."
+                )
+                break
+
+        # Low post-workout energy recovery
+        for s in sessions_by_date.get(yesterday, []):
+            pwe = _safe_float(s.get("Post-Workout Energy (1-10)"))
+            if pwe is not None and pwe < 4:
+                recs.append(
+                    "Yesterday's post-workout energy was low. Consider Zone 1-2 only "
+                    "or active recovery today to support nervous system recovery."
+                )
+                break
+
+    # Recovery time multiplier — conditions that require extended recovery (e.g., CIRS)
+    if profile:
+        from profile_loader import get_accommodations
+        accom = get_accommodations(profile)
+        recovery_mult = accom.get("analysis_adjustments", {}).get("recovery_time_multiplier")
+        if recovery_mult and recovery_mult > 1.0:
+            if label in ("Poor", "Low", "Fair"):
+                recs.append(
+                    f"Your health profile indicates recovery takes ~{recovery_mult:.0f}x longer "
+                    f"than baseline. Allow extra rest days between intense sessions and don't "
+                    f"push through persistent fatigue."
+                )
+
     # HRV-specific
     hrv_z = baselines.get("hrv", {}).get("z")
     if hrv_z is not None and hrv_z < -1.0:
@@ -1885,7 +2791,7 @@ def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
         else:
             recs.append(
                 "HRV is significantly suppressed. Consider: 10-20 min NSDR/yoga nidra "
-                "(shown to restore dopamine and reduce cortisol -- Huberman), extend sleep "
+                "(shown to restore dopamine and reduce cortisol, Huberman), extend sleep "
                 "by 30-60 min, and avoid alcohol/caffeine today."
             )
 
@@ -2008,16 +2914,21 @@ def assess_cognitive_state(baselines, sleep_debt, note_flags, by_date_sleep,
         elif flag_type == "late_caffeine" and days_ago == 0:
             factors.append((1, "late caffeine"))
 
-    # --- Heavy training (3-day lookback) ---
+    # --- Heavy training (3-day lookback, zone-aware) ---
     for offset in range(1, 4):
         d = str(target_date - timedelta(days=offset))
         sessions = sessions_by_date.get(d, [])
         for s in sessions:
             te = _safe_float(s.get("Anaerobic TE (0-5)"))
             dur = _safe_float(s.get("Duration (min)"))
-            if (te and te >= 3.5) or (dur and dur >= 60):
+            sz4 = _safe_float(s.get("Zone 4 (min)")) or 0
+            sz5 = _safe_float(s.get("Zone 5 (min)")) or 0
+            if (te and te >= 3.5) or (dur and dur >= 60) or (sz4 + sz5 > 20):
                 if hrv_z is not None and hrv_z < -0.5:
-                    factors.append((1, f"heavy session {offset}d ago + HRV suppressed"))
+                    msg = f"heavy session {offset}d ago + HRV suppressed"
+                    if sz4 + sz5 > 20:
+                        msg += f" ({sz4 + sz5:.0f}min Z4-5, expect 48-72h recovery)"
+                    factors.append((1, msg))
                 break
 
     # --- Body battery trend (5-day) ---
@@ -2174,8 +3085,8 @@ def _distill_insights(raw_insights, max_items=6):
             continue
 
         if "SLEEP REVIEW" in upper or "LAST NIGHT" in upper:
-            # Restructure: VERDICT -- key metrics -- ACTION
-            parts = text.split(" -- ")
+            # Restructure: VERDICT ||| key metrics ||| ACTION
+            parts = text.split(" ||| ")
             verdict = parts[0] if parts else text  # "Sleep Review: FAIR"
             action = ""
             body_parts = []
@@ -2207,7 +3118,7 @@ def _distill_insights(raw_insights, max_items=6):
 
             result = verdict
             if key_findings:
-                result += " -- " + ". ".join(key_findings) + "."
+                result += ". " + ". ".join(key_findings) + "."
             if action:
                 # Take just the directive, strip trailing mechanism/profile text
                 action_text = re.sub(r'^ACTION:\s*', '', action, flags=re.IGNORECASE)
@@ -2252,7 +3163,7 @@ def _distill_insights(raw_insights, max_items=6):
             names = ", ".join(habit_misses)
             buckets[2].insert(0,
                 f"HABITS: {names} all missed 2/3+ days. "
-                "Consistency compounds -- each broken habit reduces recovery capacity.")
+                "Consistency compounds. Each broken habit reduces recovery capacity.")
         else:
             for h in habit_misses:
                 buckets[2].append(
@@ -2405,7 +3316,7 @@ def _phone_condense(text):
 
     # For Sleep Review lines, restructure
     if "Sleep Review:" in text:
-        parts = text.split(" -- ")
+        parts = text.split(" ||| ")
         verdict = parts[0].strip()  # "Sleep Review: POOR"
         metrics = []
         action = ""
@@ -2468,6 +3379,28 @@ def _phone_condense(text):
     return result
 
 
+def _polish_text(text):
+    """Final-stage cleanup for all user-facing text.
+
+    Catches remaining artifacts: double-dash separators, orphaned
+    prefixes, inconsistent capitalization.
+    """
+    if not text:
+        return text
+    # Convert any remaining " -- " to ". "
+    text = text.replace(" -- ", ". ")
+    # Clean up consecutive periods from ". " following a period
+    text = re.sub(r'\.{2,}\s*', '. ', text)
+    # Strip orphaned "TODAY: " prefix
+    text = re.sub(r'^TODAY:\s*', '', text)
+    # Ensure first character is capitalized
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    # Collapse multiple spaces
+    text = re.sub(r'  +', ' ', text).strip()
+    return text
+
+
 def _distill_recommendations(raw_recs, max_items=3):
     """Restructure recommendations: clean presentation, keep substance.
 
@@ -2496,10 +3429,13 @@ def _distill_recommendations(raw_recs, max_items=3):
             text += '.'
 
         if "DO THIS FIRST" in raw.upper():
-            # Clean up "DO THIS FIRST: 1. Today (Day):" -> "TODAY (Day):"
+            # Clean up "DO THIS FIRST: 1. Today (Day):" -> direct action
             text = re.sub(r'DO THIS FIRST:\s*\d*\.?\s*', '', text, flags=re.IGNORECASE)
-            # Remove leading "Today (Day): " and replace with "TODAY:"
-            text = re.sub(r'^Today\s*\([^)]+\):\s*', 'TODAY: ', text, flags=re.IGNORECASE)
+            # Strip "Today (Day): " prefix entirely — start with the action
+            text = re.sub(r'^Today\s*\([^)]+\):\s*', '', text, flags=re.IGNORECASE)
+            # Capitalize first letter of remaining text
+            if text and text[0].islower():
+                text = text[0].upper() + text[1:]
             prioritized.append(text)
         else:
             rest.append(text)
@@ -2526,9 +3462,9 @@ def write_analysis(wb, target_date, score, label, sleep_context, training_status
     date_str = str(target_date)
     day_str = date_to_day(date_str)
 
-    # Distill verbose analysis into scannable spreadsheet text
-    short_insights = _distill_insights(insights)
-    short_recs = _distill_recommendations(recommendations)
+    # Distill verbose analysis into scannable spreadsheet text, then polish
+    short_insights = [_polish_text(i) for i in _distill_insights(insights)]
+    short_recs = [_polish_text(r) for r in _distill_recommendations(recommendations)]
     insights_text = "\n".join(f"- {i}" for i in short_insights) if short_insights else "No notable findings."
     recs_text = "\n".join(f"- {r}" for r in short_recs) if short_recs else "Maintain current routine."
 
@@ -2666,9 +3602,15 @@ def _maybe_run_validation(wb, target_date):
         print(f"  Warning: auto-validation failed: {e}")
 
 
-def run_analysis(wb, target_date):
-    """Run the full analysis pipeline for a given date."""
-    print(f"\n--- Overall Analysis for {target_date} ---")
+def run_analysis(wb, target_date, cloud=False):
+    """Run the full analysis pipeline for a given date.
+
+    Args:
+        wb: gspread Workbook (None if cloud=True)
+        target_date: date object
+        cloud: if True, read from Supabase instead of Sheets, skip Sheets writes
+    """
+    print(f"\n--- Overall Analysis for {target_date} {'[cloud mode]' if cloud else ''} ---")
 
     # Clear dedup registry for this run
     _hardcoded_kb_ids.clear()
@@ -2682,12 +3624,21 @@ def run_analysis(wb, target_date):
     knowledge = merge_knowledge(knowledge, profile)
 
     # Read all data
-    data = read_all_data(wb)
+    if cloud:
+        data = read_all_data_from_supabase()
+    else:
+        data = read_all_data(wb)
     by_date_garmin = _rows_by_date(data["garmin"])
     by_date_sleep = _rows_by_date(data["sleep"])
     daily_log_by_date = _rows_by_date(data["daily_log"])
     nutrition_by_date = _rows_by_date(data["nutrition"])
     sessions_by_date_map = _sessions_by_date(data["session_log"])
+
+    # Read Overall Analysis tab for orthosomnia safeguard (prior readiness labels)
+    try:
+        oa_by_date = _rows_by_date(_read_tab_as_dicts(wb, "Overall Analysis"))
+    except Exception:
+        oa_by_date = {}
 
     # Compute baselines
     baselines = compute_baselines(by_date_garmin, by_date_sleep, target_date)
@@ -2701,6 +3652,46 @@ def run_analysis(wb, target_date):
     acwr, training_status, acute_load, chronic_load = compute_acwr(
         sessions_by_date_map, target_date
     )
+
+    # Dynamic sleep need (depends on sleep_debt + acwr)
+    sleep_need = compute_sleep_need(baselines, sleep_debt, acwr, target_date)
+    if sleep_need:
+        print(f"  Sleep need: {sleep_need['sleep_need_hrs']:.1f}h tonight "
+              f"(bed by {sleep_need['recommended_bedtime']}) "
+              f"[{sleep_need['breakdown']}]")
+
+    # Illness detection (probabilistic multi-metric anomaly scoring)
+    try:
+        from sqlite_backup import get_db as _illness_get_db
+        illness_conn = _illness_get_db()
+    except Exception:
+        illness_conn = None
+    illness = detect_illness(baselines, by_date_sleep, daily_log_by_date,
+                             acwr, target_date,
+                             by_date_garmin=by_date_garmin, conn=illness_conn)
+
+    # Adaptive weighting — monthly recalibration (1st of month or --recalibrate flag)
+    if target_date.day == 1 or "--recalibrate" in sys.argv:
+        adaptive_result = compute_adaptive_weights(illness_conn)
+        if adaptive_result:
+            # Save to user_config.json for the weight loading path to pick up
+            config_path = Path(__file__).parent / "user_config.json"
+            config = {}
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = json.load(f)
+            config["adaptive_weights"] = {
+                "readiness_weights": {
+                    k: adaptive_result[k] for k in ("HRV", "Sleep", "RHR", "Subjective")
+                },
+                "metadata": {
+                    k: adaptive_result[k]
+                    for k in ("r_squared", "r_squared_default", "delta_r_squared", "n", "date")
+                },
+            }
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            print(f"  Adaptive weights saved to user_config.json")
 
     # Notes flags (expand lookback to 3 days for alcohol cognitive window)
     # Includes Session Log notes and Sleep notes alongside Daily Log and Nutrition
@@ -2729,7 +3720,7 @@ def run_analysis(wb, target_date):
         by_date_sleep, sessions_by_date_map, target_date,
         knowledge=knowledge, sleep_analysis_text=sleep_analysis_text,
         deep_trend=deep_trend, rem_trend=rem_trend, profile=profile,
-        nutrition_by_date=nutrition_by_date
+        nutrition_by_date=nutrition_by_date, oa_by_date=oa_by_date
     )
 
     # Dynamic knowledge triggers — auto-fires insights for any knowledge entry
@@ -2750,8 +3741,25 @@ def run_analysis(wb, target_date):
     # Recommendations (with knowledge base + profile filtering)
     recommendations = generate_recommendations(
         score, label, sleep_debt, acwr, note_flags, baselines, target_date,
-        knowledge=knowledge, profile=profile
+        knowledge=knowledge, profile=profile,
+        sessions_by_date=sessions_by_date_map
     )
+
+    # Inject illness detection results into insights + recommendations
+    illness_label = illness["illness_label"]
+    if illness_label != "normal":
+        signal_summary = "; ".join(s.split("[")[0].strip() for s in illness["signals"][:3])
+        if illness_label in ("illness_ongoing", "recovering"):
+            # Active episode -- add context that low scores are expected
+            illness_insight = (f"illness episode active ({illness_label.replace('_', ' ')}): "
+                               f"low readiness scores are expected during recovery")
+        else:
+            illness_insight = (f"possible illness indicator: "
+                               f"{illness_label.replace('_', ' ')} "
+                               f"(score {illness['illness_score']:.0f}/14): {signal_summary}")
+        insights.insert(0, illness_insight)  # highest priority
+        if illness["recommendation"]:
+            recommendations.insert(0, illness["recommendation"])
 
     # Cognitive/Energy Assessment
     cognitive_assessment = assess_cognitive_state(
@@ -2777,13 +3785,14 @@ def run_analysis(wb, target_date):
         for r in recommendations[:2]:
             print(f"    - {r[:120]}{'...' if len(r) > 120 else ''}")
 
-    # Write to Sheets
-    write_analysis(wb, target_date, score, label, sleep_context, training_status,
-                   insights, recommendations, confidence, cognitive_assessment)
+    # Write to Sheets (skip in cloud mode)
+    if not cloud and wb is not None:
+        write_analysis(wb, target_date, score, label, sleep_context, training_status,
+                       insights, recommendations, confidence, cognitive_assessment)
 
-    # Auto-validation: run weekly (every Sunday) to check prediction accuracy
-    if target_date.weekday() == 6:  # Sunday
-        _maybe_run_validation(wb, target_date)
+        # Auto-validation: run weekly (every Sunday) to check prediction accuracy
+        if target_date.weekday() == 6:  # Sunday
+            _maybe_run_validation(wb, target_date)
 
     # Distill for phone app (separate from Sheets distillation)
     phone_insights = _distill_for_phone(insights)
@@ -2802,6 +3811,9 @@ def run_analysis(wb, target_date):
         "sleep_verdict": sleep_verdict,
         "sleep_trend": sleep_trend,
         "sleep_debt": sleep_debt,
+        "sleep_need": sleep_need,
+        "illness": illness,
+        "illness_label": illness.get("illness_label", "normal"),
         "bed_variability": sleep_row.get("Bedtime Variability (7d)", "") if sleep_row else "",
         "wake_variability": sleep_row.get("Wake Variability (7d)", "") if sleep_row else "",
     }
@@ -2969,6 +3981,8 @@ def main():
     parser.add_argument("--week", action="store_true", help="7-day summary")
     parser.add_argument("--validate", action="store_true",
                         help="Run prediction validation (28-day check)")
+    parser.add_argument("--cloud", action="store_true",
+                        help="Use Supabase instead of Google Sheets (for CI/cloud)")
     args = parser.parse_args()
 
     today = date.today()
@@ -2979,14 +3993,33 @@ def main():
     else:
         target_date = today - timedelta(days=1)  # default: yesterday
 
-    wb = get_workbook()
-
-    if args.validate:
-        run_validation(wb, target_date)
-    elif args.week:
-        run_week_summary(wb, target_date)
+    if args.cloud:
+        # Cloud mode: read from Supabase, write results back to Supabase only
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent / ".env")
+        result = run_analysis(None, target_date, cloud=True)
+        # Write results to Supabase
+        from supabase_sync import init_supabase, upsert_overall_analysis
+        client = init_supabase()
+        if client and result:
+            upsert_overall_analysis(client, str(target_date), {
+                "readiness_score": result.get("score"),
+                "readiness_label": result.get("label"),
+                "confidence": result.get("confidence"),
+                "cognitive_energy_assessment": result.get("cognitive_assessment"),
+                "sleep_context": result.get("sleep_context"),
+                "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
+                "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+            })
+            print("[cloud] Results written to Supabase.")
     else:
-        run_analysis(wb, target_date)
+        wb = get_workbook()
+        if args.validate:
+            run_validation(wb, target_date)
+        elif args.week:
+            run_week_summary(wb, target_date)
+        else:
+            run_analysis(wb, target_date)
 
     print("\nDone.")
 

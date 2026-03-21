@@ -68,7 +68,7 @@ _FALLBACK_RULES = {
             ("Deep %", "higher_better", 12, 18, 22),
             ("REM %", "higher_better", 15, 20, 25),
             ("Sleep Cycles", "higher_better", 2, 4, 5),
-            ("Overnight HRV (ms)", "higher_better", 30, 40, 48),
+            ("Overnight HRV (ms)", "higher_better", 37, 40, 44),
             ("Body Battery Gained", "higher_better", 15, 40, 65),
             ("Awake During Sleep (min)", "lower_better", 15, 30, 60),
             ("Awakenings", "lower_better", 1, 3, 6),

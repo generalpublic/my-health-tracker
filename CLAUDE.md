@@ -55,7 +55,7 @@ Tabs must always appear in this exact order. Enforce after any tab creation or r
 1. **Color-graded cells** — cells with conditional formatting gradients or discrete color rules (e.g., Readiness Score red-green, Readiness Label Optimal=green/Poor=red, Sleep Analysis Score, Bedtime bands). These take highest priority — no other background color overrides them.
 2. **Yellow manual-entry cells** — any column where the user types data manually gets light yellow background `{"red": 1.0, "green": 1.0, "blue": 0.8}`. This includes: Notes, Cognition (1-10), Cognition Notes, Perceived Effort, Post-Workout Energy, all Nutrition meal columns, all Daily Log subjective columns. When columns move between tabs, the yellow follows them.
 3. **Weekly row banding** — all remaining cells (not color-graded, not yellow) alternate between white and light grey on a weekly basis (Sunday–Saturday). One week is white, the next is light grey `{"red": 0.95, "green": 0.95, "blue": 0.95}`. This groups data visually by week.
-4. **Header row** — tab-colored background with white bold text. Never overridden by banding.
+4. **Header row** — tab-colored background with bold text. Never overridden by banding. Text color per tab: **Daily Log** and **Overall Analysis** use WHITE text (dark backgrounds). All other tabs use BLACK text (light backgrounds). Any function that touches header formatting (e.g., `bold_headers()`) must NOT reset the foreground color — use narrow field masks (`textFormat.bold,textFormat.fontSize`) instead of broad `textFormat`.
 
 ### Weekly Banding Rules
 - Weeks run Sunday–Saturday (ISO week starting Sunday)
@@ -369,7 +369,7 @@ All setup scripts (setup_analysis.py, setup_charts.py, etc.) must be **idempoten
 - **Notion** — daily habit log (manual checkboxes, notes, images)
 - **Google Sheets** — automated data storage and analysis
 - **Python script** (`garmin_sync.py`) — pulls Garmin data daily, writes to Google Sheets
-- **Windows Task Scheduler** (current) / **launchd plist** (macOS) / **cron** (Linux) — runs the script daily at 8:00 PM
+- **Windows Task Scheduler** (current) / **launchd plist** (macOS) / **cron** (Linux) — runs via two daily triggers (12:05 AM full sync + 11:00 AM sleep notify)
 
 ### Key Files
 - `garmin_sync.py` — main sync script
@@ -434,7 +434,7 @@ All setup scripts (setup_analysis.py, setup_charts.py, etc.) must be **idempoten
 9. If any days were missed during migration: `python garmin_sync.py --date YYYY-MM-DD`
 
 ### Planned primary host: Mac Mini (always-on)
-- Target: 24/7 Mac Mini running garmin_sync.py via launchd at 8 PM daily
+- Target: 24/7 Mac Mini running garmin_sync.py via launchd (12:05 AM full sync + 11:00 AM sleep notify)
 - Mac Mini Energy Saver: set to never sleep, enable "wake for network access"
 - If Mac Mini is offline, use `--date` flag to backfill missed days from any other machine
 

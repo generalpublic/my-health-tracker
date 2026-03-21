@@ -126,7 +126,7 @@ def bold_headers(wb, sheet_title):
                 "horizontalAlignment": "CENTER",
                 "textFormat": {"bold": True, "fontSize": 11},
             }},
-            "fields": "userEnteredFormat(horizontalAlignment,textFormat)",
+            "fields": "userEnteredFormat(horizontalAlignment,textFormat.bold,textFormat.fontSize)",
         }
     }]})
 
@@ -227,38 +227,43 @@ def apply_sleep_color_grading(wb):
 
     hmap = {h: i for i, h in enumerate(SLEEP_HEADERS)}
 
-    requests = [
-        # Higher = better
-        _gradient_higher_better(hmap["Sleep Analysis Score"], 50, 65, 80),
-        _gradient_higher_better(hmap["Total Sleep (hrs)"], 5, 7, 8),
-        _gradient_higher_better(hmap["Time in Bed (hrs)"], 6, 7.5, 8.5),
-        _gradient_higher_better(hmap["Deep Sleep (min)"], 45, 75, 100),
-        _gradient_higher_better(hmap["Light Sleep (min)"], 120, 180, 240),
-        _gradient_higher_better(hmap["REM (min)"], 60, 90, 120),
-        _gradient_higher_better(hmap["Deep %"], 12, 18, 22),
-        _gradient_higher_better(hmap["REM %"], 15, 20, 25),
-        _gradient_higher_better(hmap["Sleep Cycles"], 2, 4, 5),
-        _gradient_higher_better(hmap["Overnight HRV (ms)"], 30, 40, 48),
-        _gradient_higher_better(hmap["Body Battery Gained"], 15, 40, 65),
-        # Lower = better
-        _gradient_lower_better(hmap["Awake During Sleep (min)"], 15, 30, 60),
-        _gradient_lower_better(hmap["Awakenings"], 1, 3, 6),
-        _gradient_lower_better(hmap["Avg HR"], 52, 58, 68),
-        _gradient_lower_better(hmap["Avg Respiration"], 15, 17, 20),
-        # Variability — lower = more consistent = better
-        _gradient_lower_better(hmap["Bedtime Variability (7d)"], 30, 60, 90),
-        _gradient_lower_better(hmap["Wake Variability (7d)"], 30, 60, 90),
-    ]
+    # Read gradient thresholds from thresholds.json (configurable per-user)
+    from utils import load_thresholds
+    thresholds = load_thresholds()
+    sf = thresholds.get("sheets_formatting", {}).get("Sleep", {})
+    gradients = sf.get("gradient", [])
 
-    # Bedtime discrete bands — derive column letter from hmap
-    bt_col = gspread.utils.rowcol_to_a1(1, hmap["Bedtime"] + 1)[0]  # e.g. "H"
-    bt = f"{bt_col}2"  # e.g. "H2"
+    requests = []
+    for g in gradients:
+        header = g["header"]
+        if header not in hmap:
+            continue
+        col_idx = hmap[header]
+        if g["direction"] == "higher_better":
+            requests.append(_gradient_higher_better(col_idx, g["min"], g["mid"], g["max"]))
+        else:
+            requests.append(_gradient_lower_better(col_idx, g["min"], g["mid"], g["max"]))
+
+    # Bedtime discrete bands — read from thresholds.json (configurable per-user)
+    bb = thresholds.get("bedtime_bands", {})
+    green_start = bb.get("green_start", "20:00")
+    green_end = bb.get("green_end", "23:00")
+    light_green_start = bb.get("light_green_start", "23:00")
+    yellow_start = bb.get("yellow_start", "00:00")
+    yellow_end = bb.get("yellow_end", "01:00")
+    orange_start = bb.get("orange_start", "01:00")
+    orange_end = bb.get("orange_end", "02:00")
+    red_start = bb.get("red_start", "02:00")
+    red_end = bb.get("red_end", "06:00")
+
+    bt_col = gspread.utils.rowcol_to_a1(1, hmap["Bedtime"] + 1)[0]
+    bt = f"{bt_col}2"
     bedtime_rules = [
-        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("20:00"), TIMEVALUE({bt})<TIMEVALUE("23:00"))', _GRADE_GREEN),
-        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("23:00"))', _GRADE_LIGHT_GREEN),
-        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("00:00"), TIMEVALUE({bt})<TIMEVALUE("01:00"))', _GRADE_YELLOW),
-        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("01:00"), TIMEVALUE({bt})<TIMEVALUE("02:00"))', _GRADE_ORANGE_RED),
-        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("02:00"), TIMEVALUE({bt})<TIMEVALUE("06:00"))', _GRADE_RED),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("{green_start}"), TIMEVALUE({bt})<TIMEVALUE("{green_end}"))', _GRADE_GREEN),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("{light_green_start}"))', _GRADE_LIGHT_GREEN),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("{yellow_start}"), TIMEVALUE({bt})<TIMEVALUE("{yellow_end}"))', _GRADE_YELLOW),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("{orange_start}"), TIMEVALUE({bt})<TIMEVALUE("{orange_end}"))', _GRADE_ORANGE_RED),
+        (f'=AND({bt}<>"", TIMEVALUE({bt})>=TIMEVALUE("{red_start}"), TIMEVALUE({bt})<TIMEVALUE("{red_end}"))', _GRADE_RED),
     ]
     for formula, color in reversed(bedtime_rules):
         requests.append(_bedtime_band(formula, color))

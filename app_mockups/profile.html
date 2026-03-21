@@ -117,14 +117,28 @@
     }
 
     .menu-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-md);
-      background: var(--primary-bg);
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+    }
+
+    .menu-icon img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      mix-blend-mode: multiply;
+    }
+
+    .menu-icon img.icon-lg {
+      width: 34px;
+      height: 34px;
+    }
+
+    .menu-icon svg.icon-sm {
+      width: 22px;
+      height: 22px;
     }
 
     .menu-label {
@@ -171,8 +185,8 @@
 
         <!-- Profile Header -->
         <div class="profile-header">
-          <div class="profile-avatar">S</div>
-          <div class="profile-name">Sek</div>
+          <div class="profile-avatar" id="profile-avatar">S</div>
+          <div class="profile-name" id="profile-name">Sek</div>
           <div class="profile-streak">
             <span class="streak-fire">&#128293;</span>
             <span>12 day streak</span>
@@ -200,7 +214,7 @@
           <div class="menu-section-title">Reports</div>
           <div class="menu-item" onclick="navigateTo('trends.html')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#128202;</div>
+              <div class="menu-icon"><img src="icons/weekly reports.png" alt="Weekly Report"></div>
               <div>
                 <div class="menu-label">Weekly Report</div>
                 <div class="menu-sublabel">Mar 11 - Mar 17 summary</div>
@@ -210,7 +224,7 @@
           </div>
           <div class="menu-item" onclick="navigateTo('calendar.html')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#128197;</div>
+              <div class="menu-icon"><img src="icons/calendar view.png" alt="Calendar View"></div>
               <div>
                 <div class="menu-label">Calendar View</div>
                 <div class="menu-sublabel">Full year heatmap</div>
@@ -220,7 +234,7 @@
           </div>
           <div class="menu-item" onclick="alert('Export coming soon')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#128229;</div>
+              <div class="menu-icon"><img src="icons/export data.png" alt="Export Data" class="icon-lg"></div>
               <div>
                 <div class="menu-label">Export Data</div>
                 <div class="menu-sublabel">Download as CSV or JSON</div>
@@ -235,7 +249,7 @@
           <div class="menu-section-title">Settings</div>
           <div class="menu-item" onclick="toggleNotifications(this)">
             <div class="menu-item-left">
-              <div class="menu-icon">&#128276;</div>
+              <div class="menu-icon"><img src="icons/notifications.png" alt="Notifications"></div>
               <div>
                 <div class="menu-label">Notifications</div>
                 <div class="menu-sublabel">Morning briefing, sleep review</div>
@@ -245,7 +259,7 @@
           </div>
           <div class="menu-item" onclick="navigateTo('log-entry.html')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#10003;</div>
+              <div class="menu-icon"><img src="icons/habits.png" alt="Habits" class="icon-lg"></div>
               <div>
                 <div class="menu-label">Habits</div>
                 <div class="menu-sublabel">Customize your 7 daily habits</div>
@@ -255,7 +269,7 @@
           </div>
           <div class="menu-item" onclick="alert('Goals coming soon')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#127919;</div>
+              <div class="menu-icon"><img src="icons/goals.png" alt="Goals" class="icon-lg"></div>
               <div>
                 <div class="menu-label">Goals</div>
                 <div class="menu-sublabel">Steps, sleep, readiness targets</div>
@@ -265,7 +279,7 @@
           </div>
           <div class="menu-item" onclick="alert('Sync running...\\nLast sync: Today, 8:00 PM')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#9881;</div>
+              <div class="menu-icon"><img src="icons/garmin sync.png" alt="Garmin Sync"></div>
               <div>
                 <div class="menu-label">Garmin Sync</div>
                 <div class="menu-sublabel">Last sync: Today, 8:00 PM</div>
@@ -280,7 +294,7 @@
           <div class="menu-section-title">About</div>
           <div class="menu-item" onclick="alert('Health Tracker v1.0\\nBuilt with love')">
             <div class="menu-item-left">
-              <div class="menu-icon">&#9432;</div>
+              <div class="menu-icon"><svg class="icon-sm" width="22" height="22" viewBox="0 0 24 24" fill="black" stroke="none"><circle cx="12" cy="12" r="10"/><text x="12" y="17" text-anchor="middle" fill="white" font-size="14" font-weight="700" font-family="serif">i</text></svg></div>
               <div>
                 <div class="menu-label">About Health Tracker</div>
               </div>

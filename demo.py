@@ -119,7 +119,7 @@ def demo_sleep_analysis(days=7):
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
         data = _generate_sample_day(d)
-        ind_score, analysis = generate_sleep_analysis(data)
+        ind_score, analysis, descriptor = generate_sleep_analysis(data)
 
         print(f"\n--- {d} ({d.strftime('%A')}) ---")
         print(f"  Sleep: {data['sleep_duration']}h | Bed: {data['sleep_bedtime']} | Wake: {data['sleep_wake_time']}")

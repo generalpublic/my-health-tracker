@@ -1047,7 +1047,7 @@ _SLEEP_FORMATS = [
     ("Overnight HRV (ms)",          "0",           True),
     ("Body Battery Gained",         "0",           True),
     ("Sleep Score",                 "0",           True),
-    ("Sleep Feedback",              "",            False),
+    ("Sleep Descriptor",            "",            False),
 ]
 
 _NUTR_FORMATS = [
@@ -1435,7 +1435,7 @@ def _build_session_type(activity_type):
 def _build_sleep_row(date_str, data):
     """Build a Sleep tab row from merged data dict."""
     from sleep_analysis import generate_sleep_analysis
-    ind_score, analysis = generate_sleep_analysis(data)
+    ind_score, analysis, descriptor = generate_sleep_analysis(data)
     return [
         date_to_day(date_str),                     # A  Day
         date_str,                                  # B  Date
@@ -1461,7 +1461,7 @@ def _build_sleep_row(date_str, data):
         data.get("sleep_avg_respiration", ""),      # V  Avg Respiration
         data.get("hrv", ""),                        # W  Overnight HRV (ms)
         data.get("sleep_body_battery_gained", ""),  # X  Body Battery Gained
-        data.get("sleep_feedback", ""),             # Y  Sleep Feedback
+        descriptor or "",                           # Y  Sleep Descriptor
     ]
 
 

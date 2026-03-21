@@ -61,6 +61,9 @@ HEADERS = [
     "Zone 3 - Aerobic (min)",        # AI
     "Zone 4 - Threshold (min)",      # AJ
     "Zone 5 - Max (min)",            # AK
+    # Pulse Ox
+    "SpO2 Avg",                      # AL
+    "SpO2 Min",                      # AM
 ]
 
 # --- Nutrition tab ---
@@ -109,7 +112,7 @@ SLEEP_HEADERS = [
     "Avg Respiration",               # V
     "Overnight HRV (ms)",            # W
     "Body Battery Gained",           # X
-    "Sleep Feedback",                # Y
+    "Sleep Descriptor",              # Y
 ]
 
 # --- Session Log tab ---
@@ -122,6 +125,7 @@ SESSION_LOG_HEADERS = [
 ]
 
 # --- Daily Log tab ---
+# Static default for backward compatibility (used when no user_config.json exists)
 DAILY_LOG_HEADERS = [
     # Manual entry zone
     "Day",                            # A
@@ -147,6 +151,55 @@ DAILY_LOG_HEADERS = [
     "Day Rating (1-10)",              # U
     "Evening Notes",                  # V  free text
 ]
+
+# Subjective columns that follow habits (always the same regardless of habit count)
+_DAILY_LOG_SUFFIX = [
+    "Midday Energy (1-10)",
+    "Midday Focus (1-10)",
+    "Midday Mood (1-10)",
+    "Midday Body Feel (1-10)",
+    "Midday Notes",
+    "Evening Energy (1-10)",
+    "Evening Focus (1-10)",
+    "Evening Mood (1-10)",
+    "Perceived Stress (1-10)",
+    "Day Rating (1-10)",
+    "Evening Notes",
+]
+
+
+def get_daily_log_headers(config=None):
+    """Build Daily Log headers with dynamic habit columns from config.
+
+    When config is None and no user_config.json exists, returns the same
+    headers as the static DAILY_LOG_HEADERS constant (backward compatible).
+    """
+    from utils import load_user_config, get_habit_labels
+    cfg = config or load_user_config()
+    habits = get_habit_labels(cfg)
+    n = len(habits)
+    return (
+        ["Day", "Date", "Morning Energy (1-10)"]
+        + habits
+        + [f"Habits Total (0-{n})"]
+        + _DAILY_LOG_SUFFIX
+    )
+
+
+def get_habit_columns(config=None):
+    """Return list of habit label strings from the active config."""
+    from utils import load_user_config, get_habit_labels
+    cfg = config or load_user_config()
+    return get_habit_labels(cfg)
+
+
+def get_daily_log_manual_cols(config=None):
+    """Return 0-based manual column indices for Daily Log.
+
+    All columns from C (index 2) through the last column are manual-entry.
+    """
+    headers = get_daily_log_headers(config)
+    return list(range(2, len(headers)))
 
 # --- Overall Analysis tab ---
 OVERALL_ANALYSIS_HEADERS = [
@@ -196,7 +249,7 @@ ARCHIVE_HEADERS = ["Day", "Date"] + ARCHIVE_KEYS
 NUTRITION_MANUAL_COLS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 15]   # F,G,H,I,J,K,L,M,N,P
 SESSION_MANUAL_COLS = [3, 4, 5]                                  # D,E,F
 SLEEP_MANUAL_COLS = [6]                                          # G (Notes)
-DAILY_LOG_MANUAL_COLS = list(range(2, 22))                       # C-V (all subjective columns)
+DAILY_LOG_MANUAL_COLS = list(range(2, 22))                       # C-V (default 7 habits, use get_daily_log_manual_cols() for dynamic)
 
 # --- Session Log column indices (0-based) ---
 SL_EFFORT = 3    # D  Perceived Effort (manual)
@@ -205,6 +258,18 @@ SL_NOTES = 5     # F  Notes (manual)
 SL_ACTIVITY = 6  # G  Activity Name (auto)
 
 # --- All tabs with expected headers (for verify_sheets.py) ---
+def get_expected_headers():
+    """Return expected headers dict with dynamic Daily Log headers."""
+    return {
+        TAB_GARMIN:            HEADERS,
+        TAB_SLEEP:             SLEEP_HEADERS,
+        TAB_NUTRITION:         NUTRITION_HEADERS,
+        TAB_SESSION_LOG:       SESSION_LOG_HEADERS,
+        TAB_DAILY_LOG:         get_daily_log_headers(),
+        TAB_OVERALL_ANALYSIS:  OVERALL_ANALYSIS_HEADERS,
+    }
+
+# Static version for backward compatibility (uses default 7 habits)
 EXPECTED_HEADERS = {
     TAB_GARMIN:            HEADERS,
     TAB_SLEEP:             SLEEP_HEADERS,

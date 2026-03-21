@@ -20,8 +20,12 @@ Rounded to nearest 0.5h. For detailed task breakdown, see `WORKLOG.md`.
 | 2026-03-18 | 0.5 | Infrastructure + Documentation | Billing methodology correction (identified systematic undercounting from AI execution time vs. engagement time, corrected Session 9 3.5h→5.5h), comprehensive work narrative generation (full March 17-18 history), created WORK_HISTORY.md permanent record, codified end-of-day narrative format as standard |
 | 2026-03-18 | 1.5 | Development | Dashboard-Sheets color grading alignment (audited all thresholds, fixed 5 divergent metrics), removed Garmin Sleep Score from dashboard, built workout activity feature (color-coded + markers on heatmap, 3 new workout metrics, session aggregation), fixed bedtime color thresholds |
 | 2026-03-18 | 5.5 | Development + Infrastructure | Task Scheduler fix (notification failure diagnosis, partial data correction for 4 dates), spreadsheet recovery from SQLite (full 8-tab rebuild after deletion), charts overhaul (9 charts with schema-based lookups), sleep variability fix, nutrition cleanup, PWA Calendar/Activity root cause fix (nested Promise.allSettled), service worker v4 |
-| **Weekly Total** | **37.0** | | |
+| 2026-03-20 | 4.0 | Development + Infrastructure | Task Scheduler fix (full python path), sleep timestamp 4h offset fix (GMT fields), HRV threshold recalibration (180-day analysis), sleep descriptor feature (18 analysis-derived labels), Garmin numeric formatting, Daily Log formula fix |
+| 2026-03-20 | 4.0 | Development | Bidirectional PWA sync — Supabase schema v2, 8 save functions with offline queue, form wiring, sync pipeline (Supabase → SQLite + Sheets) |
+| 2026-03-20 | 1.5 | Development | Key Insights display fix, phone distillation rewrite, multi-user generalization milestone 2 (dynamic habits, feature flags, data source adapters) |
+| 2026-03-20 | 2.0 | Infrastructure + Security | GitHub Pages migration — security audit, template architecture for public distribution, repo nuke/recreate, Supabase key rotation, personal deployment via GitHub Actions secrets |
+| **Weekly Total** | **48.5** | | |
 
-| **Project Total** | **37.0** | | |
+| **Project Total** | **48.5** | | |
 
 ---

@@ -1,0 +1,98 @@
+# Health Tracker — Scheduled Garmin Sync + Deep Analysis (Tier 2)
+#
+# Runs on GitHub Actions (free tier: 2000 min/month, each run ~2 min).
+# Fetches fresh Garmin data, runs full overall_analysis.py, writes to Supabase.
+# Does NOT touch Google Sheets — Sheets sync happens on the PC via scheduled tasks.
+#
+# Credentials: stored as GitHub repository secrets (Settings > Secrets > Actions)
+
+name: Garmin Sync
+
+on:
+  schedule:
+    # 12:30 AM ET (05:30 UTC) — prep-day: sync yesterday's finalized data
+    - cron: '30 5 * * *'
+    # 11:30 AM ET (16:30 UTC) — sleep analysis: morning health briefing
+    - cron: '30 16 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - analysis-only
+      date:
+        description: 'Target date (YYYY-MM-DD, blank = yesterday)'
+        required: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+      GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install garminconnect supabase python-dotenv
+
+      - name: Determine target date
+        id: date
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            echo "target=${{ inputs.date }}" >> $GITHUB_OUTPUT
+          else
+            echo "target=$(date -u -d 'yesterday' +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch Garmin data and sync to Supabase
+        if: inputs.mode != 'analysis-only'
+        run: |
+          python -c "
+          import os, sys
+          sys.path.insert(0, '.')
+          os.environ.setdefault('GARMIN_PASSWORD', os.environ.get('GARMIN_PASSWORD', ''))
+
+          from cloud_function.main import _fetch_garmin_data, _run_sleep_analysis, _write_to_supabase
+
+          date_str = '${{ steps.date.outputs.target }}'
+          print(f'Fetching Garmin data for {date_str}...')
+          data = _fetch_garmin_data(date_str)
+          print(f'Got {len(data)} data keys')
+
+          score, text, descriptor = _run_sleep_analysis(data)
+          data['sleep_analysis_score'] = score
+          data['sleep_analysis_text'] = text
+          data['sleep_descriptor'] = descriptor
+          print(f'Sleep analysis: score={score}')
+
+          results = _write_to_supabase(date_str, data)
+          print(f'Supabase sync: {results}')
+          "
+
+      - name: Run full analysis (cloud mode)
+        run: |
+          python overall_analysis.py --cloud --date ${{ steps.date.outputs.target }}
+
+      - name: Summary
+        run: |
+          echo "### Garmin Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date**: ${{ steps.date.outputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: ${{ inputs.mode || 'full' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

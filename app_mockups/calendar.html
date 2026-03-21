@@ -278,6 +278,7 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // --- Global functions for onclick handlers ---
@@ -438,9 +439,9 @@
 
     // Determine if a color is light (for text contrast)
     function isLightColor(hslStr) {
-      const match = hslStr.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+      const match = hslStr.match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
       if (!match) return true;
-      return parseInt(match[3]) > 55;
+      return parseFloat(match[3]) > 55;
     }
 
     // ============================================

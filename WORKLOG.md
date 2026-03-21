@@ -4,6 +4,26 @@ Time estimates are approximate. Categories: `feature` | `fix` | `refactor` | `an
 
 ---
 
+## 2026-03-20 (Sessions 14-20)
+**Working day:** ~10:00 AM -> 11:37 PM (~13.5h window, ~11.5h active work across multiple parallel windows)
+
+| Task | Category | Time | Description |
+|------|----------|------|-------------|
+| Daily Log + Garmin formatting fixes + header white text | fix, feature | ~51m | Fixed Daily Log Habits Total formula (COUNTIF not applied during daily sync), added _rewrite_garmin_numerics() for proper number formatting in Garmin tab, re-synced 3/19 partial data (Steps 63→3,535), applied white foreground to Daily Log header row, fixed bold_headers() field mask to prevent clobbering foreground color. |
+| Task Scheduler fix + Sleep timestamp bug | fix, debug, infra | ~41m | Fixed all 3 Task Scheduler tasks (bare python → full path, -StartWhenAvailable, -AllowStartIfOnBatteries). Fixed sleep bedtime/wake time 4h offset (switched from sleepStartTimestampLocal to sleepStartTimestampGMT fields). Re-synced March 18-19. Updated CLAUDE.md. |
+| HRV threshold recalibration | analysis, fix | ~13m | Analyzed 180 days HRV data (mean 40.7ms). Old thresholds put 96.7% in orange. Computed percentile-based personal thresholds (red<37, green≥44). Updated 7 files, all 75 tests pass. |
+| Sleep descriptor feature | feature | ~29m | Replaced Garmin's misleading sleepScoreFeedback with analysis-derived descriptor. 18 labels across POOR/FAIR/GOOD verdicts, priority-matched to dominant finding. Updated 12 files, 75/75 tests pass. |
+| Multi-user generalization: Milestone 2 | feature | ~2h | Dynamic habits from user_config.json, feature flags for optional tabs, data source adapter pattern (Garmin/Manual/Strava). Created data_sources/ package. Full backward compatibility verified. |
+| Bidirectional PWA sync | feature | ~4h | Supabase schema v2 migration, 8 save functions + offline queue in data-loader.js, form wiring, sync_pwa_to_stores.py pipeline (Supabase → SQLite + Sheets), integrated into garmin_sync.py. All 7 form types verified. |
+| Key Insights fix + phone distillation + UI polish | fix, feature | ~1h 16m | Fixed Key Insights display format, rewrote phone distillation for actionable 3-4 item summaries, UI fixes (sleep chevron, dynamic date, consistency subtitle). |
+| PWA UI tweaks | feature | ~6m | Centered card titles, bumped font size, fixed Status label gradient. |
+| Stress Qualifier bug fix | fix | ~10m | Derived qualifier from averageStressLevel when Garmin returns "UNKNOWN". Applied to garmin_client.py and backfill_history.py. |
+| GitHub Pages migration | infra, feature | ~2h | Full security audit, template architecture (config.js pattern), nuked old repo, created fresh public template repo, rotated Supabase anon key, set up personal deployment with GitHub Actions secrets. Two repos live: public template + personal. |
+| | | | |
+| **Day Total (Mar 20)** | | **~11.5h** | **10 tasks: feature, fix, infra, analysis, debug** |
+
+---
+
 ## 2026-03-18 (Sessions 10-11)
 **Working day:** ~12:00 AM -> 12:47 AM (~45m across 2 sessions)
 

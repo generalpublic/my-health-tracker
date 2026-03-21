@@ -11,7 +11,7 @@ const SAMPLE_DATA = {
     readiness_score:      { type: "higher_better", red: 4, yellow: 5.5, green: 7 },
     sleep_analysis_score: { type: "higher_better", red: 50, yellow: 65, green: 75 },
     total_sleep_hrs:      { type: "higher_better", red: 5, yellow: 7, green: 8 },
-    overnight_hrv_ms:     { type: "higher_better", red: 30, yellow: 40, green: 48 },
+    overnight_hrv_ms:     { type: "higher_better", red: 37, yellow: 40, green: 44 },
     body_battery:         { type: "higher_better", red: 20, yellow: 50, green: 80 },
     body_battery_gained:  { type: "higher_better", red: 15, yellow: 40, green: 65 },
     resting_hr:           { type: "lower_better",  green: 48, yellow: 55, red: 65 },

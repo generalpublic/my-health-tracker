@@ -283,7 +283,50 @@ def get_garmin_data(today, yesterday):
         print(f"  Body battery not available: {e}")
         data["body_battery"] = ""
 
+    # SpO2 — overnight pulse ox (yesterday)
+    try:
+        spo2 = client.get_spo2_data(y)
+        if spo2:
+            data["spo2_avg"] = spo2.get("averageSpO2", "")
+            data["spo2_min"] = spo2.get("lowestSpO2", "")
+        else:
+            data["spo2_avg"] = data["spo2_min"] = ""
+    except Exception as e:
+        print(f"  SpO2 not available: {e}")
+        data["spo2_avg"] = data["spo2_min"] = ""
+
     # Activities -- today
     data.update(_fetch_activity_data(client, t))
 
     return data
+
+
+def probe_available_data(client, date_str):
+    """Check which optional Garmin data sources are available on this device.
+
+    Run once via --probe flag to see what data your watch provides.
+    """
+    print(f"\nProbing Garmin API for available data ({date_str})...\n")
+    methods = [
+        'get_spo2_data',
+        'get_body_composition',
+        'get_respiration_data',
+        'get_stress_data',
+        'get_daily_weigh_ins',
+    ]
+    available = {}
+    for method_name in methods:
+        try:
+            result = getattr(client, method_name)(date_str)
+            has_data = bool(result)
+            available[method_name] = has_data
+            if has_data:
+                print(f"  {method_name}: AVAILABLE")
+                print(f"    Sample: {str(result)[:400]}")
+            else:
+                print(f"  {method_name}: returned empty/None")
+        except Exception as e:
+            available[method_name] = False
+            print(f"  {method_name}: NOT AVAILABLE ({e})")
+    print()
+    return available

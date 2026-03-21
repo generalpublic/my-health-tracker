@@ -6,13 +6,17 @@ Handles sleep analysis notifications and morning health briefings.
 
 import os
 import re
+import sqlite3
 from datetime import date
+from pathlib import Path
 
 import requests
 
 from utils import _safe_float
 from sleep_analysis import _parse_bedtime_hour
 from profile_loader import load_profile, sanitize_for_notification
+
+DB_PATH = Path(__file__).parent / "health_tracker.db"
 
 
 def send_pushover_notification(date_str, ind_score, analysis):
@@ -27,7 +31,7 @@ def send_pushover_notification(date_str, ind_score, analysis):
     score_str = f" ({ind_score})" if ind_score is not None else ""
 
     date_nice = _format_date_nice(date_str)
-    title = f"Sleep: {date_nice} -- {verdict}{score_str}"
+    title = f"Sleep: {date_nice} | {verdict}{score_str}"
 
     # Split analysis body into readable lines
     body = analysis.split(" - ", 1)[1] if " - " in analysis else analysis
@@ -57,6 +61,31 @@ def send_pushover_notification(date_str, ind_score, analysis):
             print(f"  Pushover: failed ({resp.status_code}): {resp.text}")
     except Exception as e:
         print(f"  Pushover: could not send notification: {e}")
+
+
+def _load_top_behavioral_findings(max_findings=2):
+    """Load top significant behavioral correlations from SQLite for notification."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        c = conn.cursor()
+        c.execute("""
+            SELECT label, outcome, r, effect_size_pct, lag
+            FROM behavioral_correlations
+            WHERE significant = 1 AND lag = 1
+            ORDER BY ABS(r) DESC
+            LIMIT ?
+        """, (max_findings,))
+        rows = c.fetchall()
+        conn.close()
+
+        findings = []
+        for label, outcome, r, effect_pct, lag in rows:
+            direction = "higher" if r > 0 else "lower"
+            effect = f" ({effect_pct:+.0f}%)" if effect_pct else ""
+            findings.append(f"Your data: {label} -> {direction} {outcome}{effect}")
+        return findings
+    except Exception:
+        return []
 
 
 def _strip_citations(text):
@@ -91,7 +120,7 @@ def _briefing_expect(cognitive_assessment, sleep_data=None):
         return "EXPECT: Baseline capacity expected."
     if cognitive_assessment.lower().startswith("no notable") or \
        cognitive_assessment.lower().startswith("above baseline"):
-        return "EXPECT: Baseline capacity -- good day for demanding work or hard training."
+        return "EXPECT: Baseline capacity. Good day for demanding work or hard training."
 
     # Parse the assessment: "Level. factor1, factor2, factor3."
     parts = cognitive_assessment.split(". ", 1)
@@ -238,10 +267,10 @@ def _briefing_sleep(sleep_data, sleep_verdict, sleep_debt=None,
     if rem_pct is not None and rem_pct < 15:
         notes.append("Low REM -> incomplete emotional processing, expect irritability or reactivity")
 
-    if hrv is not None and hrv < 30:
-        notes.append(f"HRV very low -> autonomic strain, skip intense exercise")
-    elif hrv is not None and hrv < 38:
-        notes.append(f"HRV below baseline -> recovery incomplete")
+    if hrv is not None and hrv < 37:
+        notes.append(f"HRV below baseline -> recovery incomplete, go easy today")
+    elif hrv is not None and hrv >= 44:
+        notes.append(f"HRV strong -> good autonomic recovery")
 
     if notes:
         line += "\n" + ". ".join(notes[:2]) + "."
@@ -296,6 +325,10 @@ def _briefing_flags(insights):
         "stress-sensitive profile", # stress reframe
     ]
 
+    # Illness markers (highest priority when episode active)
+    illness_markers = ["illness detected", "possible illness", "likely illness",
+                       "illness episode active", "illness_ongoing", "recovering"]
+
     # Safety markers
     safety_markers = ["SPIKE", "ACWR", "Max HR"]
 
@@ -304,6 +337,7 @@ def _briefing_flags(insights):
                          "depression", "dementia"]
 
     profile_flags = []
+    illness_flags = []
     safety_flags = []
     knowledge_flags = []
     generic_flags = []
@@ -327,6 +361,8 @@ def _briefing_flags(insights):
 
         if any(m in insight for m in profile_markers):
             profile_flags.append(compressed)
+        elif any(m in insight for m in illness_markers):
+            illness_flags.append(compressed)
         elif any(m in insight for m in safety_markers):
             safety_flags.append(compressed)
         elif any(m in insight for m in knowledge_markers):
@@ -342,9 +378,9 @@ def _briefing_flags(insights):
             habit_line = " / ".join(f"{h} missed" for h in habit_misses)
         generic_flags.append(habit_line)
 
-    # Assemble: profile first, then safety, knowledge, generic. Max 4 total.
+    # Assemble: illness first (if active), then profile, safety, knowledge, generic. Max 4.
     flags = []
-    for pool in (profile_flags, safety_flags, knowledge_flags, generic_flags):
+    for pool in (illness_flags, profile_flags, safety_flags, knowledge_flags, generic_flags):
         for f in pool:
             if len(flags) >= 4:
                 break
@@ -397,9 +433,15 @@ def compose_briefing_notification(date_str, result, sleep_data):
 
     date_nice = _format_date_nice(date_str)
     score_str = f"{score}/10" if score is not None else "N/A"
-    title = f"{date_nice} | {label} {score_str}"
-    if sleep_verdict:
-        title += f" | Sleep: {sleep_verdict}"
+
+    # Check for active illness episode
+    illness_mode = result.get("illness_label", "normal")
+    if illness_mode in ("illness_ongoing", "likely_illness", "recovering"):
+        title = f"{date_nice} | {score_str} {label} | Illness Mode"
+    else:
+        title = f"{date_nice} | {label} {score_str}"
+        if sleep_verdict:
+            title += f" | Sleep: {sleep_verdict}"
 
     body_parts = []
 
@@ -415,6 +457,9 @@ def compose_briefing_notification(date_str, result, sleep_data):
     body_parts.append(sleep_line)
 
     flags = _briefing_flags(result.get("insights", []))
+    # Append top behavioral correlation findings (from weekly analysis)
+    behavioral_findings = _load_top_behavioral_findings(max_findings=1)
+    flags.extend(behavioral_findings)
     if flags:
         body_parts.append("")
         body_parts.append("FLAGS:")
@@ -422,9 +467,19 @@ def compose_briefing_notification(date_str, result, sleep_data):
             body_parts.append(f"- {f}")
 
     actions = _briefing_actions(result.get("recommendations", []))
-    if actions:
+    sleep_need = result.get("sleep_need")
+    if actions or sleep_need:
         body_parts.append("")
         body_parts.append("DO:")
+        # Sleep need recommendation first (most actionable tonight)
+        if sleep_need:
+            need_hrs = sleep_need["sleep_need_hrs"]
+            bedtime = sleep_need["recommended_bedtime"]
+            breakdown = sleep_need.get("breakdown", "")
+            body_parts.append(
+                f"- Tonight: aim for {need_hrs:.1f}h. "
+                f"Bed by {bedtime} ({breakdown})."
+            )
         for a in actions:
             body_parts.append(f"- {a}")
 
@@ -436,8 +491,18 @@ def compose_briefing_notification(date_str, result, sleep_data):
         body_parts_rebuild = [expect, "", sleep_line]
         if flags:
             body_parts_rebuild += ["", "FLAGS:"] + [f"- {f}" for f in flags]
-        if actions:
-            body_parts_rebuild += ["", "DO:"] + [f"- {a}" for a in actions]
+        do_parts = []
+        if sleep_need:
+            need_hrs = sleep_need["sleep_need_hrs"]
+            bedtime = sleep_need["recommended_bedtime"]
+            breakdown = sleep_need.get("breakdown", "")
+            do_parts.append(
+                f"- Tonight: aim for {need_hrs:.1f}h. "
+                f"Bed by {bedtime} ({breakdown})."
+            )
+        do_parts += [f"- {a}" for a in actions]
+        if do_parts:
+            body_parts_rebuild += ["", "DO:"] + do_parts
         body = "\n".join(body_parts_rebuild)
 
     # Sanitize PHI before sending through third-party service

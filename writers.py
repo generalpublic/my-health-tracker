@@ -9,11 +9,12 @@ import gspread
 
 from utils import date_to_day, _safe_float
 from schema import (
-    HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS, DAILY_LOG_HEADERS,
+    HEADERS, SLEEP_HEADERS, NUTRITION_HEADERS,
     ARCHIVE_HEADERS, ARCHIVE_KEYS,
-    NUTRITION_MANUAL_COLS, SLEEP_MANUAL_COLS, DAILY_LOG_MANUAL_COLS,
+    NUTRITION_MANUAL_COLS, SLEEP_MANUAL_COLS,
     SL_EFFORT, SL_ENERGY, SL_NOTES, SL_ACTIVITY,
     TAB_ARCHIVE,
+    get_daily_log_headers, get_daily_log_manual_cols, get_habit_columns,
 )
 from sheets_formatting import apply_yellow_columns, bold_headers
 from sleep_analysis import generate_sleep_analysis
@@ -36,7 +37,32 @@ def upsert_row(sheet, date_str, row):
         print(f"  Updated existing row for {date_str}.")
     else:
         sheet.append_row(row)
+        row_index = len(sheet.col_values(2))
         print(f"  Appended new row for {date_str}.")
+
+    # Re-write numeric columns as actual numbers for formatting/grading
+    # Skips: A(0) Day, B(1) Date, N(13) Stress Qualifier, U-W(20-22) Activity text
+    _rewrite_garmin_numerics(sheet, row_index, row)
+
+
+def _rewrite_garmin_numerics(sheet, row_index, row):
+    """Re-write Garmin numeric columns with USER_ENTERED so number formats apply.
+
+    Same pattern used by write_to_sleep_log() for Sleep tab numeric columns.
+    """
+    # 0-indexed column positions that should be numeric
+    numeric_cols = list(range(2, 13)) + [14, 15, 16, 17, 18, 19] + list(range(23, 37))
+    # Indices: C-M(2-12), O-T(14-19), X-AK(23-36)
+    cells = []
+    for ci in numeric_cols:
+        val = row[ci] if ci < len(row) else ""
+        if val != "" and val is not None:
+            try:
+                cells.append(gspread.Cell(row=row_index, col=ci + 1, value=float(val)))
+            except (ValueError, TypeError):
+                pass
+    if cells:
+        sheet.update_cells(cells, value_input_option="USER_ENTERED")
 
 
 def build_garmin_row(target_date, data):
@@ -79,6 +105,8 @@ def build_garmin_row(target_date, data):
         data.get("zone_3", ""),
         data.get("zone_4", ""),
         data.get("zone_5", ""),
+        data.get("spo2_avg", ""),
+        data.get("spo2_min", ""),
     ]
 
 
@@ -256,7 +284,8 @@ def write_to_sleep_log(wb, target_date, data):
         existing = []
         notes     = ""
 
-    ind_score, analysis = generate_sleep_analysis(data)
+    from utils import get_scoring_thresholds
+    ind_score, analysis, descriptor = generate_sleep_analysis(data, thresholds=get_scoring_thresholds())
 
     existing_day = existing[0] if row_index and len(existing) > 0 else ""
     row = [
@@ -284,7 +313,7 @@ def write_to_sleep_log(wb, target_date, data):
         data.get("sleep_avg_respiration", ""),         # V  Avg Respiration
         data.get("hrv", ""),                           # W  Overnight HRV (ms)
         data.get("sleep_body_battery_gained", ""),     # X  Body Battery Gained
-        data.get("sleep_feedback", ""),                # Y  Sleep Feedback
+        descriptor or "",                              # Y  Sleep Descriptor
     ]
 
     if row_index:
@@ -471,6 +500,7 @@ def write_to_daily_log(wb, target_date):
 
     Pre-fills Day + Date only. All other columns left empty for manual entry.
     Never overwrites existing rows (preserves user data).
+    Uses dynamic habit columns from user_config.json (or defaults).
     """
     try:
         sheet = wb.worksheet("Daily Log")
@@ -478,19 +508,37 @@ def write_to_daily_log(wb, target_date):
         print("  Daily Log tab not found -- skipping. Run setup_daily_log.py first.")
         return
 
+    headers = get_daily_log_headers()
+    manual_cols = get_daily_log_manual_cols()
+    habits = get_habit_columns()
+    n_habits = len(habits)
+
     existing_headers = sheet.row_values(1)
-    if existing_headers != DAILY_LOG_HEADERS:
-        sheet.update(range_name="A1", values=[DAILY_LOG_HEADERS])
-        apply_yellow_columns(wb, "Daily Log", DAILY_LOG_MANUAL_COLS)
+    if existing_headers != headers:
+        sheet.update(range_name="A1", values=[headers])
+        apply_yellow_columns(wb, "Daily Log", manual_cols)
 
     date_str = str(target_date)
     all_dates = sheet.col_values(2)
     if date_str in all_dates:
         return  # Row already exists -- don't touch manual data
 
-    row = [date_to_day(date_str), date_str] + [""] * (len(DAILY_LOG_HEADERS) - 2)
+    row = [date_to_day(date_str), date_str] + [""] * (len(headers) - 2)
     sheet.append_row(row)
-    print(f"  Daily Log: created row for {date_str}.")
+    new_row_index = len(sheet.col_values(2))
+
+    # Habits Total formula: habits start at column D (index 3), span n_habits columns
+    # Column letters: D=4, so last habit col = 4 + n_habits - 1
+    from gspread.utils import rowcol_to_a1
+    first_habit_col = rowcol_to_a1(1, 4).rstrip("1")  # "D"
+    last_habit_col = rowcol_to_a1(1, 3 + n_habits).rstrip("1")
+    habits_total_col_idx = 3 + n_habits  # 0-based index of Habits Total column
+    habits_total_col = rowcol_to_a1(1, habits_total_col_idx + 1).rstrip("1")
+
+    formula = f'=COUNTIF({first_habit_col}{new_row_index}:{last_habit_col}{new_row_index},TRUE)'
+    sheet.update(range_name=f"{habits_total_col}{new_row_index}", values=[[formula]],
+                 value_input_option="USER_ENTERED")
+    print(f"  Daily Log: created row for {date_str} (with Habits Total formula).")
 
 
 # --- Gap Detection ---
@@ -507,3 +555,50 @@ def find_missing_dates(sheet, lookback_days=7):
         except (ValueError, TypeError):
             continue
     return sorted(expected - existing)
+
+
+def find_stale_or_missing_dates(sheet, lookback_days=7, min_steps=500):
+    """Check last N days for missing dates AND stale data (suspiciously low steps).
+
+    Stale data detection: if a row exists but steps < min_steps, the data was likely
+    captured from a partial sync (e.g., 11 AM sync captured only 96 steps when the
+    real end-of-day count was 6,239). These dates need to be re-fetched.
+
+    Returns:
+        dict with keys:
+            "missing": list of date objects with no row
+            "stale": list of (date, steps) tuples with suspiciously low steps
+            "all": sorted list of all dates needing re-sync
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    expected = {today - timedelta(days=i) for i in range(1, lookback_days + 1)}
+
+    # Read dates (col B) and steps (col I, index 9)
+    all_rows = sheet.get_all_values()
+    if len(all_rows) < 2:
+        return {"missing": sorted(expected), "stale": [], "all": sorted(expected)}
+
+    existing = {}  # date -> steps
+    for row in all_rows[1:]:
+        if len(row) < 9:
+            continue
+        try:
+            d = date.fromisoformat(row[1])
+        except (ValueError, TypeError):
+            continue
+        try:
+            steps = int(float(row[8])) if row[8] else 0
+        except (ValueError, TypeError):
+            steps = 0
+        existing[d] = steps
+
+    missing = sorted(expected - set(existing.keys()))
+    stale = []
+    for d in sorted(expected & set(existing.keys())):
+        steps = existing[d]
+        if 0 < steps < min_steps:
+            stale.append((d, steps))
+
+    all_dates = sorted(set(missing) | {d for d, _ in stale})
+    return {"missing": missing, "stale": stale, "all": all_dates}

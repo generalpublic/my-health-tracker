@@ -34,7 +34,7 @@ except (FileNotFoundError, json.JSONDecodeError, KeyError):
     "overnight_hrv_ms": {
         "label": "HRV (Overnight)",
         "type": "higher_better",
-        "red": 30, "yellow": 40, "green": 48,
+        "red": 37, "yellow": 40, "green": 44,
         "unit": "ms",
         "source": "sleep"
     },

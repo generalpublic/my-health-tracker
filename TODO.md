@@ -6,11 +6,7 @@
 
 ## Priority
 
-- [ ] **Mobile Dashboard (PWA)** — Redesign dashboard as a mobile-first Progressive Web App for iPhone
-  - Responsive phone layout: home (today's scores), sleep, activity, trends screens
-  - PWA manifest + service worker for home screen install (full-screen, no Safari chrome)
-  - Build directly in code with mobile-first CSS (Tailwind) — no Figma needed
-  - Data source: existing SQLite → exported JSON (no pipeline changes)
+- [ ] **Review product strategy conversation** — Revisit the 2026-03-20 strategy discussion saved in `.claude/projects/.../memory/project_product_strategy_conversation.md`. Key decisions: core loop (habits -> sleep -> readiness), "See how last night affects today" positioning, what to cut vs keep for a product.
 
 ---
 
@@ -24,40 +20,9 @@
 
 ---
 
-## Pending — Infrastructure
+## Pending
 
-- [x] **Fix Windows Task Scheduler path** (completed 2026-03-17)
-
----
-
-## Pending — Analysis Scripts
-
-- [x] **Build `analysis_lag.py`** — Lag correlation analysis (completed 2026-03-16)
-- [x] **Build `analysis_regression.py`** — Multiple regression models (completed 2026-03-16)
-
----
-
-## Pending — Daily Workflow
-
-- [ ] **Start filling in Daily Log daily** — User needs to begin entering subjective data (mood, energy, focus)
-  - [ ] **Build a daily prompt system** — Create a popup, Google Form, or simple mobile-friendly form that prompts all Daily Log fields at the right times (e.g., morning energy after waking, midday focus/mood at lunch, evening rating before bed), with phone alerts/notifications so there's no need to manually open the spreadsheet
-- [x] **`garmin_sync.py` auto-append to Daily Log** — Auto-creates a row with Day + Date when syncing, skips if row already exists (completed 2026-03-17)
-
----
-
-## Pending — Documentation
-
-- [ ] **Polish Executive Brief Word doc** — `Health Tracker - Executive Brief.docx` needs refinement
-  - Review content, styling, and formatting for executive presentation readiness
-  - Generator script: `create_brief_docx.py`
-
----
-
-## Pending — Styling / Maintenance
-
-- [ ] **Update `reformat_style.py`** — Codify final design (tab-colored headers + amber manual cols)
-- [x] **Renamed project from "NS Habit Tracker" to "Health Tracker"** — Google Sheet, all code, docs, scheduler scripts (completed 2026-03-17)
-- [x] **Delete migration scripts** — `migrate_cognition.py` and `migrate_oa_layout.py` (completed 2026-03-17)
+- [ ] **Daily prompt system** — Mobile-friendly form that prompts Daily Log fields at the right times (morning energy after waking, midday focus/mood at lunch, evening rating before bed), with phone notifications so there's no need to manually open the spreadsheet. Highest-leverage item — unlocks adaptive weighting, behavioral correlations, and validation study.
 
 ---
 
@@ -70,11 +35,21 @@
 - [x] SQLite parallel database + migration script (2026-03-12)
 - [x] Dashboard HTML created (2026-03-12)
 - [x] Voice Logger code built — `voice_logger/` directory (2026-03-16)
+- [x] Analysis scripts: lag correlation + multiple regression (2026-03-16)
 - [x] Cognition columns migrated from Sleep to Overall Analysis (2026-03-17)
 - [x] Overall Analysis restructured: Day col, Readiness Label next to Score, 12 cols (2026-03-17)
 - [x] Design Ruleset codified in CLAUDE.md (2026-03-17)
 - [x] Dashboard sleep score thresholds unified (2026-03-17)
 - [x] `garmin_sync.py` auto-append to Daily Log (2026-03-17)
+- [x] Fix Windows Task Scheduler path (2026-03-17)
+- [x] Renamed project from "NS Habit Tracker" to "Health Tracker" (2026-03-17)
+- [x] Delete migration scripts (2026-03-17)
 - [x] Dashboard-Sheets color grading alignment — all 5 divergent metrics fixed (2026-03-18)
 - [x] Removed Garmin Sleep Score from dashboard (2026-03-18)
 - [x] Workout activity markers + 3 workout metrics added to dashboard (2026-03-18)
+- [x] Mobile Dashboard PWA — 4 versions: mockups -> UI polish -> glassmorphism -> Supabase live data (2026-03-19)
+- [x] Methodology reassessment — 10 improvements: sigmoid scoring, evidence-based weights, autocorrelation adjustment, validation loop (2026-03-17)
+- [x] SpO2 pipeline + adaptive weighting infrastructure (2026-03-21)
+- [x] Methodology gaps #12-17: zone ACWR, calorie balance, macro analysis, post-workout energy, orthosomnia safeguard (2026-03-21)
+- [x] `reformat_style.py` audit — SpO2 formats, width overrides, FORCE_CENTER_COLS for all 7 tabs (2026-03-21)
+- [x] Executive Brief Word doc — generator script `create_brief_docx.py` (2026-03-18)

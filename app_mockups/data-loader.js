@@ -15,10 +15,12 @@
 // Falls back to empty/default structure with _error flag if fetch fails.
 // ============================================
 
-// --- Supabase Config (PUBLIC anon key — safe for frontend) ---
-// UPDATE THESE: replace with your Supabase project URL and anon key from .env
-const SUPABASE_URL = 'https://uutjdyyxxgeftffitqay.supabase.co';       // e.g. 'https://xxxx.supabase.co'
-const SUPABASE_ANON_KEY = 'sb_publishable_7SyMEmDUWFuHaVz9mk8oQA_2VxaILJ8'; // e.g. 'eyJhbG...'
+// --- Supabase Config ---
+// Loaded from config.js (must be included before this script)
+if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;padding:2rem;text-align:center"><div><h2>Setup Required</h2><p>Copy <code>config.example.js</code> to <code>config.js</code> and add your Supabase credentials.</p></div></div>';
+  throw new Error('Missing config.js — see config.example.js');
+}
 
 // ============================================
 // Supabase REST API helper
@@ -42,7 +44,7 @@ async function supabaseQuery(table, params = {}) {
     throw new Error(`Supabase ${table}: ${res.status} ${res.statusText} — ${body}`);
   }
   const data = await res.json();
-  console.log(`[data-loader] ${table}: ${data.length} rows`);
+  // rows loaded
   return data;
 }
 
@@ -78,7 +80,7 @@ async function supabaseMutate(table, data, matchColumns = null) {
       throw new Error(`Supabase ${table} write: ${res.status} — ${body}`);
     }
     const rows = await res.json();
-    console.log(`[data-loader] ${table} upserted for ${data.date || 'id'}`);
+    // upsert ok
     return rows[0] || data;
   } catch (err) {
     // If offline, queue for later
@@ -109,25 +111,24 @@ function _enqueueOffline(table, data, matchColumns) {
   const queue = _getOfflineQueue();
   queue.push({ table, data, matchColumns, timestamp: Date.now() });
   _saveOfflineQueue(queue);
-  console.log(`[offline] Queued ${table} write (${queue.length} pending)`);
+  // queued
 }
 
 async function flushOfflineQueue() {
   const queue = _getOfflineQueue();
   if (queue.length === 0) return;
-  console.log(`[offline] Flushing ${queue.length} queued writes`);
+  // flushing
   const failed = [];
   for (const item of queue) {
     try {
       await supabaseMutate(item.table, item.data, item.matchColumns);
     } catch (e) {
-      console.warn(`[offline] Flush failed for ${item.table}:`, e);
+      console.warn('[offline] Flush failed:', e);
       failed.push(item);
     }
   }
   _saveOfflineQueue(failed);
   if (failed.length > 0) console.warn(`[offline] ${failed.length} writes still pending`);
-  else console.log('[offline] All queued writes flushed');
 }
 
 // Auto-flush when coming back online
@@ -150,6 +151,42 @@ function _collectHabits(containerId) {
     if (keys[i]) result[keys[i]] = t.classList.contains('active') ? 1 : 0;
   });
   return result;
+}
+
+/**
+ * Save a single habit toggle from the Today page.
+ * Debounces rapid taps — batches all pending toggles into one write after 500ms.
+ */
+let _habitDebounceTimer = null;
+let _habitPendingData = {};
+
+function saveHabitToggle(dateStr, habitKey, value, habitsTotal) {
+  // Map today.html habit keys to Supabase column names
+  const keyMap = {
+    'wake_930': 'wake_at_930',
+    'no_morning_screens': 'no_morning_screens',
+    'creatine_hydrate': 'creatine_hydrate',
+    'walk_breathing': 'walk_breathing',
+    'physical_activity': 'physical_activity',
+    'no_screens_bed': 'no_screens_before_bed',
+    'bed_10pm': 'bed_at_10pm',
+  };
+  const supabaseKey = keyMap[habitKey] || habitKey;
+
+  // Accumulate pending changes
+  _habitPendingData.date = dateStr;
+  _habitPendingData.day = _dayOfWeek(dateStr);
+  _habitPendingData[supabaseKey] = value ? 1 : 0;
+  _habitPendingData.habits_total = habitsTotal;
+  _habitPendingData.manual_source = 'pwa';
+
+  // Debounce — flush after 500ms of no taps
+  clearTimeout(_habitDebounceTimer);
+  _habitDebounceTimer = setTimeout(() => {
+    const data = { ..._habitPendingData };
+    _habitPendingData = {};
+    supabaseMutate('daily_log', data, 'date');
+  }, 500);
 }
 
 /** Morning Check-in -> daily_log (morning_energy + habits) */
@@ -302,7 +339,7 @@ const THRESHOLDS = {
   readiness_score: { type: "higher_better", red: 4, yellow: 5.5, green: 8.5 },
   sleep_analysis_score: { type: "higher_better", red: 50, yellow: 65, green: 80 },
   total_sleep_hrs: { type: "higher_better", red: 5, yellow: 7, green: 8 },
-  overnight_hrv_ms: { type: "higher_better", red: 30, yellow: 40, green: 48 },
+  overnight_hrv_ms: { type: "higher_better", red: 37, yellow: 40, green: 44 },
   body_battery: { type: "higher_better", red: 20, yellow: 50, green: 80 },
   body_battery_gained: { type: "higher_better", red: 15, yellow: 40, green: 65 },
   resting_hr: { type: "lower_better", green: 48, yellow: 55, red: 65 },
@@ -341,7 +378,7 @@ let SAMPLE_DATA = {
   today: null,
   history: [],
   sessions_history: [],
-  profile: { name: "Sek" },
+  profile: { name: (typeof USER_NAME !== 'undefined' ? USER_NAME : 'User') },
   _error: null,
   _loaded: false,
 };
@@ -386,8 +423,13 @@ function _num(val, fallback = 0) {
  * Fetch today's data from all relevant tables.
  * Returns the SAMPLE_DATA.today object structure.
  */
-async function fetchToday() {
-  const today = _todayStr();
+async function fetchDateData(dateStr) {
+  return fetchToday(dateStr);
+}
+
+async function fetchToday(overrideDate, _depth = 0) {
+  if (_depth > 3) return _buildFallbackToday();
+  const today = overrideDate || _todayStr();
   const day = _dayOfWeek(today);
 
   // Parallel fetch from all tables for today's date — resilient to individual failures
@@ -399,11 +441,12 @@ async function fetchToday() {
     supabaseQuery('session_log', { date: `eq.${today}`, order: 'activity_name.asc' }),
     supabaseQuery('nutrition', { date: `eq.${today}`, limit: '1' }),
     supabaseQuery('strength_log', { date: `eq.${today}`, order: 'id.asc' }),
+    supabaseQuery('illness_state', { resolved_date: 'is.null', order: 'onset_date.desc', limit: '1' }),
   ]);
 
-  const _todayTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log', 'nutrition', 'strength_log'];
+  const _todayTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log', 'nutrition', 'strength_log', 'illness_state'];
   _todayResults.forEach((r, i) => {
-    if (r.status === 'rejected') console.error(`[data-loader] fetchToday ${_todayTables[i]} failed:`, r.reason);
+    if (r.status === 'rejected') console.error('[data-loader] fetch failed:', r.reason);
   });
 
   const garminRows = _todayResults[0].status === 'fulfilled' ? _todayResults[0].value : [];
@@ -413,6 +456,7 @@ async function fetchToday() {
   const sessionRows = _todayResults[4].status === 'fulfilled' ? _todayResults[4].value : [];
   const nutritionRows = _todayResults[5].status === 'fulfilled' ? _todayResults[5].value : [];
   const strengthRows = _todayResults[6].status === 'fulfilled' ? _todayResults[6].value : [];
+  const illnessRows = _todayResults[7].status === 'fulfilled' ? _todayResults[7].value : [];
 
   const g = garminRows[0] || {};
   const sl = sleepRows[0] || {};
@@ -421,8 +465,10 @@ async function fetchToday() {
   const nut = nutritionRows[0] || {};
 
   // Parse key_insights and recommendations — stored as newline-separated "- " bullet text
-  let keyInsights = _parseBulletText(oa.key_insights);
-  let recommendations = _parseBulletText(oa.recommendations);
+  // Polish: clean historical artifacts (double-dashes, TODAY: prefix)
+  const _polishText = t => t.replace(/ -- /g, '. ').replace(/^TODAY:\s*/i, '').replace(/^(.)/, (_, c) => c.toUpperCase());
+  let keyInsights = _parseBulletText(oa.key_insights).map(_polishText);
+  let recommendations = _parseBulletText(oa.recommendations).map(_polishText);
 
   // Determine readiness label from score
   const readinessScore = _num(oa.readiness_score);
@@ -481,7 +527,7 @@ async function fetchToday() {
     notes: s.notes || '',
   }));
 
-  return {
+  const todayData = {
     date: today,
     day: day,
 
@@ -592,6 +638,21 @@ async function fetchToday() {
       notes: nut.notes || '',
     },
 
+    illness: (() => {
+      const ill = illnessRows[0];
+      if (!ill) return { label: 'normal' };
+      // Also check illness_daily_log for today's label
+      const dailyLabel = (oa.key_insights || '').includes('illness episode active') ? 'illness_ongoing'
+        : (oa.key_insights || '').includes('possible illness') ? 'possible_illness'
+        : 'normal';
+      return {
+        label: dailyLabel !== 'normal' ? dailyLabel : 'illness_ongoing',
+        onset_date: ill.onset_date,
+        confirmed: !!ill.confirmed_date,
+        peak_score: ill.peak_score,
+      };
+    })(),
+
     briefing: {
       expect: expectBlock,
       sleep_line: sleepLine,
@@ -601,7 +662,27 @@ async function fetchToday() {
       flags: flags,
       do_items: doItems,
     },
+
+    // Data freshness indicators
+    data_status: {
+      has_garmin: !!g.date,
+      has_analysis: readinessScore > 0,
+      analysis_pending: !!g.date && readinessScore === 0,
+      stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
+      last_sync: g.updated_at || g.date || null,
+    },
   };
+
+  // Fallback: if initial load (no overrideDate) and data is empty, try yesterday
+  if (!overrideDate && _isDataEmpty(todayData)) {
+    const yesterday = _daysAgoStr(1);
+    console.log(`[data-loader] No data for ${today}, trying ${yesterday}`);
+    const fallback = await fetchToday(yesterday, _depth + 1);
+    fallback._fallbackDate = today;
+    return fallback;
+  }
+
+  return todayData;
 }
 
 /**
@@ -632,17 +713,23 @@ async function fetchHistory(days = 90) {
       date: `gte.${startDate}`,
       order: 'date.asc',
     }),
+    supabaseQuery('session_log', {
+      select: 'date,activity_name,session_type,duration_min,distance_mi,calories,avg_hr,max_hr',
+      date: `gte.${startDate}`,
+      order: 'date.asc',
+    }),
   ]);
 
-  const _histTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log'];
+  const _histTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log'];
   _histResults.forEach((r, i) => {
-    if (r.status === 'rejected') console.error(`[data-loader] fetchHistory ${_histTables[i]} failed:`, r.reason);
+    if (r.status === 'rejected') console.error('[data-loader] fetch failed:', r.reason);
   });
 
   const garminRows = _histResults[0].status === 'fulfilled' ? _histResults[0].value : [];
   const sleepRows = _histResults[1].status === 'fulfilled' ? _histResults[1].value : [];
   const analysisRows = _histResults[2].status === 'fulfilled' ? _histResults[2].value : [];
   const dailyLogRows = _histResults[3].status === 'fulfilled' ? _histResults[3].value : [];
+  const sessionRows = _histResults[4].status === 'fulfilled' ? _histResults[4].value : [];
 
   // Index by date for merging
   const garminMap = {};
@@ -653,10 +740,23 @@ async function fetchHistory(days = 90) {
   analysisRows.forEach(r => { analysisMap[r.date] = r; });
   const dailyLogMap = {};
   dailyLogRows.forEach(r => { dailyLogMap[r.date] = r; });
+  const sessionMap = {};
+  sessionRows.forEach(r => {
+    if (!sessionMap[r.date]) sessionMap[r.date] = [];
+    sessionMap[r.date].push({
+      activity_name: r.activity_name || '',
+      type: (r.session_type || r.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+      duration_min: _num(r.duration_min),
+      distance_mi: _num(r.distance_mi),
+      calories: _num(r.calories),
+      avg_hr: _num(r.avg_hr),
+      max_hr: _num(r.max_hr),
+    });
+  });
 
   // Collect all unique dates
   const allDates = new Set();
-  [garminRows, sleepRows, analysisRows, dailyLogRows].forEach(rows => {
+  [garminRows, sleepRows, analysisRows, dailyLogRows, sessionRows].forEach(rows => {
     rows.forEach(r => allDates.add(r.date));
   });
 
@@ -681,6 +781,7 @@ async function fetchHistory(days = 90) {
       day_rating: _num(dl.day_rating),
       morning_energy: _num(dl.morning_energy),
       cognition: _num(a.cognition),
+      sessions: sessionMap[date] || [],
     };
   });
 
@@ -691,7 +792,7 @@ async function fetchHistory(days = 90) {
  * Fetch recent workout sessions for the sessions_history array.
  * Returns array matching SAMPLE_DATA.sessions_history structure.
  */
-async function fetchSessions(days = 60) {
+async function fetchSessions(days = 365) {
   const startDate = _daysAgoStr(days);
 
   const rows = await supabaseQuery('session_log', {
@@ -735,10 +836,10 @@ function _readinessLabel(score) {
 }
 
 function _sleepFeedbackFromScore(score) {
-  if (score >= 80) return 'GREAT';
-  if (score >= 65) return 'GOOD';
-  if (score >= 50) return 'FAIR';
-  return 'POOR';
+  if (score >= 80) return 'Solid Recovery';
+  if (score >= 65) return 'Adequate Rest';
+  if (score >= 50) return 'Fair Sleep';
+  return 'Poor Quality';
 }
 
 function _parseExpectBlock(cogAssessment) {
@@ -773,6 +874,14 @@ function _parseExpectBlock(cogAssessment) {
   }
 
   return result;
+}
+
+function _isDataEmpty(data) {
+  return (
+    data.sleep.total_sleep_hrs === 0 &&
+    data.garmin.steps === 0 &&
+    data.readiness.score === 0
+  );
 }
 
 function _buildSleepContextItems(sl) {
@@ -814,6 +923,87 @@ function _buildSleepContextItems(sl) {
 }
 
 // ============================================
+// Pull-to-Refresh — Cloud Sync (Phase 1)
+// ============================================
+
+/**
+ * Trigger a cloud refresh via Supabase Edge Function -> Google Cloud Function.
+ * Fetches fresh Garmin data and writes to Supabase, then re-loads PWA data.
+ *
+ * @param {string|null} date - Optional "YYYY-MM-DD" (defaults to yesterday)
+ * @returns {object} Result with status, readiness_estimate, data_summary, etc.
+ */
+async function triggerCloudRefresh(date = null) {
+  const edgeUrl = (typeof EDGE_FUNCTION_URL !== 'undefined') ? EDGE_FUNCTION_URL : '';
+  if (!edgeUrl) {
+    return { status: 'error', error: 'EDGE_FUNCTION_URL not configured in config.js' };
+  }
+
+  try {
+    const res = await fetch(edgeUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(date ? { date } : {}),
+    });
+
+    const result = await res.json();
+
+    if (res.status === 429) {
+      return { status: 'rate_limited', retry_after_seconds: result.retry_after_seconds };
+    }
+
+    if (!res.ok) {
+      return { status: 'error', error: result.error || `HTTP ${res.status}` };
+    }
+
+    // Re-fetch data from Supabase to update the PWA
+    await initData();
+
+    return result;
+  } catch (err) {
+    return { status: 'error', error: err.message };
+  }
+}
+
+/**
+ * Quick readiness estimate from raw Garmin metrics (client-side).
+ * Used for "Preliminary" readiness when full analysis hasn't run yet.
+ * Mirrors cloud_function/main.py _estimate_readiness().
+ *
+ * @param {object} garmin - Garmin data object from SAMPLE_DATA.today.garmin
+ * @param {object} sleep  - Sleep data object from SAMPLE_DATA.today.sleep
+ * @returns {number|null} 1-10 score, or null if insufficient data
+ */
+function estimateReadiness(garmin, sleep) {
+  const weights = {
+    sleep_score:   { weight: 0.30, min: 40, max: 90, val: sleep?.garmin_score },
+    hrv:           { weight: 0.25, min: 20, max: 80, val: garmin?.hrv_overnight },
+    body_battery:  { weight: 0.20, min: 10, max: 80, val: garmin?.body_battery },
+    resting_hr:    { weight: 0.15, min: 45, max: 75, val: garmin?.resting_hr, invert: true },
+    avg_stress:    { weight: 0.10, min: 15, max: 60, val: garmin?.avg_stress, invert: true },
+  };
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const [, cfg] of Object.entries(weights)) {
+    const val = parseFloat(cfg.val);
+    if (isNaN(val) || val === 0) continue;
+    let normalized = Math.max(0, Math.min(1, (val - cfg.min) / (cfg.max - cfg.min)));
+    if (cfg.invert) normalized = 1 - normalized;
+    weightedSum += normalized * cfg.weight;
+    totalWeight += cfg.weight;
+  }
+
+  if (totalWeight < 0.3) return null;
+  const raw = weightedSum / totalWeight;
+  return Math.max(1, Math.min(10, Math.round(raw * 9 + 1)));
+}
+
+// ============================================
 // Initialization
 // ============================================
 
@@ -834,7 +1024,7 @@ async function initData() {
     const results = await Promise.allSettled([
       fetchToday(),
       fetchHistory(90),
-      fetchSessions(14),
+      fetchSessions(365),
     ]);
 
     const [todayResult, historyResult, sessionsResult] = results;
@@ -866,7 +1056,7 @@ async function initData() {
       SAMPLE_DATA._error = null;
     }
 
-    console.log(`[data-loader] Loaded: today=${SAMPLE_DATA.today?.date}, history=${SAMPLE_DATA.history.length} days, sessions=${SAMPLE_DATA.sessions_history.length}`);
+    // loaded
   } catch (err) {
     console.error('[data-loader] Critical failure:', err);
     SAMPLE_DATA._error = err.message;

@@ -1,0 +1,7 @@
+# Google Cloud Function dependencies for Health Tracker pull-to-refresh
+# Deploy: gcloud functions deploy ... --source cloud_function/
+
+functions-framework==3.*
+garminconnect>=0.2.20
+supabase>=2.0.0
+python-dotenv>=1.0.0

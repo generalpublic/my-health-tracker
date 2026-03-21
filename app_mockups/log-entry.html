@@ -463,37 +463,37 @@
           <!-- Calorie summary (auto from Garmin) -->
           <div class="calorie-bar">
             <div class="calorie-item">
-              <div class="calorie-value">2,380</div>
+              <div class="calorie-value" id="calBurned">--</div>
               <div class="calorie-label">Burned</div>
             </div>
             <div class="calorie-item">
-              <div class="calorie-value" id="calConsumed">1,650</div>
+              <div class="calorie-value" id="calConsumed">--</div>
               <div class="calorie-label">Consumed</div>
             </div>
             <div class="calorie-item">
-              <div class="calorie-value" id="calBalance" style="color:var(--status-red)">-730</div>
+              <div class="calorie-value" id="calBalance">--</div>
               <div class="calorie-label">Balance</div>
             </div>
           </div>
 
           <div class="meal-card">
             <div class="meal-label">Breakfast</div>
-            <textarea class="text-input" rows="2" placeholder="What did you eat?">3 eggs scrambled, whole wheat toast, avocado, coffee</textarea>
+            <textarea class="text-input" id="nutBreakfast" rows="2" placeholder="What did you eat?"></textarea>
           </div>
 
           <div class="meal-card">
             <div class="meal-label">Lunch</div>
-            <textarea class="text-input" rows="2" placeholder="What did you eat?">Grilled chicken salad, quinoa, mixed greens, olive oil dressing</textarea>
+            <textarea class="text-input" id="nutLunch" rows="2" placeholder="What did you eat?"></textarea>
           </div>
 
           <div class="meal-card">
             <div class="meal-label">Dinner</div>
-            <textarea class="text-input" rows="2" placeholder="What did you eat?"></textarea>
+            <textarea class="text-input" id="nutDinner" rows="2" placeholder="What did you eat?"></textarea>
           </div>
 
           <div class="meal-card">
             <div class="meal-label">Snacks</div>
-            <textarea class="text-input" rows="2" placeholder="Snacks throughout the day">Greek yogurt, banana, almonds</textarea>
+            <textarea class="text-input" id="nutSnacks" rows="2" placeholder="Snacks throughout the day"></textarea>
           </div>
 
           <div class="divider"></div>
@@ -501,26 +501,26 @@
           <div class="macro-row">
             <div class="macro-input-group">
               <span class="macro-input-label">Calories</span>
-              <input class="macro-input" type="number" value="1650" placeholder="kcal">
+              <input class="macro-input" id="nutCalories" type="number" placeholder="kcal">
             </div>
             <div class="macro-input-group">
               <span class="macro-input-label">Protein (g)</span>
-              <input class="macro-input" type="number" value="95" placeholder="g">
+              <input class="macro-input" id="nutProtein" type="number" placeholder="g">
             </div>
             <div class="macro-input-group">
               <span class="macro-input-label">Carbs (g)</span>
-              <input class="macro-input" type="number" value="180" placeholder="g">
+              <input class="macro-input" id="nutCarbs" type="number" placeholder="g">
             </div>
           </div>
 
           <div class="macro-row">
             <div class="macro-input-group">
               <span class="macro-input-label">Fats (g)</span>
-              <input class="macro-input" type="number" value="62" placeholder="g">
+              <input class="macro-input" id="nutFats" type="number" placeholder="g">
             </div>
             <div class="macro-input-group">
               <span class="macro-input-label">Water (L)</span>
-              <input class="macro-input" type="number" value="2.5" step="0.5" placeholder="L">
+              <input class="macro-input" id="nutWater" type="number" step="0.5" placeholder="L">
             </div>
             <div class="macro-input-group">
               <span class="macro-input-label">&nbsp;</span>
@@ -612,6 +612,7 @@
     <div class="toast" id="toast"></div>
   </div>
 
+  <script src="config.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // --- Global functions for onclick handlers ---
@@ -714,6 +715,30 @@
     initData().then(() => {
 
     const D = SAMPLE_DATA.today;
+
+    // Populate Nutrition form from today's live data
+    const nut = D.nutrition || {};
+    document.getElementById('nutBreakfast').value = nut.breakfast || '';
+    document.getElementById('nutLunch').value = nut.lunch || '';
+    document.getElementById('nutDinner').value = nut.dinner || '';
+    document.getElementById('nutSnacks').value = nut.snacks || '';
+    document.getElementById('nutCalories').value = nut.total_calories_consumed || '';
+    document.getElementById('nutProtein').value = nut.protein_g || '';
+    document.getElementById('nutCarbs').value = nut.carbs_g || '';
+    document.getElementById('nutFats').value = nut.fats_g || '';
+    document.getElementById('nutWater').value = nut.water_l || '';
+
+    // Calorie summary
+    const burned = nut.total_calories_burned || 0;
+    const consumed = nut.total_calories_consumed || 0;
+    const balance = consumed ? consumed - burned : 0;
+    document.getElementById('calBurned').textContent = burned ? burned.toLocaleString() : '--';
+    document.getElementById('calConsumed').textContent = consumed ? consumed.toLocaleString() : '--';
+    if (consumed) {
+      const balEl = document.getElementById('calBalance');
+      balEl.textContent = (balance >= 0 ? '+' : '') + balance.toLocaleString();
+      balEl.style.color = balance >= 0 ? 'var(--status-green)' : 'var(--status-red)';
+    }
 
     // Initialize cognition color
     document.getElementById('cognitionVal').style.color = getStatusColor(8, 'cognition');

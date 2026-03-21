@@ -90,6 +90,8 @@ def init_db(conn):
         zone_3_min REAL,
         zone_4_min REAL,
         zone_5_min REAL,
+        spo2_avg REAL,
+        spo2_min REAL,
         updated_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -252,12 +254,38 @@ def init_db(conn):
         value TEXT,
         updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS illness_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        onset_date TEXT NOT NULL,
+        confirmed_date TEXT,
+        resolved_date TEXT,
+        resolution_method TEXT,
+        peak_score REAL,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS illness_daily_log (
+        date TEXT PRIMARY KEY,
+        illness_state_id INTEGER REFERENCES illness_state(id),
+        anomaly_score REAL,
+        signals TEXT,
+        label TEXT
+    );
     """)
 
     # Migrate: add new columns to existing tables (safe — ALTER ignores if col exists)
     for col, ctype in [("bedtime_variability_7d", "REAL"), ("wake_variability_7d", "REAL")]:
         try:
             conn.execute(f"ALTER TABLE sleep ADD COLUMN {col} {ctype}")
+        except Exception:
+            pass  # column already exists
+
+    for col, ctype in [("spo2_avg", "REAL"), ("spo2_min", "REAL")]:
+        try:
+            conn.execute(f"ALTER TABLE garmin ADD COLUMN {col} {ctype}")
         except Exception:
             pass  # column already exists
 
@@ -285,8 +313,9 @@ def upsert_garmin(conn, date_str, data):
             activity_name, activity_type, start_time, distance_mi, duration_min,
             avg_hr, max_hr, calories, elevation_gain_m, avg_speed_mph,
             aerobic_training_effect, anaerobic_training_effect,
-            zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min,
+            spo2_avg, spo2_min
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         date_str,
         _day_from_date(date_str),
@@ -325,6 +354,8 @@ def upsert_garmin(conn, date_str, data):
         _to_num(data.get("zone_3")),
         _to_num(data.get("zone_4")),
         _to_num(data.get("zone_5")),
+        _to_num(data.get("spo2_avg")),
+        _to_num(data.get("spo2_min")),
     ))
 
 
@@ -525,9 +556,9 @@ def append_archive(conn, date_str, data):
 # ---------------------------------------------------------------------------
 
 def upsert_garmin_row(conn, row):
-    """Upsert garmin table from a positional row list (37 columns, matching HEADERS)."""
-    if len(row) < 37:
-        row = row + [""] * (37 - len(row))
+    """Upsert garmin table from a positional row list (39 columns, matching HEADERS)."""
+    if len(row) < 39:
+        row = row + [""] * (39 - len(row))
     conn.execute("""
         INSERT OR REPLACE INTO garmin (
             day, date, sleep_score, hrv_overnight_avg, hrv_7day_avg, resting_hr,
@@ -538,8 +569,9 @@ def upsert_garmin_row(conn, row):
             activity_name, activity_type, start_time, distance_mi, duration_min,
             avg_hr, max_hr, calories, elevation_gain_m, avg_speed_mph,
             aerobic_training_effect, anaerobic_training_effect,
-            zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min,
+            spo2_avg, spo2_min
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         _to_text(row[0]),   # day
         _to_text(row[1]),   # date
@@ -578,6 +610,8 @@ def upsert_garmin_row(conn, row):
         _to_num(row[34]),   # zone_3
         _to_num(row[35]),   # zone_4
         _to_num(row[36]),   # zone_5
+        _to_num(row[37]),   # spo2_avg
+        _to_num(row[38]),   # spo2_min
     ))
 
 
@@ -834,3 +868,99 @@ def _day_from_date(date_str):
         return d.strftime("%a")
     except (ValueError, TypeError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Illness state — episode tracking + daily anomaly log
+# ---------------------------------------------------------------------------
+
+def get_active_illness(conn):
+    """Return the active (unresolved) illness episode, or None."""
+    cur = conn.execute(
+        "SELECT id, onset_date, confirmed_date, resolved_date, "
+        "resolution_method, peak_score, notes "
+        "FROM illness_state WHERE resolved_date IS NULL "
+        "ORDER BY onset_date DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row[0], "onset_date": row[1], "confirmed_date": row[2],
+        "resolved_date": row[3], "resolution_method": row[4],
+        "peak_score": row[5], "notes": row[6],
+    }
+
+
+def start_illness_episode(conn, onset_date, initial_score=None):
+    """Start a new illness episode. Returns the episode id."""
+    cur = conn.execute(
+        "INSERT INTO illness_state (onset_date, peak_score, created_at, updated_at) "
+        "VALUES (?, ?, datetime('now'), datetime('now'))",
+        (str(onset_date), initial_score)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_illness_peak(conn, episode_id, new_peak):
+    """Update the peak anomaly score for an episode."""
+    conn.execute(
+        "UPDATE illness_state SET peak_score = ?, updated_at = datetime('now') "
+        "WHERE id = ?", (new_peak, episode_id)
+    )
+    conn.commit()
+
+
+def resolve_illness_episode(conn, episode_id, resolved_date, method):
+    """Mark an illness episode as resolved.
+
+    method: 'biometric' | 'user_confirmed'
+    """
+    conn.execute(
+        "UPDATE illness_state SET resolved_date = ?, resolution_method = ?, "
+        "updated_at = datetime('now') WHERE id = ?",
+        (str(resolved_date), method, episode_id)
+    )
+    conn.commit()
+
+
+def confirm_illness(conn, episode_id):
+    """Record that the user confirmed they are sick."""
+    conn.execute(
+        "UPDATE illness_state SET confirmed_date = datetime('now'), "
+        "updated_at = datetime('now') WHERE id = ?", (episode_id,)
+    )
+    conn.commit()
+
+
+def upsert_illness_daily(conn, date_str, data):
+    """Log daily illness anomaly score and signals."""
+    import json
+    signals_json = json.dumps(data.get("signals", []))
+    conn.execute(
+        "INSERT OR REPLACE INTO illness_daily_log "
+        "(date, illness_state_id, anomaly_score, signals, label) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (str(date_str), data.get("illness_state_id"),
+         data.get("anomaly_score"), signals_json, data.get("label"))
+    )
+    conn.commit()
+
+
+def get_recent_illness_scores(conn, target_date, days=5):
+    """Fetch the last N daily illness scores BEFORE target_date (exclusive).
+
+    Today's score hasn't been logged yet when recovery is checked,
+    so we look at the N days ending at yesterday.
+    Returns list of scores in chronological order (oldest first).
+    """
+    from datetime import timedelta
+    end = str(target_date - timedelta(days=1))
+    start = str(target_date - timedelta(days=days))
+    cur = conn.execute(
+        "SELECT anomaly_score FROM illness_daily_log "
+        "WHERE date >= ? AND date <= ? ORDER BY date ASC",
+        (start, end)
+    )
+    return [row[0] for row in cur.fetchall()]

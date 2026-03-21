@@ -57,6 +57,18 @@ THIN = {"style": "SOLID", "width": 1, "color": BORDER_C}
 HEADER_H = 40   # px — taller for visual weight
 DATA_H   = 24   # px — slightly taller than default 21
 
+# Number formats for Garmin tab columns that need thousands separators or decimals.
+# {col_index (0-based): pattern}
+_GARMIN_NUMBER_FORMATS = {
+    8:  "#,##0",     # I: Steps
+    9:  "#,##0",     # J: Total Calories Burned
+    10: "#,##0",     # K: Active Calories Burned
+    11: "#,##0",     # L: BMR Calories
+    27: "#,##0",     # AB: Activity Calories
+    37: "0",         # AL: SpO2 Avg (integer %)
+    38: "0",         # AM: SpO2 Min (integer %)
+}
+
 # manual_cols: list of (start_col, end_col) 0-indexed ranges to highlight cream
 TABS = [
     ("Garmin",           HEADERS,             []),
@@ -71,9 +83,9 @@ TABS = [
 # Explicit width overrides (tab_name -> {col_index: px}). Applied AFTER auto-sizing.
 # Use for columns where analysis text or notes need a fixed wide column.
 WIDTH_OVERRIDES = {
-    "Sleep": {5: 350, 22: 130},          # F: Sleep Analysis, W: Overnight HRV (ms)
-    "Garmin": {20: 200},                # U: Activity Name — longer text
-    "Session Log": {5: 250},            # F: Notes — free text needs room
+    "Sleep": {5: 350, 9: 100, 10: 100, 22: 130},  # F: Sleep Analysis, J-K: Variability, W: HRV
+    "Garmin": {20: 200, 21: 120, 22: 100},  # U: Activity Name, V: Activity Type, W: Start Time
+    "Session Log": {5: 250, 6: 160},    # F: Notes, G: Activity Name
     "Nutrition": {6: 200, 7: 200, 8: 200},  # G: Lunch, H: Dinner, I: Snacks — meal descriptions
     "Daily Log": {15: 300, 21: 300},    # P: Midday Notes, V: Evening Notes — free text
     "Overall Analysis": {5: 300, 6: 250, 9: 300, 10: 300, 11: 250},  # F,G,J,K,L: long-text cols
@@ -82,9 +94,17 @@ WIDTH_OVERRIDES = {
 # Columns that must always be CENTER-aligned regardless of auto-detection.
 # {tab_name: set of col_indices}
 FORCE_CENTER_COLS = {
-    "Sleep": {7, 8, 22},          # H: Bedtime, I: Wake Time, W: Overnight HRV (ms)
-    "Overall Analysis": {0, 1, 2, 3, 4},  # A-E: Day, Date, Readiness Score, Label, Confidence
+    "Garmin": {0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 14, 15, 16, 17, 18, 19, 37, 38},
+    # A-I: Day-Steps, M: Stress, O-T: Floors-BB Low, AL-AM: SpO2
+    "Sleep": {0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
+    # A-E: Day-Total Sleep, H-X: Bedtime thru Body Battery Gained (all short numeric/time)
+    "Nutrition": {0, 1, 9, 10, 11, 12, 13, 14},
+    # A-B: Day/Date, J-O: Total Consumed thru Calorie Balance (numeric)
+    "Session Log": {0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21},
+    # A-B, C-E: Type/Effort/Energy, H-S: Duration-Zone5, V: Elevation
     "Daily Log": {3, 4, 5, 6, 7, 8, 9},  # D-J: checkbox columns
+    "Overall Analysis": {0, 1, 2, 3, 4},  # A-E: Day, Date, Readiness Score, Label, Confidence
+    "Strength Log": {0, 1, 4, 5, 6},  # A-B: Day/Date, E-G: Weight/Reps/RPE
 }
 
 # ── Column intelligence ───────────────────────────────────────────────────────
@@ -469,6 +489,22 @@ def apply_weekly_banding_to_tab(wb, tab_name):
                 "fields": "userEnteredFormat.backgroundColor",
             }})
 
+    # Ensure Garmin number formats cover newly added rows
+    if tab_name == "Garmin":
+        data_end = len(all_rows) + 10  # small buffer beyond current data
+        for col_idx, pattern in _GARMIN_NUMBER_FORMATS.items():
+            requests.append({"repeatCell": {
+                "range": {
+                    "sheetId": sheet.id,
+                    "startRowIndex": 1, "endRowIndex": data_end,
+                    "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1,
+                },
+                "cell": {"userEnteredFormat": {
+                    "numberFormat": {"type": "NUMBER", "pattern": pattern},
+                }},
+                "fields": "userEnteredFormat.numberFormat",
+            }})
+
     if requests:
         # Batch in chunks of 500 to stay within API limits
         for chunk_start in range(0, len(requests), 500):
@@ -534,6 +570,21 @@ def main():
         fc = FORCE_CENTER_COLS.get(tab_name, set())
         reqs.extend(build_column_format_requests(sheet.id, data_end, col_widths, overrides,
                                                   force_center=fc))
+
+        # Number formats for Garmin tab (thousands separators on Steps, Calories)
+        if tab_name == "Garmin":
+            for col_idx, pattern in _GARMIN_NUMBER_FORMATS.items():
+                reqs.append({"repeatCell": {
+                    "range": {
+                        "sheetId": sheet.id,
+                        "startRowIndex": 1, "endRowIndex": data_end,
+                        "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1,
+                    },
+                    "cell": {"userEnteredFormat": {
+                        "numberFormat": {"type": "NUMBER", "pattern": pattern},
+                    }},
+                    "fields": "userEnteredFormat.numberFormat",
+                }})
 
         # Auto-resize rows to fit wrapped text on tabs with free-text columns
         if tab_name in ("Sleep", "Nutrition", "Daily Log", "Session Log", "Overall Analysis"):
