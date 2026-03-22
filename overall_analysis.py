@@ -1106,7 +1106,11 @@ def parse_notes_for_flags(daily_log_by_date, nutrition_by_date, target_date,
     Uses LLM-based extraction (Claude Haiku) when available, with graceful
     fallback to keyword matching. Returns list of (date, flag_type, detail) tuples.
     """
-    from notes_extraction import extract_behaviors, behaviors_to_flags
+    try:
+        from notes_extraction import extract_behaviors, behaviors_to_flags
+    except ImportError:
+        # notes_extraction not available (e.g. cloud mode) -- return empty flags
+        return []
 
     flags = []
 
