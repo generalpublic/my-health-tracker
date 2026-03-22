@@ -714,12 +714,6 @@
           <div class="card-header">
             <div class="card-title">Snapshot</div>
           </div>
-          <!-- EXPECT block — most important at-a-glance info, ABOVE gauge -->
-          <div class="expect-block" id="expectBlock">
-            <div class="expect-level" id="expectLevel">Above baseline</div>
-            <div id="expectEffects"></div>
-          </div>
-
           <div class="readiness-gauge-wrap">
             <div class="gauge gauge-lg">
               <svg id="readinessGaugeSvg" width="140" height="140" viewBox="0 0 140 140"></svg>
@@ -733,6 +727,12 @@
           <div class="readiness-meta">
             <span class="status-pill" id="readinessLabel">Good</span>
             <span class="badge" id="readinessConfidence">High Confidence</span>
+          </div>
+
+          <!-- EXPECT block — status info below the score -->
+          <div class="expect-block" id="expectBlock">
+            <div class="expect-level" id="expectLevel">Above baseline</div>
+            <div id="expectEffects"></div>
           </div>
 
           <!-- Expanded: FLAGS + DO (replaces Pushover) -->

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-tracker-v20';
+const CACHE_NAME = 'health-tracker-v21';
 const ASSETS = [
   'today.html',
   'sleep-detail.html',
