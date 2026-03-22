@@ -21,6 +21,7 @@ Usage:
 See reference/METHODOLOGY.md for full scientific basis and citations.
 """
 
+import os
 import re
 import sys
 import json
@@ -3972,6 +3973,8 @@ def run_validation(wb, target_date):
         print(f"\n  Validation logged -> {log_path}")
     except Exception as e:
         print(f"\n  Warning: could not write validation log: {e}")
+
+    return log_entry
 
 
 def main():
