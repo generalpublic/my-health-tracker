@@ -27,6 +27,8 @@ jobs:
           const SUPABASE_URL = '${{ secrets.SUPABASE_URL }}';
           const SUPABASE_ANON_KEY = '${{ secrets.SUPABASE_ANON_KEY }}';
           const USER_NAME = '${{ secrets.USER_NAME }}';
+          const GITHUB_PAT = '${{ secrets.REFRESH_PAT }}';
+          const GITHUB_REPO = '${{ secrets.REFRESH_REPO }}';
           CONFIGEOF
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
