@@ -9,31 +9,31 @@ import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-import gspread
-from google.oauth2.service_account import Credentials
 
 load_dotenv(Path(__file__).parent / ".env")
-
-# --- Google Sheets config ---
-SHEET_ID = os.getenv("SHEET_ID")
-_json_key_name = os.getenv("JSON_KEY_FILE")
-JSON_KEY_FILE = str(Path(__file__).parent / _json_key_name) if _json_key_name else None
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
 
 
 def get_workbook():
     """Return gspread Spreadsheet object for the configured SHEET_ID."""
-    creds = Credentials.from_service_account_file(JSON_KEY_FILE, scopes=SCOPES)
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    sheet_id = os.getenv("SHEET_ID")
+    _json_key_name = os.getenv("JSON_KEY_FILE")
+    json_key_file = str(Path(__file__).parent / _json_key_name) if _json_key_name else None
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_file(json_key_file, scopes=scopes)
     client = gspread.authorize(creds)
-    return client.open_by_key(SHEET_ID)
+    return client.open_by_key(sheet_id)
 
 
 def get_sheet(wb):
     """Return the 'Garmin' worksheet, falling back to sheet1."""
+    import gspread
     try:
         return wb.worksheet("Garmin")
     except gspread.exceptions.WorksheetNotFound:
