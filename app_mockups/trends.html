@@ -21,19 +21,6 @@
       margin-bottom: var(--space-md);
     }
 
-    /* Override pill-row wrap for trends — horizontal scroll saves vertical space */
-    .trends-header .pill-row {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      padding-bottom: var(--space-xs);
-    }
-
-    .trends-header .pill-row::-webkit-scrollbar {
-      display: none;
-    }
-
     /* Chart area */
     .chart-container {
       padding: var(--space-lg) 0;
@@ -153,6 +140,55 @@
       color: var(--primary);
       opacity: 0.7;
     }
+
+    /* Date Navigation (inline — matches today.html pattern) */
+    .date-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-lg);
+      padding: var(--space-xs) 0 var(--space-md);
+    }
+    .date-nav-arrow {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-full);
+      background: rgba(139, 92, 246, 0.08);
+      color: var(--primary);
+      font-size: var(--text-lg);
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s var(--ease-spring);
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .date-nav-arrow:active {
+      transform: scale(0.85);
+      background: rgba(139, 92, 246, 0.15);
+    }
+    .date-nav-arrow.disabled {
+      opacity: 0.25;
+      pointer-events: none;
+    }
+    .date-nav-label {
+      font-size: var(--text-base);
+      font-weight: 600;
+      color: var(--text);
+      min-width: 140px;
+      text-align: center;
+      letter-spacing: -0.2px;
+    }
+    .date-nav-today {
+      font-size: var(--text-xs);
+      color: var(--primary);
+      text-align: center;
+      cursor: pointer;
+      font-weight: 600;
+      padding: 2px 0;
+    }
   </style>
 </head>
 <body>
@@ -169,6 +205,16 @@
 
         <div class="trends-header">
           <div class="trends-title">Trends</div>
+
+          <!-- Date Navigation -->
+          <div class="date-nav animate-in">
+            <div class="date-nav-arrow" id="datePrev" onclick="trendNavigateDate(-1)">&#8249;</div>
+            <div>
+              <div class="date-nav-label" id="dateLabel">Today</div>
+              <div class="date-nav-today" id="dateTodayLink" style="display:none" onclick="trendNavigateDate(0)">Back to Today</div>
+            </div>
+            <div class="date-nav-arrow" id="dateNext" onclick="trendNavigateDate(1)">&#8250;</div>
+          </div>
 
           <!-- Metric picker pills -->
           <div class="pill-row" id="metricPills"></div>
@@ -297,6 +343,52 @@
     // Declare renderChart and renderHeatmap in outer scope so onclick handlers can call them
     let renderChart, renderHeatmap;
 
+    // --- Date nav helpers (inline, self-contained) ---
+    window.currentViewDate = null;
+
+    function _formatDateLabel(dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate();
+    }
+
+    function _shiftDate(dateStr, days) {
+      const d = new Date(dateStr + 'T12:00:00');
+      d.setDate(d.getDate() + days);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function updateDateUI() {
+      const today = _todayStr();
+      const isToday = window.currentViewDate === today;
+      const label = document.getElementById('dateLabel');
+      const todayLink = document.getElementById('dateTodayLink');
+      const nextBtn = document.getElementById('dateNext');
+      if (label) label.textContent = isToday ? 'Today' : _formatDateLabel(window.currentViewDate);
+      if (todayLink) todayLink.style.display = isToday ? 'none' : 'block';
+      if (nextBtn) nextBtn.classList.toggle('disabled', isToday);
+    }
+
+    function trendNavigateDate(delta) {
+      if (delta === 0) {
+        window.currentViewDate = _todayStr();
+      } else {
+        window.currentViewDate = _shiftDate(window.currentViewDate, delta);
+      }
+      if (window.currentViewDate > _todayStr()) {
+        window.currentViewDate = _todayStr();
+      }
+      updateDateUI();
+      renderChart();
+      renderHeatmap();
+    }
+
+    function getHistorySlice(range) {
+      const endDate = window.currentViewDate || _todayStr();
+      return SAMPLE_DATA.history.filter(d => d.date <= endDate).slice(-range);
+    }
+
     // --- Render after data loads ---
     initData().then(() => {
 
@@ -315,9 +407,19 @@
     // ============================================
 
     renderChart = function() {
-      const data = SAMPLE_DATA.history.slice(-currentRange);
-      const values = data.map(d => d[currentMetric.field]);
+      const data = getHistorySlice(currentRange);
+      const values = data.map(d => d[currentMetric.field]).filter(v => v != null && !isNaN(v));
       const t = SAMPLE_DATA.thresholds[currentMetric.threshold];
+
+      if (!t || values.length === 0) {
+        document.getElementById('trendChart').innerHTML = '<text x="170" y="90" text-anchor="middle" fill="#9CA3AF" font-size="14" font-family="system-ui">No data for this period</text>';
+        document.getElementById('chartXLabels').innerHTML = '';
+        ['statAvg','statBest','statWorst'].forEach(id => { document.getElementById(id).textContent = '--'; document.getElementById(id).style.color = ''; });
+        const trendEl = document.getElementById('statTrend');
+        trendEl.textContent = '--';
+        trendEl.className = 'stat-trend trend-flat';
+        return;
+      }
 
       const allVals = [...values, t.red, t.yellow || t.green, t.green].filter(v => v != null);
       const min = Math.min(...allVals) * 0.9;
@@ -399,8 +501,11 @@
       }
 
       document.getElementById('statAvg').textContent = fmt(avg);
+      document.getElementById('statAvg').style.color = getStatusColor(avg, currentMetric.threshold);
       document.getElementById('statBest').textContent = fmt(best);
+      document.getElementById('statBest').style.color = getStatusColor(best, currentMetric.threshold);
       document.getElementById('statWorst').textContent = fmt(worst);
+      document.getElementById('statWorst').style.color = getStatusColor(worst, currentMetric.threshold);
 
       // Metric-aware labels
       const unit = currentMetric.label;
@@ -458,15 +563,16 @@
       const dateMap = {};
       hist.forEach(d => { dateMap[d.date] = d[currentMetric.field]; });
 
-      // Show March 2026
-      const months = [{ year: 2026, month: 2, name: 'Mar' }]; // 0-indexed month
+      // Show month of current view date
+      const viewDate = new Date((window.currentViewDate || _todayStr()) + 'T12:00:00');
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const months = [{ year: viewDate.getFullYear(), month: viewDate.getMonth(), name: monthNames[viewDate.getMonth()] }];
 
       // Day headers with day-of-week
       const dayLetters = ['S','M','T','W','T','F','S'];
       let html = '<div></div>';
       for (let d = 1; d <= 31; d++) {
-        // March 2026
-        const dt = new Date(2026, 2, d);
+        const dt = new Date(months[0].year, months[0].month, d);
         const dow = dt.getDay();
         const letter = dayLetters[dow];
         const isWeekend = dow === 0 || dow === 6;
@@ -499,9 +605,15 @@
     // Initial render
     // ============================================
 
+    // Initialize date nav
+    window.currentViewDate = SAMPLE_DATA.today?.date || _todayStr();
+    updateDateUI();
+
     renderChart();
     renderHeatmap();
 
+    }).catch(err => {
+      console.error('[trends] Init failed:', err);
     }); // end initData().then()
   </script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');</script>

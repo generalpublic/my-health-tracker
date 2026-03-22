@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-tracker-v17';
+const CACHE_NAME = 'health-tracker-v20';
 const ASSETS = [
   'today.html',
   'sleep-detail.html',
@@ -44,8 +44,10 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))
