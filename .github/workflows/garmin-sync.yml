@@ -1,7 +1,9 @@
-# Health Tracker — Scheduled Garmin Sync + Deep Analysis (Tier 2)
+# Health Tracker — Scheduled Garmin Data Fetch (Tier 2)
 #
-# Runs on GitHub Actions (free tier: 2000 min/month, each run ~2 min).
-# Fetches fresh Garmin data, runs full overall_analysis.py, writes to Supabase.
+# Runs on GitHub Actions (free tier: 2000 min/month, each run ~1 min).
+# Fetches fresh Garmin data + sleep analysis, writes raw data to Supabase.
+# Does NOT run overall_analysis.py — local PC scheduled task handles that
+# (has full context: profile, illness detection, notes extraction).
 # Does NOT touch Google Sheets — Sheets sync happens on the PC via scheduled tasks.
 #
 # Credentials: stored as GitHub repository secrets (Settings > Secrets > Actions)
@@ -23,7 +25,6 @@ on:
         type: choice
         options:
           - full
-          - analysis-only
       date:
         description: 'Target date (YYYY-MM-DD, blank = yesterday)'
         required: false
@@ -62,7 +63,6 @@ jobs:
           fi
 
       - name: Fetch Garmin data and sync to Supabase
-        if: inputs.mode != 'analysis-only'
         run: |
           python -c "
           import os, sys
@@ -85,10 +85,6 @@ jobs:
           results = _write_to_supabase(date_str, data)
           print(f'Supabase sync: {results}')
           "
-
-      - name: Run full analysis (cloud mode)
-        run: |
-          python overall_analysis.py --cloud --date ${{ steps.date.outputs.target }}
 
       - name: Summary
         run: |

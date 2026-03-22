@@ -1444,29 +1444,40 @@
         if (indicator.classList.contains('pulling')) {
           const wasRelease = ptrText.textContent === 'Release to refresh';
           if (wasRelease) {
-            // Trigger refresh
+            // Trigger refresh via GitHub Actions
             indicator.classList.remove('pulling');
             indicator.classList.add('refreshing');
-            ptrText.textContent = 'Syncing Garmin data...';
+            ptrText.textContent = 'Starting sync...';
 
             const result = await triggerCloudRefresh();
 
-            if (result.status === 'success') {
-              ptrText.textContent = 'Data updated';
-            } else if (result.status === 'rate_limited') {
-              ptrText.textContent = `Try again in ${result.retry_after_seconds}s`;
-            } else if (result.error === 'EDGE_FUNCTION_URL not configured in config.js') {
+            if (result.status === 'dispatched') {
+              ptrText.textContent = 'Syncing data... ~2 min';
+              // Wait 90s for GitHub Actions to complete, then re-fetch
+              let countdown = 90;
+              const timer = setInterval(() => {
+                countdown--;
+                if (countdown > 0 && countdown % 10 === 0) {
+                  ptrText.textContent = `Syncing... ${countdown}s remaining`;
+                }
+              }, 1000);
+              setTimeout(async () => {
+                clearInterval(timer);
+                ptrText.textContent = 'Fetching updated data...';
+                await initData();
+                ptrText.textContent = 'Data updated';
+                setTimeout(() => {
+                  indicator.classList.remove('refreshing');
+                  location.reload();
+                }, 1000);
+              }, 90000);
+            } else if (result.error && result.error.includes('not configured')) {
               ptrText.textContent = 'Cloud sync not configured yet';
+              setTimeout(() => indicator.classList.remove('refreshing'), 2000);
             } else {
               ptrText.textContent = 'Sync failed — ' + (result.error || 'unknown error');
+              setTimeout(() => indicator.classList.remove('refreshing'), 2000);
             }
-
-            setTimeout(() => {
-              indicator.classList.remove('refreshing');
-              if (result.status === 'success') {
-                location.reload(); // Re-render with fresh data
-              }
-            }, 1500);
           } else {
             indicator.classList.remove('pulling');
           }

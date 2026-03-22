@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS garmin (
     zone_3_min REAL,
     zone_4_min REAL,
     zone_5_min REAL,
+    spo2_avg REAL,
+    spo2_min REAL,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 

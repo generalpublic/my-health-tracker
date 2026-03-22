@@ -927,42 +927,46 @@ function _buildSleepContextItems(sl) {
 // ============================================
 
 /**
- * Trigger a cloud refresh via Supabase Edge Function -> Google Cloud Function.
- * Fetches fresh Garmin data and writes to Supabase, then re-loads PWA data.
+ * Trigger a full data refresh via GitHub Actions workflow_dispatch.
+ * Dispatches the garmin-sync workflow which fetches Garmin data, runs sleep
+ * analysis, writes to Supabase, and runs full overall_analysis.
  *
  * @param {string|null} date - Optional "YYYY-MM-DD" (defaults to yesterday)
- * @returns {object} Result with status, readiness_estimate, data_summary, etc.
+ * @returns {object} Result with status and dispatch info
  */
 async function triggerCloudRefresh(date = null) {
-  const edgeUrl = (typeof EDGE_FUNCTION_URL !== 'undefined') ? EDGE_FUNCTION_URL : '';
-  if (!edgeUrl) {
-    return { status: 'error', error: 'EDGE_FUNCTION_URL not configured in config.js' };
+  const pat = (typeof GITHUB_PAT !== 'undefined') ? GITHUB_PAT : '';
+  const repo = (typeof GITHUB_REPO !== 'undefined') ? GITHUB_REPO : '';
+  if (!pat || !repo) {
+    return { status: 'error', error: 'GITHUB_PAT or GITHUB_REPO not configured in config.js' };
   }
 
+  const targetDate = date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
   try {
-    const res = await fetch(edgeUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify(date ? { date } : {}),
-    });
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/workflows/garmin-sync.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+        body: JSON.stringify({
+          ref: 'main',
+          inputs: { date: targetDate, mode: 'full' }
+        }),
+      }
+    );
 
-    const result = await res.json();
-
-    if (res.status === 429) {
-      return { status: 'rate_limited', retry_after_seconds: result.retry_after_seconds };
+    if (res.status === 204) {
+      return { status: 'dispatched', date: targetDate };
     }
-
-    if (!res.ok) {
-      return { status: 'error', error: result.error || `HTTP ${res.status}` };
+    if (res.status === 401 || res.status === 403) {
+      return { status: 'error', error: 'GitHub PAT expired or invalid' };
     }
-
-    // Re-fetch data from Supabase to update the PWA
-    await initData();
-
-    return result;
+    const err = await res.json().catch(() => ({}));
+    return { status: 'error', error: err.message || `HTTP ${res.status}` };
   } catch (err) {
     return { status: 'error', error: err.message };
   }
