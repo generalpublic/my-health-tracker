@@ -23,17 +23,18 @@ from pathlib import Path
 from utils import get_workbook, get_sheet
 from schema import SESSION_MANUAL_COLS, SLEEP_MANUAL_COLS, NUTRITION_MANUAL_COLS, ARCHIVE_KEYS
 from writers import (
-    setup_headers, upsert_row, build_garmin_row,
+    setup_headers, upsert_row,
     write_to_session_log, write_to_sleep_log, write_to_nutrition_log,
     get_or_create_archive_sheet, write_to_archive,
 )
+from models import from_garmin_api, to_sheets_row
 from sheets_formatting import bold_headers, apply_yellow_columns, sort_sheet_by_date_desc
 
 
 def _write_date_to_all_tabs(wb, sheet, target_date, data):
     """Write one date's data to Garmin, Session Log, Sleep, and Nutrition tabs."""
-    row = build_garmin_row(target_date, data)
-    upsert_row(sheet, str(target_date), row)
+    record = from_garmin_api(data, target_date)
+    upsert_row(sheet, str(target_date), to_sheets_row(record))
     write_to_session_log(wb, target_date, data)
     write_to_sleep_log(wb, target_date, data)
     write_to_nutrition_log(wb, target_date, data)

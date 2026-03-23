@@ -65,50 +65,6 @@ def _rewrite_garmin_numerics(sheet, row_index, row):
         sheet.update_cells(cells, value_input_option="USER_ENTERED")
 
 
-def build_garmin_row(target_date, data):
-    """Build a Garmin tab row from a data dict."""
-    return [
-        date_to_day(str(target_date)),
-        str(target_date),
-        data.get("sleep_score", ""),
-        data.get("hrv", ""),
-        data.get("hrv_7day", ""),
-        data.get("resting_hr", ""),
-        data.get("sleep_duration", ""),
-        data.get("body_battery", ""),
-        data.get("steps", ""),
-        data.get("total_calories", ""),
-        data.get("active_calories", ""),
-        data.get("bmr_calories", ""),
-        data.get("avg_stress", ""),
-        data.get("stress_qualifier", ""),
-        data.get("floors_ascended", ""),
-        data.get("moderate_min", ""),
-        data.get("vigorous_min", ""),
-        data.get("bb_at_wake", ""),
-        data.get("bb_high", ""),
-        data.get("bb_low", ""),
-        data.get("activity_name", ""),
-        data.get("activity_type", ""),
-        data.get("activity_start", ""),
-        data.get("activity_distance", ""),
-        data.get("activity_duration", ""),
-        data.get("activity_avg_hr", ""),
-        data.get("activity_max_hr", ""),
-        data.get("activity_calories", ""),
-        data.get("activity_elevation", ""),
-        data.get("activity_avg_speed", ""),
-        data.get("aerobic_te", ""),
-        data.get("anaerobic_te", ""),
-        data.get("zone_1", ""),
-        data.get("zone_2", ""),
-        data.get("zone_3", ""),
-        data.get("zone_4", ""),
-        data.get("zone_5", ""),
-        data.get("spo2_avg", ""),
-        data.get("spo2_min", ""),
-    ]
-
 
 # --- Session Log Tab ---
 

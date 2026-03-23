@@ -21,7 +21,8 @@ from pathlib import Path
 from utils import get_workbook, date_to_day
 from schema import ARCHIVE_KEYS, SLEEP_HEADERS, NUTRITION_HEADERS
 from utils import get_sheet
-from writers import setup_headers, get_or_create_archive_sheet, build_garmin_row
+from writers import setup_headers, get_or_create_archive_sheet
+from models import from_garmin_api, to_sheets_row
 
 # Default export folder (relative to this script)
 DEFAULT_EXPORT_FOLDER = Path(__file__).parent / "data" / "garmin_export"
@@ -1513,7 +1514,7 @@ def _build_all_rows(all_dates, existing, sheets, sleep, uds, hrv, hrv_7day, acti
             rows["archive"].append(archive_row)
 
         if date_str not in existing["garmin"]:
-            rows["garmin"].append(build_garmin_row(target_date, data))
+            rows["garmin"].append(to_sheets_row(from_garmin_api(data, target_date)))
 
         if date_str not in existing["sleep"] and data.get("sleep_duration"):
             rows["sleep"].append(_build_sleep_row(date_str, data))

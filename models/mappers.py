@@ -12,7 +12,7 @@ from datetime import date as _date
 from typing import Optional
 
 from .garmin import GarminWellnessRecord
-from .converters import to_num, to_text, day_from_date
+from .converters import to_num, to_text
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ def _none_to_empty(val):
 def to_sheets_row(record: GarminWellnessRecord) -> list:
     """Produce a 39-element list matching schema.HEADERS column order.
 
-    Equivalent to writers.build_garmin_row(target_date, data).
+    Produces a 39-element list matching schema.HEADERS column order.
     None values become "" for Sheets.
     """
     row = [

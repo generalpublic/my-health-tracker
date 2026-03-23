@@ -197,7 +197,7 @@ class TestFromGarminApi:
 
 
 # ---------------------------------------------------------------------------
-# Round-trip: from_garmin_api -> to_sheets_row vs legacy build_garmin_row
+# to_sheets_row validation
 # ---------------------------------------------------------------------------
 
 class TestSheetsRoundTrip:
@@ -208,32 +208,31 @@ class TestSheetsRoundTrip:
             f"Row has {len(row)} elements but HEADERS has {len(schema.HEADERS)}"
         )
 
-    def test_full_record_matches_legacy(self):
-        """Model row must match what build_garmin_row() would produce."""
-        from writers import build_garmin_row
-
-        legacy_row = build_garmin_row(SAMPLE_DATE, SAMPLE_RAW)
+    def test_full_record_day_and_date(self):
         r = from_garmin_api(SAMPLE_RAW, SAMPLE_DATE)
-        model_row = to_sheets_row(r)
+        row = to_sheets_row(r)
+        assert row[0] == "Mon"          # Day
+        assert row[1] == "2026-03-23"   # Date
 
-        for i, (legacy_val, model_val) in enumerate(zip(legacy_row, model_row)):
-            assert model_val == legacy_val, (
-                f"Column {i} ({schema.HEADERS[i]}): "
-                f"legacy={legacy_val!r} vs model={model_val!r}"
-            )
+    def test_full_record_data_fields(self):
+        r = from_garmin_api(SAMPLE_RAW, SAMPLE_DATE)
+        row = to_sheets_row(r)
+        # Spot-check key fields by header position
+        assert row[schema.HEADERS.index("Sleep Score")] == 82
+        assert row[schema.HEADERS.index("HRV (overnight avg)")] == 42
+        assert row[schema.HEADERS.index("Activity Name")] == "Morning Run"
+        assert row[schema.HEADERS.index("SpO2 Avg")] == 96.5
 
-    def test_sparse_record_matches_legacy(self):
-        from writers import build_garmin_row
-
-        legacy_row = build_garmin_row(SPARSE_DATE, SPARSE_RAW)
+    def test_sparse_record_missing_fields(self):
         r = from_garmin_api(SPARSE_RAW, SPARSE_DATE)
-        model_row = to_sheets_row(r)
-
-        for i, (legacy_val, model_val) in enumerate(zip(legacy_row, model_row)):
-            assert model_val == legacy_val, (
-                f"Column {i} ({schema.HEADERS[i]}): "
-                f"legacy={legacy_val!r} vs model={model_val!r}"
-            )
+        row = to_sheets_row(r)
+        assert row[0] == "Sun"
+        # Missing fields become empty string
+        assert row[schema.HEADERS.index("Activity Name")] == ""
+        assert row[schema.HEADERS.index("SpO2 Avg")] == ""
+        # Present fields have values
+        assert row[schema.HEADERS.index("HRV (overnight avg)")] == 38
+        assert row[schema.HEADERS.index("Steps")] == 1200
 
     def test_none_becomes_empty_string(self):
         r = from_garmin_api(SPARSE_RAW, SPARSE_DATE)
