@@ -485,6 +485,14 @@ function _todayStr() {
     String(d.getDate()).padStart(2, '0');
 }
 
+function _isSyncStale(garminDate) {
+  if (!garminDate) return true;
+  const today = _todayStr();
+  if (garminDate === today) return false;
+  // Sync runs at 12:05 AM — allow 2h buffer before flagging stale
+  return garminDate < today && new Date().getHours() >= 2;
+}
+
 function _dayOfWeek(dateStr) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const d = new Date(dateStr + 'T12:00:00');
@@ -605,6 +613,8 @@ function _parseTodayRpc(rpc, dateStr) {
   const confidence = oa.confidence || 'Medium';
   const cogAssessment = oa.cognitive_energy_assessment || '';
   const sleepContext = oa.sleep_context || '';
+  const dataQuality = oa.data_quality || '';
+  const qualityFlags = (oa.quality_flags || '').split(' | ').map(s => s.trim()).filter(Boolean);
   const expectBlock = _parseExpectBlock(cogAssessment);
   const sleepAnalysis = sl.sleep_analysis || '';
   const sleepFeedback = sl.sleep_feedback || _sleepFeedbackFromScore(_num(sl.sleep_analysis_score));
@@ -706,6 +716,9 @@ function _parseTodayRpc(rpc, dateStr) {
       analysis_pending: !!g.date && readinessScore === 0,
       stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
       last_sync: g.updated_at || g.date || null,
+      data_quality: dataQuality,
+      quality_flags: qualityFlags,
+      sync_stale: _isSyncStale(g.date),
     },
   };
 }
@@ -815,6 +828,8 @@ async function fetchToday(overrideDate, _depth = 0) {
   // Parse cognitive/energy assessment
   const cogAssessment = oa.cognitive_energy_assessment || '';
   const sleepContext = oa.sleep_context || '';
+  const dataQuality = oa.data_quality || '';
+  const qualityFlags = (oa.quality_flags || '').split(' | ').map(s => s.trim()).filter(Boolean);
 
   // Build expect block from cognitive assessment text
   const expectBlock = _parseExpectBlock(cogAssessment);
@@ -1007,6 +1022,9 @@ async function fetchToday(overrideDate, _depth = 0) {
       analysis_pending: !!g.date && readinessScore === 0,
       stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
       last_sync: g.updated_at || g.date || null,
+      data_quality: dataQuality,
+      quality_flags: qualityFlags,
+      sync_stale: _isSyncStale(g.date),
     },
   };
 
@@ -1490,6 +1508,7 @@ function _buildFallbackToday() {
     strength: [],
     nutrition: { total_calories_burned: 0, active_calories: 0, bmr_calories: 0, breakfast: '', lunch: '', dinner: '', snacks: '', total_calories_consumed: 0, protein_g: 0, carbs_g: 0, fats_g: 0, water_l: 0, calorie_balance: 0, notes: '' },
     briefing: { expect: { level: '--', effects: [] }, sleep_line: '--', sleep_debt: '0h', sleep_context_items: [{ label: 'No data', value: '--', status: 'yellow' }], sleep_context: '', flags: [], do_items: [] },
+    data_status: { has_garmin: false, has_analysis: false, analysis_pending: false, stale_steps: false, last_sync: null, data_quality: '', quality_flags: [], sync_stale: true },
   };
 }
 

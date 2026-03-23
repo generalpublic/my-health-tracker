@@ -83,6 +83,47 @@
 .day-nav:active { transform: scale(0.85); }
 .day-nav.hidden { opacity: 0; pointer-events: none; }
 
+/* Data Quality / Sync Warnings Banner */
+.data-warnings-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(251, 191, 36, 0.05));
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-md);
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+.data-warnings-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+  opacity: 0.7;
+}
+.data-warnings-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #92400E;
+  margin-bottom: var(--space-xs);
+}
+.data-warning-item {
+  font-size: var(--text-xs);
+  color: #78350F;
+  opacity: 0.85;
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  padding: 2px 0;
+}
+.data-warning-bullet {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.5);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
 /* Readiness Hero Card */
 .readiness-card {
   text-align: center;

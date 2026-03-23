@@ -121,12 +121,43 @@
 
     function renderAll(D) {
       renderIllnessBanner(D);
+      renderDataWarnings(D);
       renderReadiness(D);
       renderSleep(D);
       renderBody(D);
       renderHabits(D);
       renderActivity(D);
       renderInsights(D);
+    }
+
+    function renderDataWarnings(D) {
+      var banner = document.getElementById('dataWarningsBanner');
+      if (!banner) return;
+      var ds = D.data_status || {};
+      var warnings = [];
+
+      if (ds.sync_stale) warnings.push('Sync missed \u2014 data may be outdated');
+      if (ds.analysis_pending) warnings.push('Analysis pending \u2014 readiness score not yet computed');
+      if (ds.quality_flags && ds.quality_flags.length > 0) {
+        ds.quality_flags.forEach(function(f) { warnings.push(f); });
+      }
+      if (!ds.has_garmin && !ds.sync_stale) warnings.push('No Garmin data for today');
+
+      if (warnings.length === 0) { banner.style.display = 'none'; return; }
+      banner.style.display = '';
+
+      setText(document.getElementById('dataWarningsTitle'),
+        ds.sync_stale ? 'Data may be stale' : 'Data quality notice');
+      setText(document.getElementById('dataWarningsIcon'),
+        ds.sync_stale ? '\u26A0' : '\u2139');
+
+      var nodes = warnings.map(function(w) {
+        return h('div', { className: 'data-warning-item' }, [
+          h('div', { className: 'data-warning-bullet' }),
+          h('span', {}, [w])
+        ]);
+      });
+      replaceChildren(document.getElementById('dataWarningsList'), nodes);
     }
 
     function renderIllnessBanner(D) {
