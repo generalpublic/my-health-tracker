@@ -254,7 +254,7 @@
         const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' });
         const numDate = `${date.getMonth()+1}/${date.getDate()}/${date.getFullYear()}`;
         return `
-          <div class="week-session" onclick="showSessionDetail(${i})" style="cursor:pointer">
+          <div class="week-session" data-session-idx="${i}" style="cursor:pointer">
             <div class="week-date"><div style="font-size:var(--text-xs);color:var(--text-secondary)">${numDate}</div><div>${dayStr}</div></div>
             <div style="color:var(--text-secondary);display:flex;align-items:center">${getActivityIcon(s.type, 22)}</div>
             <div class="week-dur">${s.duration} min</div>
@@ -319,3 +319,93 @@
         '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">Something went wrong</div>' +
         '<div style="font-size:13px;">' + err.message + '</div></div>';
     }); // end initData().then()
+
+// ============================================
+// Event listeners (replaces all inline handlers)
+// ============================================
+document.addEventListener('DOMContentLoaded', function () {
+
+  // --- Segment control: delegate from .segment-control ---
+  var segControl = document.querySelector('.segment-control');
+  if (segControl) {
+    segControl.addEventListener('click', function (e) {
+      var item = e.target.closest('[data-view]');
+      if (item) showView(item.getAttribute('data-view'));
+    });
+  }
+
+  // --- Tab bar: delegate from .tab-bar ---
+  var tabBar = document.querySelector('.tab-bar');
+  if (tabBar) {
+    tabBar.addEventListener('click', function (e) {
+      var item = e.target.closest('[data-page]');
+      if (item) navigateTo(item.getAttribute('data-page'));
+    });
+  }
+
+  // --- Add Exercise toggle button ---
+  var addBtn = document.getElementById('addBtn');
+  if (addBtn) addBtn.addEventListener('click', function () { toggleAddForm(); });
+
+  // --- Muscle group pills: delegate from #muscleGroupPills ---
+  var muscleGroupPills = document.getElementById('muscleGroupPills');
+  if (muscleGroupPills) {
+    muscleGroupPills.addEventListener('click', function (e) {
+      var pill = e.target.closest('.pill');
+      if (pill) selectPill(pill);
+    });
+  }
+
+  // --- Stepper buttons: delegate from .add-form ---
+  var addForm = document.getElementById('addForm');
+  if (addForm) {
+    addForm.addEventListener('click', function (e) {
+      var btn = e.target.closest('.stepper-btn[data-target]');
+      if (btn) stepValue(btn.getAttribute('data-target'), parseInt(btn.getAttribute('data-step'), 10));
+    });
+  }
+
+  // --- RPE slider ---
+  var rpeSlider = document.getElementById('rpeSlider');
+  if (rpeSlider) {
+    rpeSlider.addEventListener('input', function () {
+      document.getElementById('rpeDisplay').textContent = this.value;
+    });
+  }
+
+  // --- Add Set button ---
+  var addSetBtn = document.getElementById('addSetBtn');
+  if (addSetBtn) addSetBtn.addEventListener('click', function () { addStrengthSet(); });
+
+  // --- Done button ---
+  var doneBtn = document.getElementById('doneBtn');
+  if (doneBtn) doneBtn.addEventListener('click', function () { toggleAddForm(); });
+
+  // --- Session detail overlay: click outside to close ---
+  var overlay = document.getElementById('sessionDetailOverlay');
+  if (overlay) {
+    overlay.addEventListener('click', function (e) { closeSessionDetail(e); });
+  }
+
+  // --- Session detail sheet: stop propagation so clicks inside don't close ---
+  var sheet = document.getElementById('sessionDetailSheet');
+  if (sheet) {
+    sheet.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+
+  // --- Drag handle: tap to dismiss ---
+  var dragHandle = document.getElementById('sessionDetailDragHandle');
+  if (dragHandle) {
+    dragHandle.addEventListener('click', function () { dismissSessionDetail(); });
+  }
+
+  // --- Week session rows: delegate from #weekSessions ---
+  var weekSessions = document.getElementById('weekSessions');
+  if (weekSessions) {
+    weekSessions.addEventListener('click', function (e) {
+      var row = e.target.closest('[data-session-idx]');
+      if (row) showSessionDetail(Number(row.getAttribute('data-session-idx')));
+    });
+  }
+
+});

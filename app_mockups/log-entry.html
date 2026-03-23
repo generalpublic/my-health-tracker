@@ -11,256 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Log Entry</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    /* Log Hub and Entry Forms */
-
-    .hub-header {
-      text-align: center;
-      margin-bottom: var(--space-xl);
-    }
-
-    .hub-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-    }
-
-    .hub-subtitle {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      margin-top: var(--space-xs);
-    }
-
-    /* Form views */
-    .form-view {
-      display: none;
-    }
-
-    .form-view.active {
-      display: block;
-    }
-
-    .form-header {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-      margin-bottom: var(--space-xl);
-    }
-
-    .form-back {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-full);
-      background: var(--primary-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: var(--primary);
-      font-size: var(--text-xl);
-    }
-
-    .form-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-    }
-
-    /* Slider with big value display */
-    .big-slider {
-      margin-bottom: var(--space-2xl);
-    }
-
-    .big-slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: var(--space-md);
-    }
-
-    .big-slider-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-    }
-
-    .big-slider-value {
-      font-size: var(--text-3xl);
-      font-weight: 800;
-      transition: color 0.2s ease;
-    }
-
-    .big-slider-anchors {
-      display: flex;
-      justify-content: space-between;
-      margin-top: var(--space-xs);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-
-    /* Habit toggle row */
-    .habit-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .habit-toggle:last-child {
-      border-bottom: none;
-    }
-
-    .habit-toggle-info {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-    }
-
-    .habit-toggle-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--primary);
-    }
-
-    .habit-toggle-name {
-      font-size: var(--text-base);
-      font-weight: 500;
-    }
-
-    /* Meal card */
-    .meal-card {
-      margin-bottom: var(--space-lg);
-    }
-
-    .meal-label {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: var(--space-sm);
-    }
-
-    /* Macro inputs row */
-    .macro-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--space-md);
-      margin-bottom: var(--space-md);
-    }
-
-    .macro-input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .macro-input-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .macro-input {
-      width: 100%;
-      padding: var(--space-sm) var(--space-md);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      font-size: var(--text-base);
-      text-align: center;
-      font-family: inherit;
-      color: var(--text);
-      background: var(--surface);
-    }
-
-    .macro-input:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-bg);
-    }
-
-    /* Calorie summary bar */
-    .calorie-bar {
-      display: flex;
-      justify-content: space-around;
-      padding: var(--space-lg);
-      background: var(--primary-bg);
-      border-radius: var(--radius-md);
-      margin-bottom: var(--space-xl);
-    }
-
-    .calorie-item {
-      text-align: center;
-    }
-
-    .calorie-value {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .calorie-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    /* Cognition stepper */
-    .cognition-stepper {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-2xl);
-      padding: var(--space-3xl) 0;
-    }
-
-    .cognition-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: var(--radius-full);
-      border: 3px solid var(--primary);
-      background: transparent;
-      color: var(--primary);
-      font-size: var(--text-2xl);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .cognition-btn:active {
-      background: var(--primary);
-      color: white;
-    }
-
-    .cognition-value {
-      font-size: 64px;
-      font-weight: 800;
-      min-width: 80px;
-      text-align: center;
-      transition: color 0.2s ease;
-    }
-
-    /* Success toast */
-    .toast {
-      position: fixed;
-      bottom: 120px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: var(--text);
-      color: var(--text-inverse);
-      padding: var(--space-md) var(--space-2xl);
-      border-radius: var(--radius-full);
-      font-size: var(--text-sm);
-      font-weight: 600;
-      opacity: 0;
-      transition: all 0.3s ease;
-      z-index: 100;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  </style>
+  <link rel="stylesheet" href="css/log-entry.css">
 </head>
 <body>
   <div class="phone-frame">
@@ -282,32 +33,32 @@
           </div>
 
           <div class="category-grid">
-            <div class="category-card" onclick="showForm('morning')">
+            <div class="category-card" data-form="morning">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></div>
               <div class="category-name">Morning</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('midday')">
+            <div class="category-card" data-form="midday">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
               <div class="category-name">Midday</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('evening')">
+            <div class="category-card" data-form="evening">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"/><path d="M12 9V2M4.22 10.22l1.42 1.42M19.78 10.22l-1.42 1.42M1 18h22"/></svg></div>
               <div class="category-name">Evening</div>
               <div class="category-status category-pending"></div>
             </div>
-            <div class="category-card" onclick="showForm('nutrition')">
+            <div class="category-card" data-form="nutrition">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3M10 1v3M14 1v3"/></svg></div>
               <div class="category-name">Nutrition</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('cognition')">
+            <div class="category-card" data-form="cognition">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2a6.5 6.5 0 0 0-1 12.918V18h7v-3.082A6.5 6.5 0 0 0 14.5 2z"/><path d="M8.5 18v1.5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2V18"/><path d="M12 2v3"/></svg></div>
               <div class="category-name">Cognition</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('sleep_notes')">
+            <div class="category-card" data-form="sleep_notes">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg></div>
               <div class="category-name">Sleep Notes</div>
               <div class="category-status category-pending"></div>
@@ -318,7 +69,7 @@
         <!-- ========== MORNING CHECK-IN ========== -->
         <div class="form-view" id="morningForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Morning Check-in</div>
           </div>
 
@@ -327,25 +78,25 @@
               <span class="big-slider-label">Morning Energy</span>
               <span class="big-slider-value" id="morningEnergyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'morningEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="morningEnergyVal" data-key="morning_energy">
             <div class="big-slider-anchors">
               <span>Exhausted</span>
               <span>Energized</span>
             </div>
           </div>
 
-          <div class="card-title" style="margin-bottom:var(--space-md)">Habits</div>
+          <div class="card-title card-title-mb-md">Habits</div>
           <div id="morningHabits"></div>
 
-          <div style="margin-top:var(--space-2xl)">
-            <button class="btn-primary" onclick="saveForm('morning', 'Morning check-in saved')">Save Morning Check-in</button>
+          <div class="mt-2xl">
+            <button class="btn-primary" data-form="morning" data-msg="Morning check-in saved">Save Morning Check-in</button>
           </div>
         </div>
 
         <!-- ========== MIDDAY CHECK-IN ========== -->
         <div class="form-view" id="middayForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Midday Check-in</div>
           </div>
 
@@ -354,7 +105,7 @@
               <span class="big-slider-label">Energy</span>
               <span class="big-slider-value" id="midEnergyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="midEnergyVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Dragging</span><span>Energized</span></div>
           </div>
 
@@ -363,7 +114,7 @@
               <span class="big-slider-label">Focus</span>
               <span class="big-slider-value" id="midFocusVal">8</span>
             </div>
-            <input type="range" min="1" max="10" value="8" oninput="updateSlider(this, 'midFocusVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="8" data-display="midFocusVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Brain fog</span><span>Crystal clear</span></div>
           </div>
 
@@ -372,7 +123,7 @@
               <span class="big-slider-label">Mood</span>
               <span class="big-slider-value" id="midMoodVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midMoodVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="midMoodVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
           </div>
 
@@ -381,21 +132,21 @@
               <span class="big-slider-label">Body Feel</span>
               <span class="big-slider-value" id="midBodyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midBodyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="midBodyVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Sore/heavy</span><span>Light/strong</span></div>
           </div>
 
           <textarea class="text-input" placeholder="Any notes..." rows="2"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('midday', 'Midday check-in saved')">Save Midday Check-in</button>
+          <div class="mt-xl">
+            <button class="btn-primary" data-form="midday" data-msg="Midday check-in saved">Save Midday Check-in</button>
           </div>
         </div>
 
         <!-- ========== EVENING REVIEW ========== -->
         <div class="form-view" id="eveningForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Evening Review</div>
           </div>
 
@@ -404,7 +155,7 @@
               <span class="big-slider-label">Evening Energy</span>
               <span class="big-slider-value" id="eveEnergyVal">6</span>
             </div>
-            <input type="range" min="1" max="10" value="6" oninput="updateSlider(this, 'eveEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="6" data-display="eveEnergyVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Depleted</span><span>Still going</span></div>
           </div>
 
@@ -413,7 +164,7 @@
               <span class="big-slider-label">Evening Focus</span>
               <span class="big-slider-value" id="eveFocusVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveFocusVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="eveFocusVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Scattered</span><span>Sharp</span></div>
           </div>
 
@@ -422,7 +173,7 @@
               <span class="big-slider-label">Evening Mood</span>
               <span class="big-slider-value" id="eveMoodVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveMoodVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-display="eveMoodVal" data-key="morning_energy">
             <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
           </div>
 
@@ -431,7 +182,7 @@
               <span class="big-slider-label">Perceived Stress</span>
               <span class="big-slider-value" id="eveStressVal">3</span>
             </div>
-            <input type="range" min="1" max="10" value="3" class="slider-inverted" oninput="updateSliderInverted(this, 'eveStressVal')">
+            <input type="range" min="1" max="10" value="3" class="slider-inverted" data-display="eveStressVal" data-inverted="true">
             <div class="big-slider-anchors"><span>Calm</span><span>Overwhelmed</span></div>
           </div>
 
@@ -440,24 +191,24 @@
               <span class="big-slider-label">Day Rating &#11088;</span>
               <span class="big-slider-value" id="eveDayRating">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveDayRating', 'day_rating')">
+            <input type="range" min="1" max="10" value="7" data-display="eveDayRating" data-key="day_rating">
             <div class="big-slider-anchors"><span>Terrible</span><span>Amazing</span></div>
           </div>
 
-          <div class="card-title" style="margin-bottom:var(--space-md)">Update Habits</div>
+          <div class="card-title card-title-mb-md">Update Habits</div>
           <div id="eveningHabits"></div>
 
-          <textarea class="text-input" placeholder="Evening notes..." rows="3" style="margin-top:var(--space-lg)"></textarea>
+          <textarea class="text-input textarea-mt-lg" placeholder="Evening notes..." rows="3"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('evening', 'Evening review saved')">Save Evening Review</button>
+          <div class="mt-xl">
+            <button class="btn-primary" data-form="evening" data-msg="Evening review saved">Save Evening Review</button>
           </div>
         </div>
 
         <!-- ========== NUTRITION ========== -->
         <div class="form-view" id="nutritionForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Nutrition</div>
           </div>
 
@@ -530,55 +281,55 @@
 
           <textarea class="text-input" placeholder="Nutrition notes..." rows="2"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('nutrition', 'Nutrition saved')">Save Nutrition</button>
+          <div class="mt-xl">
+            <button class="btn-primary" data-form="nutrition" data-msg="Nutrition saved">Save Nutrition</button>
           </div>
         </div>
 
         <!-- ========== COGNITION ========== -->
         <div class="form-view" id="cognitionForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Cognition</div>
           </div>
 
-          <div style="text-align:center; margin-bottom:var(--space-lg);">
-            <div style="font-size:var(--text-sm); color:var(--text-secondary);">How sharp is your mind today?</div>
+          <div class="form-description">
+            <div class="form-description-text">How sharp is your mind today?</div>
           </div>
 
           <div class="cognition-stepper">
-            <button class="cognition-btn" onclick="stepCognition(-1)">-</button>
+            <button class="cognition-btn" data-delta="-1">-</button>
             <div class="cognition-value" id="cognitionVal">8</div>
-            <button class="cognition-btn" onclick="stepCognition(1)">+</button>
+            <button class="cognition-btn" data-delta="1">+</button>
           </div>
 
-          <div style="display:flex; justify-content:space-between; padding:0 var(--space-3xl); margin-bottom:var(--space-2xl);">
+          <div class="cognition-anchors">
             <span class="text-xs text-muted">Brain fog</span>
             <span class="text-xs text-muted">Crystal clear</span>
           </div>
 
           <textarea class="text-input" placeholder="Mental clarity, focus, brain fog notes..." rows="3">Sharp focus, good recall</textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('cognition', 'Cognition saved')">Save Cognition</button>
+          <div class="mt-xl">
+            <button class="btn-primary" data-form="cognition" data-msg="Cognition saved">Save Cognition</button>
           </div>
         </div>
 
         <!-- ========== SLEEP NOTES ========== -->
         <div class="form-view" id="sleep_notesForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back">&#8249;</div>
             <div class="form-title">Sleep Notes</div>
           </div>
 
-          <div style="text-align:center; margin-bottom:var(--space-xl);">
-            <div style="font-size:var(--text-sm); color:var(--text-secondary);">Anything that affected your sleep last night?</div>
+          <div class="form-description form-description-xl">
+            <div class="form-description-text">Anything that affected your sleep last night?</div>
           </div>
 
           <textarea class="text-input" placeholder="Late caffeine, alcohol, stress, new mattress, noise, temperature..." rows="5"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('sleep_notes', 'Sleep notes saved')">Save Sleep Notes</button>
+          <div class="mt-xl">
+            <button class="btn-primary" data-form="sleep_notes" data-msg="Sleep notes saved">Save Sleep Notes</button>
           </div>
         </div>
 
@@ -586,22 +337,22 @@
 
       <!-- Tab Bar -->
       <div class="tab-bar">
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
+        <div class="tab-item tab-item-inactive" data-page="today.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+        <div class="tab-item tab-item-inactive" data-page="trends.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
         <div class="tab-item tab-center">
-          <div class="tab-center-button" onclick="showHub()" style="background:var(--primary-gradient);">+</div>
+          <div class="tab-center-button tab-center-button-gradient" data-action="hub">+</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+        <div class="tab-item tab-item-inactive" data-page="activity.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+        <div class="tab-item tab-item-inactive" data-page="profile.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
           <div class="tab-label">Profile</div>
         </div>

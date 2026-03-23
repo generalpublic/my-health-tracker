@@ -382,11 +382,10 @@
       const row = document.getElementById('habitsRow');
       row.innerHTML = HABITS.map((h, i) => {
         const done = window.habitState[h.key];
-        const clickAttr = isToday ? `onclick="toggleHabit(${i})"` : '';
         const lockedClass = isToday ? '' : ' habit-circle-locked';
         return `
           <div class="habit-item">
-            <div class="habit-circle ${done ? 'habit-circle-done' : 'habit-circle-pending'}${lockedClass}" ${clickAttr}>
+            <div class="habit-circle ${done ? 'habit-circle-done' : 'habit-circle-pending'}${lockedClass}" ${isToday ? `data-habit-idx="${i}"` : ''}>
               ${done ? '&#10003;' : h.icon}
             </div>
             <div class="habit-label">${h.label}</div>
@@ -491,6 +490,65 @@
               '<span class="preliminary-badge">Preliminary</span>');
           }
         }
+      }
+    });
+
+    // ============================================
+    // Event Listeners (replaces all inline handlers)
+    // ============================================
+    document.addEventListener('DOMContentLoaded', function () {
+      // Date navigation arrows
+      document.getElementById('datePrev').addEventListener('click', function () {
+        navigateDate(-1);
+      });
+      document.getElementById('dateNext').addEventListener('click', function () {
+        navigateDate(1);
+      });
+      document.getElementById('dateTodayLink').addEventListener('click', function () {
+        navigateDate(0);
+      });
+
+      // Illness banner buttons
+      document.getElementById('btnConfirmSick').addEventListener('click', function () {
+        confirmIllness();
+      });
+      document.getElementById('btnConfirmRecovery').addEventListener('click', function () {
+        confirmRecovery();
+      });
+
+      // Sleep card — navigate to detail page
+      document.getElementById('sleepCard').addEventListener('click', function () {
+        navigateTo('sleep-detail.html');
+      });
+
+      // Readiness card expand — delegate from the card itself (card-expandable)
+      var readinessCard = document.querySelector('.card-expandable');
+      if (readinessCard) {
+        readinessCard.addEventListener('click', function () {
+          toggleExpand(this);
+        });
+      }
+
+      // Tab bar navigation — delegate from .tab-bar, match data-page attribute
+      var tabBar = document.querySelector('.tab-bar');
+      if (tabBar) {
+        tabBar.addEventListener('click', function (e) {
+          var item = e.target.closest('[data-page]');
+          if (item) {
+            navigateTo(item.getAttribute('data-page'));
+          }
+        });
+      }
+
+      // Habit circles — delegate from #habitsRow for dynamically rendered circles
+      var habitsRow = document.getElementById('habitsRow');
+      if (habitsRow) {
+        habitsRow.addEventListener('click', function (e) {
+          var circle = e.target.closest('[data-habit-idx]');
+          if (circle) {
+            toggleHabit(Number(circle.getAttribute('data-habit-idx')));
+          }
+        });
       }
     });
 

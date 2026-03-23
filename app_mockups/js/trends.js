@@ -114,7 +114,7 @@
 
     (function renderPills() {
       document.getElementById('metricPills').innerHTML = metrics.map((m, i) =>
-        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-metric="${m.key}" onclick="setMetric('${m.key}', this)">${m.label}</div>`
+        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-metric="${m.key}">${m.label}</div>`
       ).join('');
     })();
 
@@ -349,3 +349,50 @@
     }).catch(err => {
       console.error('[trends] Init failed:', err);
     }); // end initData().then()
+
+    // ============================================
+    // Event listeners (no inline handlers)
+    // ============================================
+    document.addEventListener('DOMContentLoaded', function () {
+
+      // Date navigation arrows
+      document.getElementById('datePrev').addEventListener('click', function () {
+        trendNavigateDate(-1);
+      });
+      document.getElementById('dateNext').addEventListener('click', function () {
+        trendNavigateDate(1);
+      });
+      document.getElementById('dateTodayLink').addEventListener('click', function () {
+        trendNavigateDate(0);
+      });
+
+      // Time range pills — delegate from container, match by data-range
+      document.getElementById('rangePills').addEventListener('click', function (e) {
+        const pill = e.target.closest('[data-range]');
+        if (!pill) return;
+        setRange(Number(pill.dataset.range), pill);
+      });
+
+      // Metric pills — delegate from container, match by data-metric
+      document.getElementById('metricPills').addEventListener('click', function (e) {
+        const pill = e.target.closest('[data-metric]');
+        if (!pill) return;
+        setMetric(pill.dataset.metric, pill);
+      });
+
+      // Calendar month navigation
+      document.getElementById('calMonthPrev').addEventListener('click', function () {
+        navigateCalMonth(-1);
+      });
+      document.getElementById('calMonthNext').addEventListener('click', function () {
+        navigateCalMonth(1);
+      });
+
+      // Tab bar — delegate from .tab-bar, match by data-page
+      document.querySelector('.tab-bar').addEventListener('click', function (e) {
+        const item = e.target.closest('[data-page]');
+        if (!item) return;
+        navigateTo(item.dataset.page);
+      });
+
+    });

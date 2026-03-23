@@ -11,227 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Trends</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    .trends-header {
-      padding: var(--space-sm) var(--space-xl) var(--space-md);
-    }
-
-    .trends-title {
-      font-size: var(--text-2xl);
-      font-weight: 700;
-      margin-bottom: var(--space-md);
-    }
-
-    /* Chart area */
-    .chart-container {
-      padding: var(--space-lg) 0;
-    }
-
-    .chart-svg {
-      width: 100%;
-      height: 180px;
-    }
-
-    .chart-x-labels {
-      display: flex;
-      justify-content: space-between;
-      padding: 0 var(--space-sm);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-
-    .chart-y-labels {
-      position: absolute;
-      right: var(--space-sm);
-      top: 0;
-      bottom: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      font-size: 9px;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    /* Stats summary */
-    .stats-row {
-      display: flex;
-      justify-content: space-around;
-      padding: var(--space-lg) 0;
-    }
-
-    .stat-item {
-      text-align: center;
-    }
-
-    .stat-value {
-      font-size: var(--text-2xl);
-      font-weight: 800;
-      letter-spacing: -0.5px;
-    }
-
-    .stat-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .stat-trend {
-      font-size: var(--text-sm);
-      font-weight: 600;
-    }
-
-    .trend-up { color: var(--status-green); }
-    .trend-down { color: var(--status-red); }
-    .trend-flat { color: var(--text-muted); }
-
-    /* Calendar month grid */
-    .cal-month-nav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-lg);
-      padding: var(--space-xs) 0 var(--space-sm);
-    }
-
-    .cal-month-nav-arrow {
-      width: 28px;
-      height: 28px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-full);
-      background: rgba(139, 92, 246, 0.08);
-      color: var(--primary);
-      font-size: var(--text-base);
-      font-weight: 700;
-      cursor: pointer;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-
-    .cal-month-nav-arrow:active {
-      transform: scale(0.85);
-      background: rgba(139, 92, 246, 0.15);
-    }
-
-    .cal-month-nav-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-      min-width: 120px;
-      text-align: center;
-    }
-
-    .trends-cal-weekday-row {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      margin-bottom: 4px;
-      padding: 0 var(--space-xs);
-    }
-
-    .trends-cal-weekday {
-      text-align: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      padding: 2px 0;
-    }
-
-    .trends-cal-weekday.weekend {
-      color: var(--primary);
-      opacity: 0.7;
-    }
-
-    .trends-cal-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      padding: 0 var(--space-xs) var(--space-sm);
-    }
-
-    .trends-cal-day {
-      aspect-ratio: 1;
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
-      transition: transform 0.15s ease;
-    }
-
-    .trends-cal-day:active {
-      transform: scale(0.92);
-    }
-
-    .trends-cal-day-empty {
-      background: transparent;
-    }
-
-    .trends-cal-day-nodata {
-      background: var(--border);
-      color: var(--text-muted);
-    }
-
-    .trends-cal-day-today {
-      box-shadow: 0 0 0 2.5px var(--primary);
-    }
-
-    .trends-cal-day-future {
-      background: transparent;
-      color: var(--text-muted);
-      opacity: 0.3;
-    }
-
-    /* Date Navigation (inline — matches today.html pattern) */
-    .date-nav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-lg);
-      padding: var(--space-xs) 0 var(--space-md);
-    }
-    .date-nav-arrow {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-full);
-      background: rgba(139, 92, 246, 0.08);
-      color: var(--primary);
-      font-size: var(--text-lg);
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s var(--ease-spring);
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    .date-nav-arrow:active {
-      transform: scale(0.85);
-      background: rgba(139, 92, 246, 0.15);
-    }
-    .date-nav-arrow.disabled {
-      opacity: 0.25;
-      pointer-events: none;
-    }
-    .date-nav-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-      color: var(--text);
-      min-width: 140px;
-      text-align: center;
-      letter-spacing: -0.2px;
-    }
-    .date-nav-today {
-      font-size: var(--text-xs);
-      color: var(--primary);
-      text-align: center;
-      cursor: pointer;
-      font-weight: 600;
-      padding: 2px 0;
-    }
-  </style>
+  <link rel="stylesheet" href="css/trends.css">
 </head>
 <body>
   <div class="phone-frame">
@@ -250,28 +30,28 @@
 
           <!-- Date Navigation -->
           <div class="date-nav animate-in">
-            <div class="date-nav-arrow" id="datePrev" onclick="trendNavigateDate(-1)">&#8249;</div>
+            <div class="date-nav-arrow" id="datePrev">&#8249;</div>
             <div>
               <div class="date-nav-label" id="dateLabel">Today</div>
-              <div class="date-nav-today" id="dateTodayLink" style="display:none" onclick="trendNavigateDate(0)">Back to Today</div>
+              <div class="date-nav-today" id="dateTodayLink" style="display:none">Back to Today</div>
             </div>
-            <div class="date-nav-arrow" id="dateNext" onclick="trendNavigateDate(1)">&#8250;</div>
+            <div class="date-nav-arrow" id="dateNext">&#8250;</div>
           </div>
 
           <!-- Metric picker pills -->
           <div class="pill-row" id="metricPills"></div>
 
           <!-- Time range pills -->
-          <div class="pill-row" style="margin-top:var(--space-sm)" id="rangePills">
-            <div class="pill" data-range="7" onclick="setRange(7, this)">7D</div>
-            <div class="pill pill-active" data-range="14" onclick="setRange(14, this)">14D</div>
-            <div class="pill" data-range="30" onclick="setRange(30, this)">30D</div>
+          <div class="pill-row range-pills-row" id="rangePills">
+            <div class="pill" data-range="7">7D</div>
+            <div class="pill pill-active" data-range="14">14D</div>
+            <div class="pill" data-range="30">30D</div>
           </div>
         </div>
 
         <!-- Chart -->
         <div class="card animate-in">
-          <div class="chart-container" style="position:relative">
+          <div class="chart-container">
             <svg class="chart-svg" id="trendChart" viewBox="0 0 340 180" preserveAspectRatio="none"></svg>
             <div class="chart-x-labels" id="chartXLabels"></div>
           </div>
@@ -300,14 +80,14 @@
         </div>
 
         <!-- Calendar Month View -->
-        <div class="card animate-in" style="margin-top:var(--space-md)">
+        <div class="card animate-in trends-calendar-card">
           <div class="card-header">
-            <div class="card-title">Calendar View <span id="heatmapMetricLabel" style="font-size:var(--text-xs);font-weight:500;color:var(--text-secondary);margin-left:var(--space-xs)">— Readiness</span></div>
+            <div class="card-title">Calendar View <span id="heatmapMetricLabel" class="heatmap-metric-label">— Readiness</span></div>
           </div>
           <div class="cal-month-nav">
-            <div class="cal-month-nav-arrow" onclick="navigateCalMonth(-1)">&#8249;</div>
+            <div class="cal-month-nav-arrow" id="calMonthPrev">&#8249;</div>
             <div class="cal-month-nav-label" id="calMonthLabel">March 2026</div>
-            <div class="cal-month-nav-arrow" id="calMonthNext" onclick="navigateCalMonth(1)">&#8250;</div>
+            <div class="cal-month-nav-arrow" id="calMonthNext">&#8250;</div>
           </div>
           <div class="trends-cal-weekday-row" id="calWeekdayRow"></div>
           <div class="trends-cal-grid" id="calGrid"></div>
@@ -317,7 +97,7 @@
 
       <!-- Tab Bar -->
       <div class="tab-bar">
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('today.html')">
+        <div class="tab-item tab-item-inactive" data-page="today.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
@@ -325,14 +105,14 @@
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
-        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+        <div class="tab-item tab-center" data-page="log-entry.html">
           <div class="tab-center-button">+</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+        <div class="tab-item tab-item-inactive" data-page="activity.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+        <div class="tab-item tab-item-inactive" data-page="profile.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
           <div class="tab-label">Profile</div>
         </div>

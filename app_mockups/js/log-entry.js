@@ -89,7 +89,7 @@
               <div class="habit-toggle-icon">${h.icon}</div>
               <div class="habit-toggle-name">${h.label}</div>
             </div>
-            <div class="toggle-switch ${done ? 'active' : ''}" onclick="this.classList.toggle('active')"></div>
+            <div class="toggle-switch ${done ? 'active' : ''}" data-action="toggle"></div>
           </div>`;
       }).join('');
     }
@@ -147,3 +147,60 @@
     }
 
     }); // end initData().then()
+
+// ============================================
+// Event delegation — replaces all inline handlers
+// ============================================
+document.addEventListener('DOMContentLoaded', function () {
+
+  // --- Category cards: data-form="X" -> showForm('X') ---
+  document.querySelector('.category-grid').addEventListener('click', function (e) {
+    const card = e.target.closest('.category-card[data-form]');
+    if (card) showForm(card.dataset.form);
+  });
+
+  // --- Back buttons: .form-back -> showHub() ---
+  document.querySelector('.screen-content').addEventListener('click', function (e) {
+    if (e.target.closest('.form-back')) showHub();
+  });
+
+  // --- Save buttons: btn-primary with data-form + data-msg -> saveForm('X', 'msg') ---
+  document.querySelector('.screen-content').addEventListener('click', function (e) {
+    const btn = e.target.closest('.btn-primary[data-form]');
+    if (btn) saveForm(btn.dataset.form, btn.dataset.msg);
+  });
+
+  // --- Range sliders: data-display + data-key -> updateSlider() ---
+  //     Inverted sliders: data-display + data-inverted="true" -> updateSliderInverted() ---
+  document.querySelector('.screen-content').addEventListener('input', function (e) {
+    const input = e.target;
+    if (input.type !== 'range') return;
+    if (input.dataset.inverted === 'true') {
+      updateSliderInverted(input, input.dataset.display);
+    } else if (input.dataset.display) {
+      updateSlider(input, input.dataset.display, input.dataset.key);
+    }
+  });
+
+  // --- Cognition stepper: data-delta="-1"|"1" -> stepCognition(delta) ---
+  document.getElementById('cognitionForm').addEventListener('click', function (e) {
+    const btn = e.target.closest('.cognition-btn[data-delta]');
+    if (btn) stepCognition(parseInt(btn.dataset.delta, 10));
+  });
+
+  // --- Toggle switches rendered by renderHabits(): data-action="toggle" ---
+  document.querySelector('.screen-content').addEventListener('click', function (e) {
+    const toggle = e.target.closest('.toggle-switch[data-action="toggle"]');
+    if (toggle) toggle.classList.toggle('active');
+  });
+
+  // --- Tab bar: data-page="X.html" -> navigateTo('X.html') ---
+  //             data-action="hub"   -> showHub() ---
+  document.querySelector('.tab-bar').addEventListener('click', function (e) {
+    const tabItem = e.target.closest('[data-page]');
+    if (tabItem) { navigateTo(tabItem.dataset.page); return; }
+    const hubBtn = e.target.closest('[data-action="hub"]');
+    if (hubBtn) showHub();
+  });
+
+});

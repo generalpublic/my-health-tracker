@@ -66,7 +66,7 @@ def _fetch_sleep_data(client, date_iso):
         dto    = sleep["dailySleepDTO"]
         scores = dto.get("sleepScores") or {}
 
-        secs = dto.get("sleepTimeSeconds", 0)
+        secs = dto.get("sleepTimeSeconds") or 0
         data["sleep_duration"] = round(secs / 3600, 2) if secs else ""
 
         overall = scores.get("overall", {})
@@ -93,10 +93,10 @@ def _fetch_sleep_data(client, date_iso):
         else:
             data["sleep_time_in_bed"] = ""
 
-        data["sleep_deep_min"]  = round(dto.get("deepSleepSeconds",  0) / 60, 1)
-        data["sleep_light_min"] = round(dto.get("lightSleepSeconds", 0) / 60, 1)
-        data["sleep_rem_min"]   = round(dto.get("remSleepSeconds",   0) / 60, 1)
-        data["sleep_awake_min"] = round(dto.get("awakeSleepSeconds", 0) / 60, 1)
+        data["sleep_deep_min"]  = round((dto.get("deepSleepSeconds")  or 0) / 60, 1)
+        data["sleep_light_min"] = round((dto.get("lightSleepSeconds") or 0) / 60, 1)
+        data["sleep_rem_min"]   = round((dto.get("remSleepSeconds")   or 0) / 60, 1)
+        data["sleep_awake_min"] = round((dto.get("awakeSleepSeconds") or 0) / 60, 1)
 
         def _pct(key):
             v = scores.get(key, {})
@@ -105,7 +105,7 @@ def _fetch_sleep_data(client, date_iso):
         data["sleep_rem_pct"]  = _pct("remPercentage")
 
         # Sleep cycles = transitions INTO REM (activityLevel 2.0)
-        sleep_levels = sleep.get("sleepLevels", [])
+        sleep_levels = sleep.get("sleepLevels") or []
         prev_level = None
         cycle_count = 0
         for s in sleep_levels:

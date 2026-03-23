@@ -11,654 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Today</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    /* ============================================
-       Today Dashboard — Page-specific styles
-       ============================================ */
-
-    /* Rich gradient header — fades from vivid to muted */
-    .screen-content::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 180px;
-      background:
-        radial-gradient(ellipse at 20% 0%, rgba(139,92,246,0.35) 0%, transparent 60%),
-        radial-gradient(ellipse at 70% 10%, rgba(236,72,153,0.25) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.3) 0%, transparent 50%);
-      mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-      -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .top-bar {
-      position: relative;
-      z-index: 1;
-    }
-
-    .top-bar .greeting {
-      color: #1E1B4B;
-    }
-
-    /* Illness Banner */
-    .illness-banner {
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(251, 191, 36, 0.1));
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      border-radius: var(--radius-lg);
-      padding: var(--space-lg);
-      margin-bottom: var(--space-md);
-      position: relative;
-      z-index: 1;
-    }
-    .illness-banner-content {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-      margin-bottom: var(--space-md);
-    }
-    .illness-banner-icon {
-      font-size: 1.6rem;
-      flex-shrink: 0;
-    }
-    .illness-banner-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: #92400E;
-    }
-    .illness-banner-subtitle {
-      font-size: 0.8rem;
-      color: #78350F;
-      opacity: 0.8;
-      margin-top: 2px;
-    }
-    .illness-banner-actions {
-      display: flex;
-      gap: var(--space-sm);
-    }
-    .illness-btn {
-      flex: 1;
-      padding: 8px 12px;
-      border-radius: var(--radius-md);
-      border: none;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.1s;
-    }
-    .illness-btn:active { transform: scale(0.97); }
-    .illness-btn-confirm {
-      background: rgba(245, 158, 11, 0.25);
-      color: #92400E;
-      border: 1px solid rgba(245, 158, 11, 0.4);
-    }
-    .illness-btn-recover {
-      background: rgba(34, 197, 94, 0.2);
-      color: #166534;
-      border: 1px solid rgba(34, 197, 94, 0.4);
-    }
-
-    /* Readiness Hero Card */
-    .readiness-card {
-      text-align: center;
-      padding: var(--space-2xl) var(--space-xl);
-    }
-
-    .readiness-gauge-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: var(--space-lg);
-    }
-
-    .readiness-meta {
-      display: flex;
-      justify-content: center;
-      gap: var(--space-sm);
-      margin-bottom: var(--space-lg);
-    }
-
-    .expect-block {
-      text-align: left;
-      margin-bottom: var(--space-lg);
-      padding: var(--space-lg);
-      background: rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(12px);
-      border-radius: var(--radius-md);
-      border-left: 3px solid transparent;
-      border-image: var(--gradient-iridescent) 1;
-    }
-
-    .expect-level {
-      font-size: var(--text-base);
-      font-weight: 800;
-      color: var(--text);
-      margin-bottom: var(--space-sm);
-      letter-spacing: -0.3px;
-    }
-
-    .expect-line {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: 4px 0;
-      display: flex;
-      gap: var(--space-sm);
-      line-height: 1.4;
-    }
-
-    .expect-domain {
-      font-weight: 700;
-      min-width: 58px;
-      font-size: var(--text-base);
-    }
-
-    /* Expanded content (FLAGS + DO) */
-    .expand-section {
-      text-align: left;
-      margin-top: var(--space-lg);
-      padding-top: var(--space-lg);
-      border-top: 1px solid var(--border);
-    }
-
-    .expand-section-title {
-      font-size: var(--text-xs);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: var(--space-sm);
-    }
-
-    .flag-item {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: var(--space-xs) 0;
-      display: flex;
-      gap: var(--space-sm);
-      align-items: flex-start;
-    }
-
-    .flag-bullet {
-      width: 6px;
-      height: 6px;
-      border-radius: var(--radius-full);
-      background: var(--primary);
-      flex-shrink: 0;
-      margin-top: 6px;
-    }
-
-    .do-item {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: var(--space-sm) 0;
-      display: flex;
-      gap: var(--space-sm);
-      align-items: flex-start;
-    }
-
-    .do-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: var(--radius-full);
-      border: 2px solid var(--primary);
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-
-    /* Sleep Summary Card */
-    .sleep-hero-section {
-      text-align: center;
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-score-big {
-      font-size: 28px;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -1px;
-    }
-
-    .sleep-verdict-row {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      margin-top: 4px;
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-timeline {
-      position: relative;
-      border-radius: 12px;
-      padding: 14px 16px 10px;
-      margin-top: var(--space-sm);
-      background: linear-gradient(90deg, #1a1a3e 0%, #2d2b5e 18%, #3a3578 35%, #6a5aad 48%, #9b85cc 58%, #c4a7e7 68%, #e0c8e8 78%, #f0daf0 88%, #fde8c8 100%);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      overflow: hidden;
-    }
-
-    .sleep-timeline::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 12px;
-      background:
-        radial-gradient(circle at 8% 60%, rgba(255,255,255,0.04) 0%, transparent 50%),
-        radial-gradient(circle at 92% 60%, rgba(255,200,100,0.08) 0%, transparent 40%);
-      pointer-events: none;
-    }
-
-    /* scattered star dots on the night side */
-    .sleep-timeline::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 50%;
-      height: 100%;
-      background:
-        radial-gradient(1px 1px at 8% 25%, rgba(255,255,255,0.4) 50%, transparent 100%),
-        radial-gradient(1px 1px at 15% 65%, rgba(255,255,255,0.3) 50%, transparent 100%),
-        radial-gradient(1px 1px at 22% 40%, rgba(255,255,255,0.25) 50%, transparent 100%),
-        radial-gradient(1px 1px at 30% 20%, rgba(255,255,255,0.35) 50%, transparent 100%),
-        radial-gradient(1px 1px at 38% 70%, rgba(255,255,255,0.2) 50%, transparent 100%),
-        radial-gradient(1px 1px at 45% 35%, rgba(255,255,255,0.3) 50%, transparent 100%),
-        radial-gradient(1.5px 1.5px at 12% 50%, rgba(255,255,255,0.45) 50%, transparent 100%),
-        radial-gradient(1.5px 1.5px at 35% 55%, rgba(255,255,255,0.35) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 5% 45%, rgba(255,255,255,0.2) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 25% 75%, rgba(255,255,255,0.15) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 42% 15%, rgba(255,255,255,0.2) 50%, transparent 100%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .sleep-timeline-bed, .sleep-timeline-wake {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      z-index: 1;
-    }
-
-    .sleep-timeline-bed {
-      align-items: flex-start;
-    }
-
-    .sleep-timeline-wake {
-      align-items: flex-end;
-    }
-
-    .sleep-timeline-icon {
-      font-size: 14px;
-      line-height: 1;
-    }
-
-    .sleep-timeline-time {
-      font-size: var(--text-base);
-      font-weight: 800;
-      letter-spacing: -0.3px;
-    }
-
-    .sleep-timeline-bed .sleep-timeline-time {
-      color: rgba(255, 255, 255, 0.95);
-    }
-
-    .sleep-timeline-wake .sleep-timeline-time {
-      color: #5a4a3a;
-    }
-
-    .sleep-timeline-sub {
-      font-size: 10px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .sleep-timeline-bed .sleep-timeline-sub {
-      color: rgba(255, 255, 255, 0.5);
-    }
-
-    .sleep-timeline-wake .sleep-timeline-sub {
-      color: rgba(90, 74, 58, 0.6);
-    }
-
-    .sleep-timeline-total {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      font-size: var(--text-base);
-      font-weight: 800;
-      color: #fff;
-      text-shadow: 0 1px 6px rgba(0,0,0,0.3);
-      z-index: 1;
-      letter-spacing: -0.3px;
-    }
-
-
-    .sleep-stages-bar {
-      height: 22px;
-      border-radius: var(--radius-full);
-      display: flex;
-      overflow: hidden;
-      gap: 1px;
-      margin-top: var(--space-lg);
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-stage {
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: width 0.6s ease;
-    }
-
-    .sleep-stage-pct {
-      font-size: 9px;
-      font-weight: 700;
-      color: rgba(255,255,255,0.9);
-      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-
-    .sleep-stages-detail {
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-metrics-row {
-      display: flex;
-      justify-content: space-around;
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .sleep-context-section {
-      margin-top: var(--space-md);
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    /* Body & Recovery Card */
-    .body-grid {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: var(--space-xl);
-      align-items: center;
-    }
-
-    .body-metrics {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-sm);
-    }
-
-    .body-metric {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-md);
-    }
-
-    .body-metric-label {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .body-metric-value {
-      font-size: var(--text-base);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: var(--space-xs);
-    }
-
-    .steps-section {
-      margin-top: var(--space-lg);
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .steps-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: var(--space-sm);
-    }
-
-    .steps-count {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .steps-goal {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    /* Activity Card */
-    .activity-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--space-md);
-    }
-
-    .activity-info {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-    }
-
-    .activity-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: var(--radius-md);
-      background: var(--primary-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-    }
-
-    .activity-name {
-      font-weight: 600;
-      font-size: var(--text-base);
-    }
-
-    .activity-subtitle {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .activity-calories {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      color: var(--primary);
-    }
-
-    .activity-calories-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .zone-bar {
-      display: flex;
-      height: 10px;
-      border-radius: var(--radius-full);
-      overflow: hidden;
-      gap: 1px;
-      margin-top: var(--space-md);
-    }
-
-    .zone-labels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 4px;
-    }
-
-    .zone-label {
-      font-size: 9px;
-      color: var(--text-muted);
-      text-align: center;
-    }
-
-    /* Training Load Card */
-    .training-card {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    /* Date Navigation */
-    .date-nav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-lg);
-      padding: var(--space-xs) 0 var(--space-md);
-    }
-
-    .date-nav-arrow {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-full);
-      background: rgba(139, 92, 246, 0.08);
-      color: var(--primary);
-      font-size: var(--text-lg);
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s var(--ease-spring);
-      -webkit-user-select: none;
-      user-select: none;
-    }
-
-    .date-nav-arrow:active {
-      transform: scale(0.85);
-      background: rgba(139, 92, 246, 0.15);
-    }
-
-    .date-nav-arrow.disabled {
-      opacity: 0.25;
-      pointer-events: none;
-    }
-
-    .date-nav-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-      color: var(--text);
-      min-width: 140px;
-      text-align: center;
-      letter-spacing: -0.2px;
-    }
-
-    .date-nav-today {
-      font-size: var(--text-xs);
-      color: var(--primary);
-      text-align: center;
-      cursor: pointer;
-      font-weight: 600;
-      padding: 2px 0;
-    }
-
-    /* Tap hint */
-    .tap-hint {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      margin-top: var(--space-md);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-    /* Recommendations sub-section within insights card */
-    .recs-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent);
-      margin: var(--space-md) 0;
-    }
-    .recs-title {
-      font-size: var(--text-xs);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: var(--space-sm);
-    }
-    .rec-bullet {
-      width: 6px;
-      height: 6px;
-      border-radius: var(--radius-full);
-      background: var(--gradient-energy);
-      flex-shrink: 0;
-      margin-top: 6px;
-    }
-
-    /* Pull-to-Refresh */
-    .ptr-indicator {
-      text-align: center;
-      overflow: hidden;
-      max-height: 0;
-      transition: max-height 0.3s ease, opacity 0.3s ease;
-      opacity: 0;
-    }
-    .ptr-indicator.pulling {
-      max-height: 60px;
-      opacity: 1;
-    }
-    .ptr-indicator.refreshing {
-      max-height: 60px;
-      opacity: 1;
-    }
-    .ptr-spinner {
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 3px solid rgba(139,92,246,0.2);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      margin: var(--space-md) auto var(--space-xs);
-    }
-    .ptr-indicator.refreshing .ptr-spinner {
-      animation: ptr-spin 0.8s linear infinite;
-    }
-    @keyframes ptr-spin {
-      to { transform: rotate(360deg); }
-    }
-    .ptr-text {
-      font-size: var(--text-xs);
-      color: var(--text-tertiary);
-      padding-bottom: var(--space-sm);
-    }
-    .ptr-hint {
-      text-align: center;
-      font-size: 10px;
-      color: var(--text-tertiary);
-      opacity: 0.5;
-      padding: 4px 0 0;
-      transition: opacity 0.5s;
-    }
-    .ptr-hint.hidden { opacity: 0; }
-
-    /* Preliminary badge */
-    .preliminary-badge {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: rgba(245, 158, 11, 0.15);
-      color: #D97706;
-      padding: 2px 6px;
-      border-radius: var(--radius-sm);
-      margin-left: var(--space-xs);
-      vertical-align: middle;
-    }
-  </style>
+  <link rel="stylesheet" href="css/today.css">
 </head>
 <body>
   <div class="phone-frame">
@@ -687,12 +40,12 @@
 
         <!-- Date Navigation -->
         <div class="date-nav animate-in">
-          <div class="date-nav-arrow" id="datePrev" onclick="navigateDate(-1)">&#8249;</div>
+          <div class="date-nav-arrow" id="datePrev">&#8249;</div>
           <div>
             <div class="date-nav-label" id="dateLabel">Today</div>
-            <div class="date-nav-today" id="dateTodayLink" style="display:none" onclick="navigateDate(0)">Back to Today</div>
+            <div class="date-nav-today" id="dateTodayLink" style="display:none">Back to Today</div>
           </div>
-          <div class="date-nav-arrow" id="dateNext" onclick="navigateDate(1)">&#8250;</div>
+          <div class="date-nav-arrow" id="dateNext">&#8250;</div>
         </div>
 
         <!-- Illness Banner (shown when illness episode active) -->
@@ -705,13 +58,13 @@
             </div>
           </div>
           <div class="illness-banner-actions">
-            <button class="illness-btn illness-btn-confirm" id="btnConfirmSick" onclick="confirmIllness()">I'm sick</button>
-            <button class="illness-btn illness-btn-recover" id="btnConfirmRecovery" onclick="confirmRecovery()" style="display:none">I'm better</button>
+            <button class="illness-btn illness-btn-confirm" id="btnConfirmSick">I'm sick</button>
+            <button class="illness-btn illness-btn-recover" id="btnConfirmRecovery" style="display:none">I'm better</button>
           </div>
         </div>
 
         <!-- 1. Readiness Hero Card -->
-        <div class="card readiness-card card-expandable animate-in" onclick="toggleExpand(this)">
+        <div class="card readiness-card card-expandable animate-in">
           <div class="card-header">
             <div class="card-title">Snapshot</div>
           </div>
@@ -742,7 +95,7 @@
               <div class="expand-section-title">Flags</div>
               <div id="flagsList"></div>
             </div>
-            <div class="expand-section" style="border-top:none; padding-top: var(--space-md);">
+            <div class="expand-section expand-section-no-border">
               <div class="expand-section-title">Do Today</div>
               <div id="doList"></div>
             </div>
@@ -751,13 +104,13 @@
 
         <!-- 2. Key Insights + Recommendations Card -->
         <div class="card card-insight animate-in" id="insightsCard">
-          <div class="card-title" style="margin-bottom:var(--space-md);">&#10024; Key Insights</div>
+          <div class="card-title card-title-insights">&#10024; Key Insights</div>
           <div id="insightsList"></div>
           <div id="recommendationsSection"></div>
         </div>
 
         <!-- 3. Sleep Summary Card -->
-        <div class="card animate-in" id="sleepCard" onclick="navigateTo('sleep-detail.html')">
+        <div class="card animate-in" id="sleepCard">
           <div class="card-header">
             <div class="card-title">Sleep</div>
             <div class="card-chevron">&#8250;</div>
@@ -793,11 +146,11 @@
           <!-- Bottom metrics row -->
           <div class="sleep-metrics-row">
             <div class="metric-compact">
-              <div class="metric-compact-value"><span id="hrvValue">46</span><span class="status-dot" id="hrvDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-value"><span id="hrvValue">46</span><span class="status-dot status-dot-ml" id="hrvDot"></span></div>
               <div class="metric-compact-label">HRV (ms)</div>
             </div>
             <div class="metric-compact">
-              <div class="metric-compact-value"><span id="bbGained">+62</span><span class="status-dot" id="bbDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-value"><span id="bbGained">+62</span><span class="status-dot status-dot-ml" id="bbDot"></span></div>
               <div class="metric-compact-label">Battery</div>
             </div>
             <div class="metric-compact">
@@ -849,7 +202,7 @@
                 <span class="steps-count" id="stepsValue">8,742</span>
                 <span class="steps-goal"> / 10,000</span>
               </div>
-              <span class="status-dot" id="stepsDot" style="margin-top:6px"></span>
+              <span class="status-dot status-dot-mt" id="stepsDot"></span>
             </div>
             <div class="progress-bar">
               <div class="progress-fill" id="stepsBar" style="width:87%"></div>
@@ -861,7 +214,7 @@
         <div class="card animate-in">
           <div class="card-header">
             <div class="card-title">Today's Habits</div>
-            <div style="font-size:var(--text-lg); font-weight:700; color:var(--primary); position:absolute; right:0;" id="habitsCount">5/7</div>
+            <div class="habits-count" id="habitsCount">5/7</div>
           </div>
           <div class="habits-row" id="habitsRow"></div>
         </div>
@@ -890,18 +243,18 @@
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+        <div class="tab-item tab-item-inactive" data-page="trends.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
-        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+        <div class="tab-item tab-center" data-page="log-entry.html">
           <div class="tab-center-button">+</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+        <div class="tab-item tab-item-inactive" data-page="activity.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+        <div class="tab-item tab-item-inactive" data-page="profile.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
           <div class="tab-label">Profile</div>
         </div>

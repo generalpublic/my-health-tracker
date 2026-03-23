@@ -11,203 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Sleep Detail</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    /* Sleep Detail specific styles */
-
-    .sleep-hero {
-      text-align: center;
-      padding: var(--space-xl);
-    }
-
-    .sleep-gauge-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: var(--space-lg);
-    }
-
-    /* Sleep gauge uses .gauge from design-system.css */
-
-    .sleep-verdict {
-      display: flex;
-      justify-content: center;
-      gap: var(--space-sm);
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-analysis-text {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      line-height: 1.5;
-      text-align: left;
-      padding: var(--space-md) var(--space-lg);
-      background: var(--primary-bg);
-      border-radius: var(--radius-md);
-    }
-
-    /* Sleep timeline */
-    .timeline-card {
-      padding: var(--space-xl);
-    }
-
-    .timeline-times {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: var(--space-sm);
-    }
-
-    .timeline-time {
-      font-size: var(--text-sm);
-      font-weight: 600;
-    }
-
-    .timeline-time-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .timeline-bar {
-      height: 32px;
-      border-radius: var(--radius-md);
-      display: flex;
-      overflow: hidden;
-      gap: 1px;
-      margin-bottom: var(--space-sm);
-    }
-
-    .timeline-segment {
-      height: 100%;
-    }
-
-    .timeline-duration {
-      text-align: center;
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      margin-top: var(--space-xs);
-    }
-
-    /* Stage rows */
-    .stage-row {
-      display: flex;
-      align-items: center;
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .stage-row:last-child {
-      border-bottom: none;
-    }
-
-    .stage-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      margin-right: var(--space-md);
-      flex-shrink: 0;
-    }
-
-    .stage-name {
-      font-size: var(--text-base);
-      font-weight: 500;
-      width: 60px;
-    }
-
-    .stage-minutes {
-      font-size: var(--text-base);
-      font-weight: 700;
-      width: 55px;
-      text-align: right;
-    }
-
-    .stage-pct {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      width: 45px;
-      text-align: right;
-    }
-
-    .stage-bar-wrap {
-      flex: 1;
-      margin-left: var(--space-md);
-      height: 8px;
-      background: var(--border);
-      border-radius: var(--radius-full);
-      overflow: hidden;
-    }
-
-    .stage-bar-fill {
-      height: 100%;
-      border-radius: var(--radius-full);
-      transition: width 0.6s ease;
-    }
-
-    /* Vitals grid */
-    .vitals-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-md);
-    }
-
-    .vital-item {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: var(--space-md);
-      background: var(--bg);
-      border-radius: var(--radius-md);
-    }
-
-    .vital-value {
-      font-size: var(--text-xl);
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: var(--space-xs);
-    }
-
-    .vital-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    /* Consistency card */
-    .consistency-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: var(--space-md) 0;
-    }
-
-    .consistency-label {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .consistency-value {
-      font-size: var(--text-base);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: var(--space-sm);
-    }
-
-    /* Mini trend chart */
-    .trend-chart {
-      padding: var(--space-lg) 0;
-    }
-
-    .trend-svg {
-      width: 100%;
-      height: 100px;
-    }
-
-    .trend-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-      margin-top: var(--space-xs);
-    }
-  </style>
+  <link rel="stylesheet" href="css/sleep-detail.css">
 </head>
 <body>
   <div class="phone-frame">
@@ -221,7 +25,7 @@
 
       <!-- Navigation header -->
       <div class="nav-header">
-        <div class="nav-back" onclick="navigateTo('today.html')">&#8249;</div>
+        <div class="nav-back">&#8249;</div>
         <div class="nav-title" id="sleepNavTitle">Sleep &mdash; Mar 18, 2026</div>
       </div>
 
@@ -249,14 +53,14 @@
 
         <!-- 2. Sleep Timeline -->
         <div class="card timeline-card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-lg)">Sleep Timeline</div>
+          <div class="card-title card-title-mb-lg">Sleep Timeline</div>
 
           <div class="timeline-times">
             <div>
               <div class="timeline-time" id="tlBedtime">10:34 PM</div>
               <div class="timeline-time-label">Bedtime</div>
             </div>
-            <div style="text-align:right">
+            <div class="timeline-wake">
               <div class="timeline-time" id="tlWake">6:15 AM</div>
               <div class="timeline-time-label">Wake</div>
             </div>
@@ -268,20 +72,20 @@
 
         <!-- 3. Sleep Stages -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-sm)">Sleep Stages</div>
+          <div class="card-title card-title-mb-sm">Sleep Stages</div>
           <div id="stageRows"></div>
         </div>
 
         <!-- 4. Vitals During Sleep -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-md)">Vitals During Sleep</div>
+          <div class="card-title card-title-mb-md">Vitals During Sleep</div>
           <div class="vitals-grid" id="vitalsGrid"></div>
         </div>
 
         <!-- 5. Consistency -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:2px">Sleep Consistency</div>
-          <div id="consistencySubtitle" style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--space-sm)">Average bedtime deviation over 7 nights</div>
+          <div class="card-title card-title-mb-2px">Sleep Consistency</div>
+          <div id="consistencySubtitle" class="consistency-subtitle">Average bedtime deviation over 7 nights</div>
 
           <div class="consistency-row">
             <span class="consistency-label">Bedtime Variability (7d)</span>
@@ -290,7 +94,7 @@
               <span class="status-dot" id="bedVarDot"></span>
             </span>
           </div>
-          <div class="divider" style="margin:0"></div>
+          <div class="divider divider-flush"></div>
           <div class="consistency-row">
             <span class="consistency-label">Wake Variability (7d)</span>
             <span class="consistency-value">
@@ -302,8 +106,8 @@
 
         <!-- 6. Notes -->
         <div class="card animate-in" id="notesCard" style="display:none">
-          <div class="card-title" style="margin-bottom:var(--space-sm)">Notes</div>
-          <div style="font-size:var(--text-sm); color:var(--text-secondary);" id="sleepNotes"></div>
+          <div class="card-title card-title-mb-sm">Notes</div>
+          <div class="notes-text" id="sleepNotes"></div>
         </div>
 
         <!-- 7. 7-Day Trend -->
@@ -322,22 +126,22 @@
 
       <!-- Tab Bar -->
       <div class="tab-bar">
-        <div class="tab-item tab-item-active" onclick="navigateTo('today.html')">
+        <div class="tab-item tab-item-active" data-page="today.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('trends.html')">
+        <div class="tab-item tab-item-inactive" data-page="trends.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
-        <div class="tab-item tab-center" onclick="navigateTo('log-entry.html')">
+        <div class="tab-item tab-center" data-page="log-entry.html">
           <div class="tab-center-button">+</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('activity.html')">
+        <div class="tab-item tab-item-inactive" data-page="activity.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
-        <div class="tab-item tab-item-inactive" onclick="navigateTo('profile.html')">
+        <div class="tab-item tab-item-inactive" data-page="profile.html">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
           <div class="tab-label">Profile</div>
         </div>

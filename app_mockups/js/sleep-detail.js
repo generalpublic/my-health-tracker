@@ -1,4 +1,4 @@
-// --- Global functions for onclick handlers ---
+// --- Navigation helper ---
     function navigateTo(page) { window.location.href = page; }
     function formatTime(t) {
       const [h, m] = t.split(':').map(Number);
@@ -182,3 +182,19 @@
     })();
 
     }); // end initData().then()
+
+// --- Event listeners (DOM ready) ---
+document.addEventListener('DOMContentLoaded', function() {
+  // Back button
+  document.querySelector('.nav-back').addEventListener('click', function() {
+    navigateTo('today.html');
+  });
+
+  // Tab bar — delegate from .tab-bar
+  document.querySelector('.tab-bar').addEventListener('click', function(e) {
+    const item = e.target.closest('[data-page]');
+    if (item) {
+      navigateTo(item.dataset.page);
+    }
+  });
+});

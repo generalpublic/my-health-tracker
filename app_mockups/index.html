@@ -11,1905 +11,8 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    /* ============================================
-       SPA Layout Overrides
-       ============================================ */
-    .screen-content {
-      position: relative !important;
-      overflow: hidden !important;
-      padding: 0 !important;
-    }
-    .view {
-      display: none;
-      position: absolute;
-      inset: 0;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: var(--space-lg);
-      padding-bottom: calc(var(--tab-bar-height) + var(--space-xl));
-    }
-    .view.active { display: block; }
-    #view-trends, #view-log, #view-profile { padding-top: calc(var(--space-lg) + 72px); }
-    #view-activity { padding-top: calc(var(--space-lg) + 66px); }
-    #view-calendar { padding: 0; padding-bottom: 0; }
-    #view-calendar.active { display: flex; flex-direction: column; overflow: hidden; height: 100%; }
-    .view.stagger .animate-in { }
-
-    /* Mobile: status-bar element acts as opaque barrier above scroll content.
-       Views only need normal padding — safe-area is handled by the barrier. */
-    @media (max-width: 430px), (display-mode: standalone), (display-mode: fullscreen) {
-      .view {
-        padding-top: var(--space-lg);
-      }
-      #view-calendar {
-        padding-top: 0;
-      }
-    }
-
-    /* ============================================
-       Today Dashboard
-       ============================================ */
-
-    /* ============================================
-       Today Dashboard — Page-specific styles
-       ============================================ */
-
-    /* Rich gradient header — fades from vivid to muted (all views) */
-    .view::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 180px;
-      background:
-        radial-gradient(ellipse at 20% 0%, rgba(139,92,246,0.35) 0%, transparent 60%),
-        radial-gradient(ellipse at 70% 10%, rgba(236,72,153,0.25) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.3) 0%, transparent 50%);
-      mask-image: linear-gradient(to bottom, transparent 0%, black 20%, transparent 100%);
-      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, transparent 100%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .top-bar {
-      position: relative;
-      z-index: 1;
-    }
-
-    .top-bar .greeting {
-      color: #1E1B4B;
-    }
-
-    /* Day navigation arrows */
-    .day-nav {
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--primary);
-      cursor: pointer;
-      padding: 0 var(--space-xl);
-      line-height: 1;
-      user-select: none;
-      -webkit-user-select: none;
-      transition: opacity 0.2s, transform 0.15s var(--ease-spring);
-    }
-    .day-nav:active { transform: scale(0.85); }
-    .day-nav.hidden { opacity: 0; pointer-events: none; }
-
-    /* Readiness Hero Card */
-    .readiness-card {
-      text-align: center;
-      padding: var(--space-md) var(--space-xl) var(--space-2xl);
-    }
-
-    .readiness-gauge-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: var(--space-lg);
-    }
-
-    .readiness-meta {
-      display: flex;
-      justify-content: center;
-      gap: var(--space-sm);
-      margin-bottom: var(--space-lg);
-    }
-
-    .expect-block {
-      text-align: left;
-      margin-bottom: var(--space-lg);
-      padding: var(--space-lg);
-      background: rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(12px);
-      border-radius: var(--radius-md);
-      border-left: 3px solid transparent;
-      border-image: var(--gradient-iridescent) 1;
-    }
-
-    .expect-level {
-      font-size: var(--text-base);
-      font-weight: 800;
-      color: var(--text);
-      margin-bottom: var(--space-sm);
-      letter-spacing: -0.3px;
-    }
-
-    .expect-line {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: 4px 0;
-      display: flex;
-      gap: var(--space-sm);
-      line-height: 1.4;
-    }
-
-    .expect-domain {
-      font-weight: 700;
-      min-width: 58px;
-      font-size: var(--text-base);
-    }
-
-    /* Expanded content (FLAGS + DO) */
-    .expand-section {
-      text-align: left;
-      margin-top: var(--space-lg);
-      padding-top: var(--space-lg);
-      border-top: 1px solid var(--border);
-    }
-
-    .expand-section-title {
-      font-size: var(--text-xs);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: var(--space-sm);
-    }
-
-    .flag-item {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: var(--space-xs) 0;
-      display: flex;
-      gap: var(--space-sm);
-      align-items: flex-start;
-    }
-
-    .flag-bullet {
-      width: 6px;
-      height: 6px;
-      border-radius: var(--radius-full);
-      background: var(--primary);
-      flex-shrink: 0;
-      margin-top: 6px;
-    }
-
-    .do-item {
-      font-size: var(--text-sm);
-      color: var(--text);
-      padding: var(--space-sm) 0;
-      display: flex;
-      gap: var(--space-sm);
-      align-items: flex-start;
-    }
-
-    .do-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: var(--radius-full);
-      border: 2px solid var(--primary);
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-
-    /* Sleep Summary Card */
-    .sleep-hero-section {
-      text-align: center;
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-score-big {
-      font-size: 28px;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -1px;
-    }
-
-    .sleep-verdict-row {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      margin-top: 4px;
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-timeline {
-      position: relative;
-      border-radius: 12px;
-      padding: 14px 16px 10px;
-      margin-top: var(--space-sm);
-      background: linear-gradient(90deg, #1a1a3e 0%, #2d2b5e 18%, #3a3578 35%, #6a5aad 48%, #9b85cc 58%, #c4a7e7 68%, #e0c8e8 78%, #f0daf0 88%, #fde8c8 100%);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      overflow: hidden;
-    }
-
-    .sleep-timeline::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 12px;
-      background:
-        radial-gradient(circle at 8% 60%, rgba(255,255,255,0.04) 0%, transparent 50%),
-        radial-gradient(circle at 92% 60%, rgba(255,200,100,0.08) 0%, transparent 40%);
-      pointer-events: none;
-    }
-
-    /* scattered star dots on the night side */
-    .sleep-timeline::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 50%;
-      height: 100%;
-      background:
-        radial-gradient(1px 1px at 8% 25%, rgba(255,255,255,0.4) 50%, transparent 100%),
-        radial-gradient(1px 1px at 15% 65%, rgba(255,255,255,0.3) 50%, transparent 100%),
-        radial-gradient(1px 1px at 22% 40%, rgba(255,255,255,0.25) 50%, transparent 100%),
-        radial-gradient(1px 1px at 30% 20%, rgba(255,255,255,0.35) 50%, transparent 100%),
-        radial-gradient(1px 1px at 38% 70%, rgba(255,255,255,0.2) 50%, transparent 100%),
-        radial-gradient(1px 1px at 45% 35%, rgba(255,255,255,0.3) 50%, transparent 100%),
-        radial-gradient(1.5px 1.5px at 12% 50%, rgba(255,255,255,0.45) 50%, transparent 100%),
-        radial-gradient(1.5px 1.5px at 35% 55%, rgba(255,255,255,0.35) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 5% 45%, rgba(255,255,255,0.2) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 25% 75%, rgba(255,255,255,0.15) 50%, transparent 100%),
-        radial-gradient(0.5px 0.5px at 42% 15%, rgba(255,255,255,0.2) 50%, transparent 100%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .sleep-timeline-bed, .sleep-timeline-wake {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      z-index: 1;
-    }
-
-    .sleep-timeline-bed {
-      align-items: flex-start;
-    }
-
-    .sleep-timeline-wake {
-      align-items: flex-end;
-    }
-
-    .sleep-timeline-icon {
-      font-size: 14px;
-      line-height: 1;
-    }
-
-    .sleep-timeline-time {
-      font-size: var(--text-base);
-      font-weight: 800;
-      letter-spacing: -0.3px;
-    }
-
-    .sleep-timeline-bed .sleep-timeline-time {
-      color: rgba(255, 255, 255, 0.95);
-    }
-
-    .sleep-timeline-wake .sleep-timeline-time {
-      color: #5a4a3a;
-    }
-
-    .sleep-timeline-sub {
-      font-size: 10px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .sleep-timeline-bed .sleep-timeline-sub {
-      color: rgba(255, 255, 255, 0.5);
-    }
-
-    .sleep-timeline-wake .sleep-timeline-sub {
-      color: rgba(90, 74, 58, 0.6);
-    }
-
-    .sleep-timeline-total {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      font-size: var(--text-base);
-      font-weight: 800;
-      color: #fff;
-      text-shadow: 0 1px 6px rgba(0,0,0,0.3);
-      z-index: 1;
-      letter-spacing: -0.3px;
-    }
-
-
-    .sleep-stages-bar {
-      height: 22px;
-      border-radius: var(--radius-full);
-      display: flex;
-      overflow: hidden;
-      gap: 1px;
-      margin-top: var(--space-lg);
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-stage {
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: width 0.6s ease;
-    }
-
-    .sleep-stage-pct {
-      font-size: 9px;
-      font-weight: 700;
-      color: rgba(255,255,255,0.9);
-      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-
-    .sleep-stages-detail {
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-metrics-row {
-      display: flex;
-      justify-content: space-around;
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .sleep-context-section {
-      margin-top: var(--space-md);
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    /* Body & Recovery Card */
-    .body-grid {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: var(--space-xl);
-      align-items: center;
-    }
-
-    .body-metrics {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-sm);
-    }
-
-    .body-metric {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-md);
-    }
-
-    .body-metric-label {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .body-metric-value {
-      font-size: var(--text-base);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: var(--space-xs);
-    }
-
-    .steps-section {
-      margin-top: var(--space-lg);
-      padding-top: var(--space-md);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .steps-header {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: var(--space-sm);
-    }
-
-    .steps-count {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .steps-goal {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    /* Activity Card */
-    .activity-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--space-md);
-    }
-
-    .activity-info {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-    }
-
-    .activity-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: var(--radius-md);
-      background: var(--primary-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-    }
-
-    .activity-name {
-      font-weight: 600;
-      font-size: var(--text-base);
-    }
-
-    .activity-subtitle {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .activity-calories {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      color: var(--primary);
-    }
-
-    .activity-calories-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .zone-bar {
-      display: flex;
-      height: 10px;
-      border-radius: var(--radius-full);
-      overflow: hidden;
-      gap: 1px;
-      margin-top: var(--space-md);
-    }
-
-    .zone-labels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 4px;
-    }
-
-    .zone-label {
-      font-size: 9px;
-      color: var(--text-muted);
-      text-align: center;
-    }
-
-    /* Training Load Card */
-    .training-card {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    /* Tap hint */
-    .tap-hint {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      margin-top: var(--space-md);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-    /* Recommendations sub-section within insights card */
-    .recs-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent);
-      margin: var(--space-md) 0;
-    }
-    .recs-title {
-      font-size: var(--text-xs);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: var(--space-sm);
-    }
-    .rec-bullet {
-      width: 6px;
-      height: 6px;
-      border-radius: var(--radius-full);
-      background: var(--gradient-energy);
-      flex-shrink: 0;
-      margin-top: 6px;
-    }
+  <link rel="stylesheet" href="css/index.css">
   
-    /* ============================================
-       Calendar
-       ============================================ */
-
-    /* Fixed header area */
-    .cal-fixed-header {
-      flex-shrink: 0;
-      background: var(--bg);
-      z-index: 10;
-      position: relative;
-    }
-
-    .cal-top-bar {
-      display: flex;
-      align-items: center;
-      padding: var(--space-md) var(--space-xl);
-      gap: var(--space-md);
-    }
-
-    .cal-back {
-      font-size: 24px;
-      color: var(--primary);
-      cursor: pointer;
-      line-height: 1;
-      padding: 4px;
-    }
-
-    .cal-page-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-      flex: 1;
-    }
-
-    .cal-metric-row {
-      padding: 0 var(--space-xl) var(--space-md);
-    }
-
-    /* Fade gradient below sticky header */
-    .cal-fade {
-      position: relative;
-      flex-shrink: 0;
-      height: 20px;
-      background: linear-gradient(to bottom, var(--bg), transparent);
-      z-index: 5;
-      pointer-events: none;
-      margin-top: -1px;
-    }
-
-    /* Scrollable calendar area */
-    .cal-scroll {
-      flex: 1;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: var(--space-xl);
-      margin-top: -16px;
-    }
-
-    .cal-scroll::-webkit-scrollbar { display: none; }
-
-    /* Month block */
-    .cal-month {
-      padding: var(--space-lg) var(--space-xl);
-    }
-
-    .cal-month-title {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      margin-bottom: var(--space-md);
-      color: var(--text);
-    }
-
-    .cal-weekday-row {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      margin-bottom: 6px;
-    }
-
-    .cal-weekday {
-      text-align: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      padding: 2px 0;
-    }
-
-    .cal-weekday.weekend {
-      color: var(--primary);
-      opacity: 0.7;
-    }
-
-    .cal-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-    }
-
-    .cal-day {
-      aspect-ratio: 1;
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      position: relative;
-      transition: transform 0.15s ease;
-    }
-
-    .cal-day:active {
-      transform: scale(0.92);
-    }
-
-    .cal-day-empty {
-      background: transparent;
-      cursor: default;
-    }
-
-    .cal-day-nodata {
-      background: var(--border);
-      color: var(--text-muted);
-    }
-
-    .cal-day-today {
-      box-shadow: 0 0 0 2.5px var(--primary);
-    }
-
-    .cal-day-future {
-      background: transparent;
-      color: var(--text-muted);
-      opacity: 0.3;
-      cursor: default;
-    }
-
-    /* Activity dots on calendar days */
-    .cal-activity-dots {
-      position: absolute;
-      top: 7px;
-      left: 7px;
-      display: flex;
-      gap: 1px;
-    }
-    .cal-activity-dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: #fff !important;
-      box-shadow: 0 0 2px rgba(0,0,0,0.3);
-    }
-
-    /* Month divider */
-    .cal-divider {
-      height: 1px;
-      background: var(--border-subtle);
-      margin: 0 var(--space-xl);
-    }
-
-    /* Day detail overlay */
-    .cal-detail-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.4);
-      backdrop-filter: blur(6px);
-      z-index: 100;
-      align-items: flex-end;
-      justify-content: center;
-    }
-
-    .cal-detail-overlay.visible {
-      display: flex;
-    }
-
-    .cal-detail-sheet {
-      width: 100%;
-      max-width: 393px;
-      background: var(--surface);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-      padding: var(--space-xl);
-      padding-bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0px));
-      max-height: 70vh;
-      overflow-y: auto;
-      animation: slideUp 0.25s ease;
-      transition: transform 0.25s ease;
-      touch-action: none;
-    }
-
-    @keyframes slideUp {
-      from { transform: translateY(100%); }
-      to { transform: translateY(0); }
-    }
-
-    .cal-detail-handle {
-      width: 36px;
-      height: 4px;
-      border-radius: 2px;
-      background: var(--border);
-      margin: 0 auto var(--space-lg);
-    }
-
-    .cal-detail-date {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      margin-bottom: var(--space-lg);
-    }
-
-    .cal-detail-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-md);
-    }
-
-    .cal-detail-item {
-      padding: var(--space-md);
-      background: var(--bg);
-      border-radius: var(--radius-md);
-    }
-
-    .cal-detail-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-
-    .cal-detail-value {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-  
-    /* ============================================
-       Trends
-       ============================================ */
-
-    .trends-header {
-      padding: 0 var(--space-xl) var(--space-xs);
-    }
-
-    .trends-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-      margin-bottom: var(--space-xs);
-    }
-
-    /* Chart area */
-    .chart-container {
-      padding: var(--space-lg) 0;
-    }
-
-    .chart-svg {
-      width: 100%;
-      height: 180px;
-    }
-
-    .chart-x-labels {
-      display: flex;
-      justify-content: space-between;
-      padding: 0 var(--space-sm);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-
-    .chart-y-labels {
-      position: absolute;
-      right: var(--space-sm);
-      top: 0;
-      bottom: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      font-size: 9px;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-
-    /* Stats summary */
-    .stats-row {
-      display: flex;
-      justify-content: space-around;
-      padding: var(--space-lg) 0;
-    }
-
-    .stat-item {
-      text-align: center;
-    }
-
-    .stat-value {
-      font-size: var(--text-2xl);
-      font-weight: 800;
-      letter-spacing: -0.5px;
-    }
-
-    .stat-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .stat-trend {
-      font-size: var(--text-sm);
-      font-weight: 600;
-    }
-
-    .trend-up { color: var(--status-green); }
-    .trend-down { color: var(--status-red); }
-    .trend-flat { color: var(--text-muted); }
-
-    /* Calendar month grid */
-    .cal-month-nav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-lg);
-      padding: var(--space-xs) 0 var(--space-sm);
-    }
-
-    .cal-month-nav-arrow {
-      width: 28px;
-      height: 28px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-full);
-      background: rgba(139, 92, 246, 0.08);
-      color: var(--primary);
-      font-size: var(--text-base);
-      font-weight: 700;
-      cursor: pointer;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-
-    .cal-month-nav-arrow:active {
-      transform: scale(0.85);
-      background: rgba(139, 92, 246, 0.15);
-    }
-
-    .cal-month-nav-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-      min-width: 120px;
-      text-align: center;
-    }
-
-    .trends-cal-weekday-row {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      margin-bottom: 4px;
-      padding: 0 var(--space-xs);
-    }
-
-    .trends-cal-weekday {
-      text-align: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      padding: 2px 0;
-    }
-
-    .trends-cal-weekday.weekend {
-      color: var(--primary);
-      opacity: 0.7;
-    }
-
-    .trends-cal-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      padding: 0 var(--space-xs) var(--space-sm);
-    }
-
-    .trends-cal-day {
-      aspect-ratio: 1;
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
-      transition: transform 0.15s ease;
-    }
-
-    .trends-cal-day:active {
-      transform: scale(0.92);
-    }
-
-    .trends-cal-day-empty {
-      background: transparent;
-    }
-
-    .trends-cal-day-nodata {
-      background: var(--border);
-      color: var(--text-muted);
-    }
-
-    .trends-cal-day-today {
-      box-shadow: 0 0 0 2.5px var(--primary);
-    }
-
-    .trends-cal-day-future {
-      background: transparent;
-      color: var(--text-muted);
-      opacity: 0.3;
-    }
-  
-    /* ============================================
-       Sleep Detail
-       ============================================ */
-
-    /* Sleep Detail specific styles */
-
-    .sleep-hero {
-      text-align: center;
-      padding: var(--space-xl);
-    }
-
-    .sleep-gauge-wrap {
-      display: flex;
-      justify-content: center;
-      margin-bottom: var(--space-lg);
-    }
-
-    /* Sleep gauge uses .gauge from design-system.css */
-
-    .sleep-verdict {
-      display: flex;
-      justify-content: center;
-      gap: var(--space-sm);
-      margin-bottom: var(--space-md);
-    }
-
-    .sleep-analysis-text {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      line-height: 1.5;
-      text-align: left;
-      padding: var(--space-md) var(--space-lg);
-      background: var(--primary-bg);
-      border-radius: var(--radius-md);
-    }
-
-    /* Sleep timeline */
-    .timeline-card {
-      padding: var(--space-xl);
-    }
-
-    .timeline-times {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: var(--space-sm);
-    }
-
-    .timeline-time {
-      font-size: var(--text-sm);
-      font-weight: 600;
-    }
-
-    .timeline-time-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    .timeline-bar {
-      height: 32px;
-      border-radius: var(--radius-md);
-      display: flex;
-      overflow: hidden;
-      gap: 1px;
-      margin-bottom: var(--space-sm);
-    }
-
-    .timeline-segment {
-      height: 100%;
-    }
-
-    .timeline-duration {
-      text-align: center;
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      margin-top: var(--space-xs);
-    }
-
-    /* Stage rows */
-    .stage-row {
-      display: flex;
-      align-items: center;
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .stage-row:last-child {
-      border-bottom: none;
-    }
-
-    .stage-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      margin-right: var(--space-md);
-      flex-shrink: 0;
-    }
-
-    .stage-name {
-      font-size: var(--text-base);
-      font-weight: 500;
-      width: 60px;
-    }
-
-    .stage-minutes {
-      font-size: var(--text-base);
-      font-weight: 700;
-      width: 55px;
-      text-align: right;
-    }
-
-    .stage-pct {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      width: 45px;
-      text-align: right;
-    }
-
-    .stage-bar-wrap {
-      flex: 1;
-      margin-left: var(--space-md);
-      height: 8px;
-      background: var(--border);
-      border-radius: var(--radius-full);
-      overflow: hidden;
-    }
-
-    #view-sleep .stage-bar-fill {
-      height: 100%;
-      border-radius: var(--radius-full);
-      transition: width 0.6s ease;
-    }
-
-    /* Vitals grid */
-    .vitals-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-md);
-    }
-
-    .vital-item {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: var(--space-md);
-      background: var(--bg);
-      border-radius: var(--radius-md);
-    }
-
-    .vital-value {
-      font-size: var(--text-xl);
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: var(--space-xs);
-    }
-
-    .vital-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    /* Consistency card */
-    .consistency-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: var(--space-md) 0;
-    }
-
-    .consistency-label {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .consistency-value {
-      font-size: var(--text-base);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: var(--space-sm);
-    }
-
-    /* Mini trend chart */
-    .trend-chart {
-      padding: var(--space-lg) 0;
-    }
-
-    .trend-svg {
-      width: 100%;
-      height: 100px;
-    }
-
-    .trend-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-      margin-top: var(--space-xs);
-    }
-  
-    /* ============================================
-       Activity
-       ============================================ */
-
-    .page-title {
-      font-size: var(--text-2xl);
-      font-weight: 700;
-      padding: var(--space-sm) var(--space-xl) var(--space-md);
-    }
-
-    /* Session card */
-    .session-card {
-      padding: var(--space-xl);
-    }
-
-    .session-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: var(--space-md);
-    }
-
-    .session-info {
-      display: flex;
-      gap: var(--space-md);
-    }
-
-    .session-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: var(--radius-md);
-      background: var(--primary-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-    }
-
-    .session-name {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .session-meta {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    .session-cals {
-      text-align: right;
-    }
-
-    .session-cal-num {
-      font-size: var(--text-2xl);
-      font-weight: 800;
-      color: var(--primary);
-    }
-
-    .session-cal-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    /* Stats grid */
-    .session-stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--space-md);
-      margin: var(--space-lg) 0;
-    }
-
-    .session-stat {
-      text-align: center;
-      padding: var(--space-md);
-      background: var(--bg);
-      border-radius: var(--radius-md);
-    }
-
-    .session-stat-value {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .session-stat-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    /* TE gauges */
-    .te-row {
-      display: flex;
-      justify-content: space-around;
-      margin: var(--space-lg) 0;
-    }
-
-    .te-item {
-      text-align: center;
-    }
-
-    /* TE gauge uses .gauge .gauge-sm from design-system.css */
-    .te-gauge {
-      width: 70px;
-      height: 70px;
-    }
-
-    .te-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-top: 4px;
-    }
-
-    /* Zone bar */
-    .zone-section {
-      margin-top: var(--space-md);
-    }
-
-    .zone-bar-lg {
-      display: flex;
-      height: 14px;
-      border-radius: var(--radius-full);
-      overflow: hidden;
-      gap: 1px;
-    }
-
-    .zone-bar-lg > div {
-      height: 100%;
-    }
-
-    .zone-legend {
-      display: flex;
-      justify-content: space-between;
-      margin-top: var(--space-sm);
-    }
-
-    .zone-legend-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      font-size: 10px;
-      color: var(--text-secondary);
-    }
-
-    .zone-legend-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 2px;
-      margin-bottom: 2px;
-    }
-
-    /* Manual entry section */
-    .manual-section {
-      margin-top: var(--space-lg);
-      padding-top: var(--space-lg);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .manual-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--space-md);
-    }
-
-    .manual-label {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .manual-pill {
-      padding: 4px 12px;
-      border-radius: var(--radius-full);
-      font-size: var(--text-sm);
-      font-weight: 600;
-      background: var(--primary-bg);
-      color: var(--primary);
-    }
-
-    /* Week history */
-    .week-session {
-      display: flex;
-      align-items: center;
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-      gap: var(--space-md);
-    }
-
-    .week-session:last-child {
-      border-bottom: none;
-    }
-
-    .week-date {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      min-width: 72px;
-    }
-
-    .week-name {
-      flex: 1;
-      font-size: var(--text-base);
-      font-weight: 500;
-    }
-
-    .week-dur {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .week-cal {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: var(--primary);
-      min-width: 50px;
-      text-align: right;
-    }
-
-    /* Strength view */
-    .strength-exercise {
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .strength-exercise:last-child {
-      border-bottom: none;
-    }
-
-    .strength-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: var(--space-xs);
-    }
-
-    .strength-name {
-      font-size: var(--text-base);
-      font-weight: 600;
-    }
-
-    .muscle-tag {
-      padding: 2px 10px;
-      border-radius: var(--radius-full);
-      font-size: var(--text-xs);
-      font-weight: 600;
-      background: var(--primary-bg);
-      color: var(--primary);
-    }
-
-    .strength-sets {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    /* Add exercise form */
-    .add-form {
-      display: none;
-      padding-top: var(--space-lg);
-      border-top: 1px solid var(--border);
-    }
-
-    .add-form.visible {
-      display: block;
-    }
-
-    .form-row {
-      margin-bottom: var(--space-lg);
-    }
-
-    .form-label {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: var(--space-sm);
-    }
-
-    .number-row {
-      display: flex;
-      gap: var(--space-lg);
-    }
-
-    .number-group {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: var(--space-sm);
-    }
-
-    .number-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-  
-    .session-detail-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.4); backdrop-filter: blur(6px);
-      z-index: 100; align-items: flex-end; justify-content: center;
-    }
-    .session-detail-overlay.visible { display: flex; }
-    .session-detail-sheet {
-      width: 100%; max-width: 393px;
-      background: var(--surface); backdrop-filter: blur(20px);
-      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-      padding: var(--space-xl);
-      padding-bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0px));
-      max-height: 60vh; overflow-y: auto;
-      animation: slideUp 0.25s ease; transition: transform 0.25s ease;
-      touch-action: none;
-    }
-    
-  
-    /* ============================================
-       Log Entry
-       ============================================ */
-
-    /* Log Hub and Entry Forms */
-
-    .hub-header {
-      text-align: center;
-      margin-bottom: var(--space-xl);
-    }
-
-    .hub-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-    }
-
-    .hub-subtitle {
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-      margin-top: var(--space-xs);
-    }
-
-    /* Form views */
-    .form-view {
-      display: none;
-    }
-
-    .form-view.active {
-      display: block;
-    }
-
-    .form-header {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-      margin-bottom: var(--space-xl);
-    }
-
-    .form-back {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-full);
-      background: var(--primary-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: var(--primary);
-      font-size: var(--text-xl);
-    }
-
-    .form-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-    }
-
-    /* Slider with big value display */
-    .big-slider {
-      margin-bottom: var(--space-2xl);
-    }
-
-    .big-slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: var(--space-md);
-    }
-
-    .big-slider-label {
-      font-size: var(--text-base);
-      font-weight: 600;
-    }
-
-    .big-slider-value {
-      font-size: var(--text-3xl);
-      font-weight: 800;
-      transition: color 0.2s ease;
-    }
-
-    .big-slider-anchors {
-      display: flex;
-      justify-content: space-between;
-      margin-top: var(--space-xs);
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-
-    /* Habit toggle row */
-    .habit-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--space-md) 0;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .habit-toggle:last-child {
-      border-bottom: none;
-    }
-
-    .habit-toggle-info {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-    }
-
-    .habit-toggle-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--primary);
-    }
-
-    .habit-toggle-name {
-      font-size: var(--text-base);
-      font-weight: 500;
-    }
-
-    /* Meal card */
-    .meal-card {
-      margin-bottom: var(--space-lg);
-    }
-
-    .meal-label {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: var(--space-sm);
-    }
-
-    /* Macro inputs row */
-    .macro-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--space-md);
-      margin-bottom: var(--space-md);
-    }
-
-    .macro-input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .macro-input-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .macro-input {
-      width: 100%;
-      padding: var(--space-sm) var(--space-md);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      font-size: var(--text-base);
-      text-align: center;
-      font-family: inherit;
-      color: var(--text);
-      background: var(--surface);
-    }
-
-    .macro-input:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-bg);
-    }
-
-    /* Calorie summary bar */
-    .calorie-bar {
-      display: flex;
-      justify-content: space-around;
-      padding: var(--space-lg);
-      background: var(--primary-bg);
-      border-radius: var(--radius-md);
-      margin-bottom: var(--space-xl);
-    }
-
-    .calorie-item {
-      text-align: center;
-    }
-
-    .calorie-value {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-
-    .calorie-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-    }
-
-    /* Cognition stepper */
-    .cognition-stepper {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-2xl);
-      padding: var(--space-3xl) 0;
-    }
-
-    .cognition-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: var(--radius-full);
-      border: 3px solid var(--primary);
-      background: transparent;
-      color: var(--primary);
-      font-size: var(--text-2xl);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .cognition-btn:active {
-      background: var(--primary);
-      color: white;
-    }
-
-    .cognition-value {
-      font-size: 64px;
-      font-weight: 800;
-      min-width: 80px;
-      text-align: center;
-      transition: color 0.2s ease;
-    }
-
-    /* Success toast */
-    .toast {
-      position: fixed;
-      bottom: 120px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: var(--text);
-      color: var(--text-inverse);
-      padding: var(--space-md) var(--space-2xl);
-      border-radius: var(--radius-full);
-      font-size: var(--text-sm);
-      font-weight: 600;
-      opacity: 0;
-      transition: all 0.3s ease;
-      z-index: 100;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  
-    /* ============================================
-       Profile
-       ============================================ */
-
-    .profile-header {
-      text-align: center;
-      padding: var(--space-2xl) var(--space-xl);
-      padding-top: calc(var(--space-2xl) + 20px);
-    }
-
-    .profile-avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: var(--radius-full);
-      background: var(--primary-gradient);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto var(--space-md);
-      font-size: 32px;
-      color: var(--text-inverse);
-      font-weight: 700;
-    }
-
-    .profile-name {
-      font-size: var(--text-xl);
-      font-weight: 700;
-    }
-
-    .profile-streak {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-xs);
-      margin-top: var(--space-xs);
-      font-size: var(--text-sm);
-      color: var(--text-secondary);
-    }
-
-    .streak-fire {
-      color: #F59E0B;
-    }
-
-    /* Stats summary */
-    .profile-stats {
-      display: flex;
-      justify-content: space-around;
-      padding: var(--space-xl);
-      margin: 0 var(--space-xl);
-      background: var(--surface);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-md);
-      margin-bottom: var(--space-xl);
-    }
-
-    .profile-stat {
-      text-align: center;
-    }
-
-    .profile-stat-value {
-      font-size: var(--text-2xl);
-      font-weight: 800;
-      color: var(--primary);
-      letter-spacing: -0.5px;
-    }
-
-    .profile-stat-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    /* Menu sections */
-    .menu-section {
-      margin-bottom: var(--space-lg);
-    }
-
-    .menu-section-title {
-      font-size: var(--text-xs);
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      padding: 0 var(--space-lg);
-      margin-bottom: var(--space-sm);
-    }
-
-    .menu-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--space-lg);
-      border-bottom: 1px solid var(--border-subtle);
-      cursor: pointer;
-    }
-
-    .menu-item:first-of-type {
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .menu-item:active {
-      background: var(--primary-bg);
-    }
-
-    .menu-item-left {
-      display: flex;
-      align-items: center;
-      gap: var(--space-md);
-    }
-
-    .menu-icon {
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-    .menu-icon img {
-      width: 31px;
-      height: 31px;
-      object-fit: contain;
-      mix-blend-mode: multiply;
-    }
-    .menu-icon img[alt="Export"],
-    .menu-icon img[alt="Habits"] {
-      width: 32px;
-      height: 32px;
-    }
-    .menu-icon img[alt="Goals"] {
-      width: 33px;
-      height: 33px;
-    }
-
-    .menu-label {
-      font-size: var(--text-base);
-      font-weight: 500;
-    }
-
-    .menu-sublabel {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-top: 1px;
-    }
-
-    .menu-chevron {
-      color: var(--text-muted);
-      font-size: var(--text-lg);
-    }
-
-    .menu-toggle {
-      display: flex;
-      align-items: center;
-    }
-
-    /* Version */
-    .version-text {
-      text-align: center;
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-      padding: var(--space-xl);
-    }
-    /* Pull-to-Refresh */
-    .ptr-indicator {
-      text-align: center;
-      overflow: hidden;
-      max-height: 0;
-      transition: max-height 0.3s ease, opacity 0.3s ease;
-      opacity: 0;
-    }
-    .ptr-indicator.pulling {
-      max-height: 60px;
-      opacity: 1;
-    }
-    .ptr-indicator.refreshing {
-      max-height: 60px;
-      opacity: 1;
-    }
-    .ptr-spinner {
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 3px solid rgba(139,92,246,0.2);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      margin: var(--space-md) auto var(--space-xs);
-    }
-    .ptr-indicator.refreshing .ptr-spinner {
-      animation: ptr-spin 0.8s linear infinite;
-    }
-    @keyframes ptr-spin {
-      to { transform: rotate(360deg); }
-    }
-    .ptr-text {
-      font-size: var(--text-xs);
-      color: var(--text-tertiary);
-      padding-bottom: var(--space-sm);
-    }
-    </style>
 </head>
 <body>
   <div class="phone-frame">
@@ -1935,14 +38,14 @@
         </div>
 
         <!-- Day Navigation Row (outside card to avoid expand conflict) -->
-        <div class="animate-in" style="display:flex;align-items:center;justify-content:center;gap:var(--space-md);padding:var(--space-xs) 0;">
-          <span class="day-nav day-nav-prev" id="dayNavPrev" onclick="navDay(-1)">&#8249;</span>
-          <div id="dayNavLabel" style="font-size:var(--text-sm);color:var(--text-secondary);font-weight:600;">Today</div>
-          <span class="day-nav day-nav-next" id="dayNavNext" onclick="navDay(1)">&#8250;</span>
+        <div class="animate-in day-nav-row">
+          <span class="day-nav day-nav-prev" id="dayNavPrev">&#8249;</span>
+          <div id="dayNavLabel" class="day-nav-label">Today</div>
+          <span class="day-nav day-nav-next" id="dayNavNext">&#8250;</span>
         </div>
 
         <!-- 1. Readiness Hero Card -->
-        <div class="card readiness-card card-expandable animate-in" onclick="toggleExpand(this)">
+        <div class="card readiness-card card-expandable animate-in" data-action="toggle-expand">
           <div class="card-header">
             <div class="card-title" id="snapshotTitle">Snapshot</div>
           </div>
@@ -1973,7 +76,7 @@
               <div class="expand-section-title">Flags</div>
               <div id="flagsList"></div>
             </div>
-            <div class="expand-section" style="border-top:none; padding-top: var(--space-md);">
+            <div class="expand-section expand-section-no-border">
               <div class="expand-section-title">Do Today</div>
               <div id="doList"></div>
             </div>
@@ -1982,13 +85,13 @@
 
         <!-- 2. Key Insights + Recommendations Card -->
         <div class="card card-insight animate-in" id="insightsCard">
-          <div class="card-title" style="margin-bottom:var(--space-md);">&#10024; Key Insights</div>
+          <div class="card-title card-title-mb">&#10024; Key Insights</div>
           <div id="insightsList"></div>
           <div id="recommendationsSection"></div>
         </div>
 
         <!-- 3. Sleep Summary Card -->
-        <div class="card animate-in" id="sleepCard" onclick="navigate('sleep')">
+        <div class="card animate-in" id="sleepCard" data-nav="sleep">
           <div class="card-header">
             <div class="card-title">Sleep</div>
             <div class="card-chevron">&#8250;</div>
@@ -2024,11 +127,11 @@
           <!-- Bottom metrics row -->
           <div class="sleep-metrics-row">
             <div class="metric-compact">
-              <div class="metric-compact-value"><span id="hrvValue">46</span><span class="status-dot" id="hrvDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-value"><span id="hrvValue">46</span><span class="status-dot status-dot-ml" id="hrvDot"></span></div>
               <div class="metric-compact-label">HRV (ms)</div>
             </div>
             <div class="metric-compact">
-              <div class="metric-compact-value"><span id="bbGained">+62</span><span class="status-dot" id="bbDot" style="margin-left:4px"></span></div>
+              <div class="metric-compact-value"><span id="bbGained">+62</span><span class="status-dot status-dot-ml" id="bbDot"></span></div>
               <div class="metric-compact-label">Battery</div>
             </div>
             <div class="metric-compact">
@@ -2080,10 +183,10 @@
                 <span class="steps-count" id="stepsValue">8,742</span>
                 <span class="steps-goal"> / 10,000</span>
               </div>
-              <span class="status-dot" id="stepsDot" style="margin-top:6px"></span>
+              <span class="status-dot steps-dot-mt" id="stepsDot"></span>
             </div>
             <div class="progress-bar">
-              <div class="progress-fill" id="stepsBar" style="width:87%"></div>
+              <div class="progress-fill" id="stepsBar"></div>
             </div>
           </div>
         </div>
@@ -2092,7 +195,7 @@
         <div class="card animate-in">
           <div class="card-header">
             <div class="card-title">Today's Habits</div>
-            <div style="font-size:var(--text-lg); font-weight:700; color:var(--primary); position:absolute; right:0;" id="habitsCount">5/7</div>
+            <div class="habits-count" id="habitsCount">5/7</div>
           </div>
           <div class="habits-row" id="habitsRow"></div>
         </div>
@@ -2125,16 +228,16 @@
           <div class="pill-row" id="metricPills"></div>
 
           <!-- Time range pills -->
-          <div class="pill-row" style="margin-top:var(--space-xs)" id="rangePills">
-            <div class="pill" data-range="7" onclick="setRange(7, this)">7D</div>
-            <div class="pill pill-active" data-range="14" onclick="setRange(14, this)">14D</div>
-            <div class="pill" data-range="30" onclick="setRange(30, this)">30D</div>
+          <div class="pill-row pill-row-mt-xs" id="rangePills">
+            <div class="pill" data-range="7">7D</div>
+            <div class="pill pill-active" data-range="14">14D</div>
+            <div class="pill" data-range="30">30D</div>
           </div>
         </div>
 
         <!-- Chart -->
         <div class="card animate-in">
-          <div class="chart-container" style="position:relative">
+          <div class="chart-container chart-container-relative">
             <svg class="chart-svg" id="trendsSvg" viewBox="0 0 340 180" preserveAspectRatio="none"></svg>
             <div class="chart-x-labels" id="chartXLabels"></div>
           </div>
@@ -2163,14 +266,14 @@
         </div>
 
         <!-- Calendar Month View -->
-        <div class="card animate-in" style="margin-top:var(--space-md)">
+        <div class="card animate-in card-mt-md">
           <div class="card-header">
-            <div class="card-title">Calendar View <span id="heatmapMetricLabel" style="font-size:var(--text-xs);font-weight:500;color:var(--text-secondary);margin-left:var(--space-xs)">— Readiness</span></div>
+            <div class="card-title">Calendar View <span id="heatmapMetricLabel" class="heatmap-metric-label">— Readiness</span></div>
           </div>
           <div class="cal-month-nav">
-            <div class="cal-month-nav-arrow" onclick="navigateCalMonth(-1)">&#8249;</div>
+            <div class="cal-month-nav-arrow" data-cal-nav="-1">&#8249;</div>
             <div class="cal-month-nav-label" id="calMonthLabel">March 2026</div>
-            <div class="cal-month-nav-arrow" id="calMonthNext" onclick="navigateCalMonth(1)">&#8250;</div>
+            <div class="cal-month-nav-arrow" id="calMonthNext" data-cal-nav="1">&#8250;</div>
           </div>
           <div class="trends-cal-weekday-row" id="calWeekdayRow"></div>
           <div class="trends-cal-grid" id="calGrid"></div>
@@ -2188,32 +291,32 @@
           </div>
 
           <div class="category-grid">
-            <div class="category-card" onclick="showForm('morning')">
+            <div class="category-card" data-form="morning">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></div>
               <div class="category-name">Morning</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('midday')">
+            <div class="category-card" data-form="midday">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
               <div class="category-name">Midday</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('evening')">
+            <div class="category-card" data-form="evening">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"/><path d="M12 9V2M4.22 10.22l1.42 1.42M19.78 10.22l-1.42 1.42M1 18h22"/></svg></div>
               <div class="category-name">Evening</div>
               <div class="category-status category-pending"></div>
             </div>
-            <div class="category-card" onclick="showForm('nutrition')">
+            <div class="category-card" data-form="nutrition">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3M10 1v3M14 1v3"/></svg></div>
               <div class="category-name">Nutrition</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('cognition')">
+            <div class="category-card" data-form="cognition">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2a6.5 6.5 0 0 0-1 12.918V18h7v-3.082A6.5 6.5 0 0 0 14.5 2z"/><path d="M8.5 18v1.5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2V18"/><path d="M12 2v3"/></svg></div>
               <div class="category-name">Cognition</div>
               <div class="category-status category-logged"></div>
             </div>
-            <div class="category-card" onclick="showForm('sleep_notes')">
+            <div class="category-card" data-form="sleep_notes">
               <div class="category-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg></div>
               <div class="category-name">Sleep Notes</div>
               <div class="category-status category-pending"></div>
@@ -2224,7 +327,7 @@
         <!-- ========== MORNING CHECK-IN ========== -->
         <div class="form-view" id="morningForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Morning Check-in</div>
           </div>
 
@@ -2233,25 +336,25 @@
               <span class="big-slider-label">Morning Energy</span>
               <span class="big-slider-value" id="morningEnergyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'morningEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" id="morningEnergySlider" data-slider-target="morningEnergyVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors">
               <span>Exhausted</span>
               <span>Energized</span>
             </div>
           </div>
 
-          <div class="card-title" style="margin-bottom:var(--space-md)">Habits</div>
+          <div class="card-title card-title-mb">Habits</div>
           <div id="morningHabits"></div>
 
-          <div style="margin-top:var(--space-2xl)">
-            <button class="btn-primary" onclick="saveForm('morning', 'Morning check-in saved')">Save Morning Check-in</button>
+          <div class="form-save-wrap-2xl">
+            <button class="btn-primary" id="saveMorningBtn">Save Morning Check-in</button>
           </div>
         </div>
 
         <!-- ========== MIDDAY CHECK-IN ========== -->
         <div class="form-view" id="middayForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Midday Check-in</div>
           </div>
 
@@ -2260,7 +363,7 @@
               <span class="big-slider-label">Energy</span>
               <span class="big-slider-value" id="midEnergyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="midEnergyVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Dragging</span><span>Energized</span></div>
           </div>
 
@@ -2269,7 +372,7 @@
               <span class="big-slider-label">Focus</span>
               <span class="big-slider-value" id="midFocusVal">8</span>
             </div>
-            <input type="range" min="1" max="10" value="8" oninput="updateSlider(this, 'midFocusVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="8" data-slider-target="midFocusVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Brain fog</span><span>Crystal clear</span></div>
           </div>
 
@@ -2278,7 +381,7 @@
               <span class="big-slider-label">Mood</span>
               <span class="big-slider-value" id="midMoodVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midMoodVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="midMoodVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
           </div>
 
@@ -2287,21 +390,21 @@
               <span class="big-slider-label">Body Feel</span>
               <span class="big-slider-value" id="midBodyVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'midBodyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="midBodyVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Sore/heavy</span><span>Light/strong</span></div>
           </div>
 
           <textarea class="text-input" placeholder="Any notes..." rows="2"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('midday', 'Midday check-in saved')">Save Midday Check-in</button>
+          <div class="form-save-wrap-xl">
+            <button class="btn-primary" id="saveMiddayBtn">Save Midday Check-in</button>
           </div>
         </div>
 
         <!-- ========== EVENING REVIEW ========== -->
         <div class="form-view" id="eveningForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Evening Review</div>
           </div>
 
@@ -2310,7 +413,7 @@
               <span class="big-slider-label">Evening Energy</span>
               <span class="big-slider-value" id="eveEnergyVal">6</span>
             </div>
-            <input type="range" min="1" max="10" value="6" oninput="updateSlider(this, 'eveEnergyVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="6" data-slider-target="eveEnergyVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Depleted</span><span>Still going</span></div>
           </div>
 
@@ -2319,7 +422,7 @@
               <span class="big-slider-label">Evening Focus</span>
               <span class="big-slider-value" id="eveFocusVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveFocusVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="eveFocusVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Scattered</span><span>Sharp</span></div>
           </div>
 
@@ -2328,7 +431,7 @@
               <span class="big-slider-label">Evening Mood</span>
               <span class="big-slider-value" id="eveMoodVal">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveMoodVal', 'morning_energy')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="eveMoodVal" data-slider-metric="morning_energy">
             <div class="big-slider-anchors"><span>Low</span><span>Great</span></div>
           </div>
 
@@ -2337,7 +440,7 @@
               <span class="big-slider-label">Perceived Stress</span>
               <span class="big-slider-value" id="eveStressVal">3</span>
             </div>
-            <input type="range" min="1" max="10" value="3" class="slider-inverted" oninput="updateSliderInverted(this, 'eveStressVal')">
+            <input type="range" min="1" max="10" value="3" class="slider-inverted" data-slider-target="eveStressVal" data-slider-inverted="true">
             <div class="big-slider-anchors"><span>Calm</span><span>Overwhelmed</span></div>
           </div>
 
@@ -2346,24 +449,24 @@
               <span class="big-slider-label">Day Rating &#11088;</span>
               <span class="big-slider-value" id="eveDayRating">7</span>
             </div>
-            <input type="range" min="1" max="10" value="7" oninput="updateSlider(this, 'eveDayRating', 'day_rating')">
+            <input type="range" min="1" max="10" value="7" data-slider-target="eveDayRating" data-slider-metric="day_rating">
             <div class="big-slider-anchors"><span>Terrible</span><span>Amazing</span></div>
           </div>
 
-          <div class="card-title" style="margin-bottom:var(--space-md)">Update Habits</div>
+          <div class="card-title card-title-mb">Update Habits</div>
           <div id="eveningHabits"></div>
 
-          <textarea class="text-input" placeholder="Evening notes..." rows="3" style="margin-top:var(--space-lg)"></textarea>
+          <textarea class="text-input textarea-mt-lg" placeholder="Evening notes..." rows="3"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('evening', 'Evening review saved')">Save Evening Review</button>
+          <div class="form-save-wrap-xl">
+            <button class="btn-primary" id="saveEveningBtn">Save Evening Review</button>
           </div>
         </div>
 
         <!-- ========== NUTRITION ========== -->
         <div class="form-view" id="nutritionForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Nutrition</div>
           </div>
 
@@ -2378,7 +481,7 @@
               <div class="calorie-label">Consumed</div>
             </div>
             <div class="calorie-item">
-              <div class="calorie-value" id="calBalance" style="color:var(--status-red)">-730</div>
+              <div class="calorie-value cal-balance-negative" id="calBalance">-730</div>
               <div class="calorie-label">Balance</div>
             </div>
           </div>
@@ -2436,55 +539,55 @@
 
           <textarea class="text-input" placeholder="Nutrition notes..." rows="2"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('nutrition', 'Nutrition saved')">Save Nutrition</button>
+          <div class="form-save-wrap-xl">
+            <button class="btn-primary" id="saveNutritionBtn">Save Nutrition</button>
           </div>
         </div>
 
         <!-- ========== COGNITION ========== -->
         <div class="form-view" id="cognitionForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Cognition</div>
           </div>
 
-          <div style="text-align:center; margin-bottom:var(--space-lg);">
-            <div style="font-size:var(--text-sm); color:var(--text-secondary);">How sharp is your mind today?</div>
+          <div class="cognition-desc">
+            <div class="hint-text">How sharp is your mind today?</div>
           </div>
 
           <div class="cognition-stepper">
-            <button class="cognition-btn" onclick="stepCognition(-1)">-</button>
+            <button class="cognition-btn" id="cognitionDown">-</button>
             <div class="cognition-value" id="cognitionVal">8</div>
-            <button class="cognition-btn" onclick="stepCognition(1)">+</button>
+            <button class="cognition-btn" id="cognitionUp">+</button>
           </div>
 
-          <div style="display:flex; justify-content:space-between; padding:0 var(--space-3xl); margin-bottom:var(--space-2xl);">
+          <div class="cognition-anchors">
             <span class="text-xs text-muted">Brain fog</span>
             <span class="text-xs text-muted">Crystal clear</span>
           </div>
 
           <textarea class="text-input" placeholder="Mental clarity, focus, brain fog notes..." rows="3">Sharp focus, good recall</textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('cognition', 'Cognition saved')">Save Cognition</button>
+          <div class="form-save-wrap-xl">
+            <button class="btn-primary" id="saveCognitionBtn">Save Cognition</button>
           </div>
         </div>
 
         <!-- ========== SLEEP NOTES ========== -->
         <div class="form-view" id="sleep_notesForm">
           <div class="form-header">
-            <div class="form-back" onclick="showHub()">&#8249;</div>
+            <div class="form-back" data-action="show-hub">&#8249;</div>
             <div class="form-title">Sleep Notes</div>
           </div>
 
-          <div style="text-align:center; margin-bottom:var(--space-xl);">
-            <div style="font-size:var(--text-sm); color:var(--text-secondary);">Anything that affected your sleep last night?</div>
+          <div class="form-desc">
+            <div class="hint-text">Anything that affected your sleep last night?</div>
           </div>
 
           <textarea class="text-input" placeholder="Late caffeine, alcohol, stress, new mattress, noise, temperature..." rows="5"></textarea>
 
-          <div style="margin-top:var(--space-xl)">
-            <button class="btn-primary" onclick="saveForm('sleep_notes', 'Sleep notes saved')">Save Sleep Notes</button>
+          <div class="form-save-wrap-xl">
+            <button class="btn-primary" id="saveSleepNotesBtn">Save Sleep Notes</button>
           </div>
         </div>
 
@@ -2495,10 +598,10 @@
         <div class="page-title">Activity</div>
 
         <!-- Segment control -->
-        <div style="padding:0 var(--space-xl) var(--space-md)">
+        <div class="segment-wrapper">
           <div class="segment-control">
-            <div class="segment-item segment-item-active" id="segSessions" onclick="showView('sessions')">Sessions</div>
-            <div class="segment-item" id="segStrength" onclick="showView('strength')">Strength</div>
+            <div class="segment-item segment-item-active" id="segSessions" data-view-target="sessions">Sessions</div>
+            <div class="segment-item" id="segStrength" data-view-target="strength">Strength</div>
           </div>
         </div>
 
@@ -2509,8 +612,8 @@
           <div class="card session-card animate-in" id="todaySession"></div>
 
           <!-- This week -->
-          <div class="card animate-in" style="margin-top:var(--space-md)">
-            <div class="card-title" style="margin-bottom:var(--space-md)">Recent Sessions</div>
+          <div class="card animate-in card-mt-md">
+            <div class="card-title card-title-mb">Recent Sessions</div>
             <div id="weekSessions"></div>
           </div>
         </div>
@@ -2527,19 +630,19 @@
           </div>
 
           <!-- Add exercise -->
-          <div class="card animate-in" style="margin-top:var(--space-md)">
-            <button class="btn-secondary" onclick="toggleAddForm()" id="addBtn">+ Add Exercise</button>
+          <div class="card animate-in card-mt-md">
+            <button class="btn-secondary" id="addBtn">+ Add Exercise</button>
 
             <div class="add-form" id="addForm">
               <div class="form-row">
                 <div class="form-label">Muscle Group</div>
                 <div class="pill-row" id="muscleGroupPills">
-                  <div class="pill pill-active" onclick="selectPill(this)">Chest</div>
-                  <div class="pill" onclick="selectPill(this)">Back</div>
-                  <div class="pill" onclick="selectPill(this)">Shoulders</div>
-                  <div class="pill" onclick="selectPill(this)">Arms</div>
-                  <div class="pill" onclick="selectPill(this)">Legs</div>
-                  <div class="pill" onclick="selectPill(this)">Core</div>
+                  <div class="pill pill-active">Chest</div>
+                  <div class="pill">Back</div>
+                  <div class="pill">Shoulders</div>
+                  <div class="pill">Arms</div>
+                  <div class="pill">Legs</div>
+                  <div class="pill">Core</div>
                 </div>
               </div>
 
@@ -2549,34 +652,34 @@
               </div>
 
               <div class="form-row">
-                <div class="number-row" style="justify-content:space-around">
+                <div class="number-row number-row-centered">
                   <div class="number-group">
                     <div class="number-label">Weight (lbs)</div>
                     <div class="stepper">
-                      <button class="stepper-btn" onclick="stepValue('weightVal', -5)">-</button>
+                      <button class="stepper-btn" data-step-target="weightVal" data-step-delta="-5">-</button>
                       <div class="stepper-value" id="weightVal">135</div>
-                      <button class="stepper-btn" onclick="stepValue('weightVal', 5)">+</button>
+                      <button class="stepper-btn" data-step-target="weightVal" data-step-delta="5">+</button>
                     </div>
                   </div>
                   <div class="number-group">
                     <div class="number-label">Reps</div>
                     <div class="stepper">
-                      <button class="stepper-btn" onclick="stepValue('repsVal', -1)">-</button>
+                      <button class="stepper-btn" data-step-target="repsVal" data-step-delta="-1">-</button>
                       <div class="stepper-value" id="repsVal">10</div>
-                      <button class="stepper-btn" onclick="stepValue('repsVal', 1)">+</button>
+                      <button class="stepper-btn" data-step-target="repsVal" data-step-delta="1">+</button>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div class="form-row">
-                <div class="form-label">RPE (1-10) <span id="rpeDisplay" style="float:right;font-weight:700">7</span></div>
-                <input type="range" min="1" max="10" value="7" id="rpeSlider" oninput="document.getElementById('rpeDisplay').textContent=this.value">
+                <div class="form-label">RPE (1-10) <span id="rpeDisplay" class="rpe-display">7</span></div>
+                <input type="range" min="1" max="10" value="7" id="rpeSlider" data-rpe-display="rpeDisplay">
               </div>
 
-              <div style="display:flex; gap:var(--space-md)">
-                <button class="btn-secondary" style="flex:1" onclick="addStrengthSet()">Add Set</button>
-                <button class="btn-primary" style="flex:1" onclick="toggleAddForm()">Done</button>
+              <div class="btn-row-gap">
+                <button class="btn-secondary btn-flex" id="addSetBtn">Add Set</button>
+                <button class="btn-primary btn-flex" id="doneAddFormBtn">Done</button>
               </div>
             </div>
           </div>
@@ -2616,7 +719,7 @@
         <!-- Quick Links -->
         <div class="menu-section">
           <div class="menu-section-title">Reports</div>
-          <div class="menu-item" onclick="navigate('trends')">
+          <div class="menu-item" data-nav="trends">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/weekly reports.png" alt="Reports"></div>
               <div>
@@ -2626,7 +729,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item" onclick="navigate('calendar')">
+          <div class="menu-item" data-nav="calendar">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/calendar view.png" alt="Calendar"></div>
               <div>
@@ -2636,7 +739,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item" onclick="alert('Export coming soon')">
+          <div class="menu-item" data-alert="Export coming soon">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/export data.png" alt="Export"></div>
               <div>
@@ -2651,7 +754,7 @@
         <!-- Settings -->
         <div class="menu-section">
           <div class="menu-section-title">Settings</div>
-          <div class="menu-item" onclick="toggleNotifications(this)">
+          <div class="menu-item" data-action="toggle-notifications">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/notifications.png" alt="Notifications"></div>
               <div>
@@ -2661,7 +764,7 @@
             </div>
             <div class="toggle-switch active"></div>
           </div>
-          <div class="menu-item" onclick="navigate('log')">
+          <div class="menu-item" data-nav="log">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/habits.png" alt="Habits"></div>
               <div>
@@ -2671,7 +774,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item" onclick="alert('Goals coming soon')">
+          <div class="menu-item" data-alert="Goals coming soon">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/goals.png" alt="Goals"></div>
               <div>
@@ -2681,7 +784,7 @@
             </div>
             <span class="menu-chevron">&#8250;</span>
           </div>
-          <div class="menu-item" onclick="alert('Sync running...\\nLast sync: Today, 8:00 PM')">
+          <div class="menu-item" data-alert="Sync running...\nLast sync: Today, 8:00 PM">
             <div class="menu-item-left">
               <div class="menu-icon"><img src="icons/garmin sync.png" alt="Sync"></div>
               <div>
@@ -2696,7 +799,7 @@
         <!-- About -->
         <div class="menu-section">
           <div class="menu-section-title">About</div>
-          <div class="menu-item" onclick="alert('Health Tracker v1.0\\nBuilt with love')">
+          <div class="menu-item" data-alert="Health Tracker v1.0\nBuilt with love">
             <div class="menu-item-left">
               <div class="menu-icon">&#9432;</div>
               <div>
@@ -2709,8 +812,8 @@
 
         <!-- Account -->
         <div class="menu-section">
-          <div class="menu-item" id="auth-menu-btn" style="justify-content:center">
-            <div class="menu-label" id="auth-menu-label" style="font-weight:600">Sign In</div>
+          <div class="menu-item" id="auth-menu-btn" class="menu-item-centered">
+            <div class="menu-label" id="auth-menu-label" class="auth-menu-label">Sign In</div>
           </div>
         </div>
 
@@ -2721,7 +824,7 @@
         <!-- ===== VIEW: SLEEP DETAIL ===== -->
         <div class="view" id="view-sleep">
           <div class="nav-header">
-            <div class="nav-back" onclick="navigate('today')">&#8249;</div>
+            <div class="nav-back" data-nav="today">&#8249;</div>
             <div class="nav-title" id="sleepNavTitle">Sleep &mdash; Mar 18, 2026</div>
           </div>
 
@@ -2747,14 +850,14 @@
 
         <!-- 2. Sleep Timeline -->
         <div class="card timeline-card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-lg)">Sleep Timeline</div>
+          <div class="card-title card-title-mb-lg">Sleep Timeline</div>
 
           <div class="timeline-times">
             <div>
               <div class="timeline-time" id="tlBedtime">10:34 PM</div>
               <div class="timeline-time-label">Bedtime</div>
             </div>
-            <div style="text-align:right">
+            <div class="timeline-time-right">
               <div class="timeline-time" id="tlWake">6:15 AM</div>
               <div class="timeline-time-label">Wake</div>
             </div>
@@ -2766,20 +869,20 @@
 
         <!-- 3. Sleep Stages -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-sm)">Sleep Stages</div>
+          <div class="card-title card-title-mb-sm">Sleep Stages</div>
           <div id="stageRows"></div>
         </div>
 
         <!-- 4. Vitals During Sleep -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:var(--space-md)">Vitals During Sleep</div>
+          <div class="card-title card-title-mb">Vitals During Sleep</div>
           <div class="vitals-grid" id="vitalsGrid"></div>
         </div>
 
         <!-- 5. Consistency -->
         <div class="card animate-in">
-          <div class="card-title" style="margin-bottom:2px">Sleep Consistency</div>
-          <div id="consistencySubtitle" style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--space-sm)">Average bedtime deviation over 7 nights</div>
+          <div class="card-title card-title-mb-2px">Sleep Consistency</div>
+          <div id="consistencySubtitle" class="consistency-subtitle">Average bedtime deviation over 7 nights</div>
 
           <div class="consistency-row">
             <span class="consistency-label">Bedtime Variability (7d)</span>
@@ -2788,7 +891,7 @@
               <span class="status-dot" id="bedVarDot"></span>
             </span>
           </div>
-          <div class="divider" style="margin:0"></div>
+          <div class="divider divider-no-margin"></div>
           <div class="consistency-row">
             <span class="consistency-label">Wake Variability (7d)</span>
             <span class="consistency-value">
@@ -2800,8 +903,8 @@
 
         <!-- 6. Notes -->
         <div class="card animate-in" id="notesCard" style="display:none">
-          <div class="card-title" style="margin-bottom:var(--space-sm)">Notes</div>
-          <div style="font-size:var(--text-sm); color:var(--text-secondary);" id="sleepNotes"></div>
+          <div class="card-title card-title-mb-sm">Notes</div>
+          <div class="notes-text" id="sleepNotes"></div>
         </div>
 
         <!-- 7. 7-Day Trend -->
@@ -2823,7 +926,7 @@
         <!-- Fixed header: title + metric pills -->
         <div class="cal-fixed-header">
           <div class="cal-top-bar">
-            <div class="cal-back" onclick="navigate('profile')">&#8249;</div>
+            <div class="cal-back" data-nav="profile">&#8249;</div>
             <div class="cal-page-title">Calendar</div>
           </div>
           <div class="cal-metric-row">
@@ -2836,7 +939,7 @@
 
         <!-- Scrollable calendar -->
         <div class="cal-scroll" id="calScroll">
-          <div id="calMonths"><div style="text-align:center;padding:48px 24px;color:var(--text-muted);font-size:14px;">Loading calendar...</div></div>
+          <div id="calMonths"><div class="cal-loading-placeholder">Loading calendar...</div></div>
         </div>
 
         </div>
@@ -2845,22 +948,22 @@
 
       <!-- Shared Tab Bar -->
       <div class="tab-bar" id="tabBar">
-        <div class="tab-item tab-item-active" data-view="today" onclick="navigate('today')">
+        <div class="tab-item tab-item-active" data-view="today">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3,10 L12,3 L21,10 L21,20 C21,20.55 20.55,21 20,21 L15,21 L15,15 L9,15 L9,21 L4,21 C3.45,21 3,20.55 3,20 Z"/></svg></div>
           <div class="tab-label">Today</div>
         </div>
-        <div class="tab-item tab-item-inactive" data-view="trends" onclick="navigate('trends')">
+        <div class="tab-item tab-item-inactive" data-view="trends">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="17" width="4" height="5" rx="0.5"/><rect x="7" y="13" width="4" height="9" rx="0.5"/><rect x="13" y="9" width="4" height="13" rx="0.5"/><rect x="19" y="4" width="4" height="18" rx="0.5"/><path d="M3,14 L9,10 L15,6 L21,2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17,2 21,2 21,6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="tab-label">Trends</div>
         </div>
-        <div class="tab-item tab-center" onclick="navigate('log')">
+        <div class="tab-item tab-center" data-nav="log">
           <div class="tab-center-button">+</div>
         </div>
-        <div class="tab-item tab-item-inactive" data-view="activity" onclick="navigate('activity')">
+        <div class="tab-item tab-item-inactive" data-view="activity">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg></div>
           <div class="tab-label">Activity</div>
         </div>
-        <div class="tab-item tab-item-inactive" data-view="profile" onclick="navigate('profile')">
+        <div class="tab-item tab-item-inactive" data-view="profile">
           <div class="tab-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5,20 C5,16.134 8.134,13 12,13 C15.866,13 19,16.134 19,20"/></svg></div>
           <div class="tab-label">Profile</div>
         </div>
@@ -2872,18 +975,18 @@
   <!-- Overlays (OUTSIDE phone-frame for position:fixed) -->
 
   <!-- Calendar day detail -->
-  <div class="cal-detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
-    <div class="cal-detail-sheet" onclick="event.stopPropagation()">
-      <div class="cal-detail-handle" onclick="dismissSheet()"></div>
+  <div class="cal-detail-overlay" id="detailOverlay">
+    <div class="cal-detail-sheet" id="calDetailSheet">
+      <div class="cal-detail-handle" id="calDetailHandle"></div>
       <div class="cal-detail-date" id="detailDate"></div>
       <div id="detailContent"></div>
     </div>
   </div>
 
   <!-- Session detail -->
-  <div class="session-detail-overlay" id="sessionDetailOverlay" onclick="closeSessionDetail(event)">
-    <div class="session-detail-sheet" onclick="event.stopPropagation()">
-      <div style="width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto var(--space-lg)" onclick="dismissSessionDetail()"></div>
+  <div class="session-detail-overlay" id="sessionDetailOverlay">
+    <div class="session-detail-sheet" id="sessionDetailSheet">
+      <div class="session-detail-handle" id="sessionDetailHandle"></div>
       <div id="sessionDetailContent"></div>
     </div>
   </div>

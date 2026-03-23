@@ -1,0 +1,235 @@
+/* Sleep Detail specific styles */
+
+.sleep-hero {
+  text-align: center;
+  padding: var(--space-xl);
+}
+
+.sleep-gauge-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-lg);
+}
+
+/* Sleep gauge uses .gauge from design-system.css */
+
+.sleep-verdict {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.sleep-analysis-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  text-align: left;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--primary-bg);
+  border-radius: var(--radius-md);
+}
+
+/* Sleep timeline */
+.timeline-card {
+  padding: var(--space-xl);
+}
+
+.timeline-times {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.timeline-time {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.timeline-time-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.timeline-bar {
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  overflow: hidden;
+  gap: 1px;
+  margin-bottom: var(--space-sm);
+}
+
+.timeline-segment {
+  height: 100%;
+}
+
+.timeline-duration {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-xs);
+}
+
+/* Stage rows */
+.stage-row {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.stage-row:last-child {
+  border-bottom: none;
+}
+
+.stage-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: var(--space-md);
+  flex-shrink: 0;
+}
+
+.stage-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+  width: 60px;
+}
+
+.stage-minutes {
+  font-size: var(--text-base);
+  font-weight: 700;
+  width: 55px;
+  text-align: right;
+}
+
+.stage-pct {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  width: 45px;
+  text-align: right;
+}
+
+.stage-bar-wrap {
+  flex: 1;
+  margin-left: var(--space-md);
+  height: 8px;
+  background: var(--border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.stage-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+}
+
+/* Vitals grid */
+.vitals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.vital-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-md);
+  background: var(--bg);
+  border-radius: var(--radius-md);
+}
+
+.vital-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.vital-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Consistency card */
+.consistency-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) 0;
+}
+
+.consistency-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.consistency-value {
+  font-size: var(--text-base);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Mini trend chart */
+.trend-chart {
+  padding: var(--space-lg) 0;
+}
+
+.trend-svg {
+  width: 100%;
+  height: 100px;
+}
+
+.trend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-xs);
+}
+
+/* Card title spacing helpers */
+.card-title-mb-lg {
+  margin-bottom: var(--space-lg);
+}
+
+.card-title-mb-sm {
+  margin-bottom: var(--space-sm);
+}
+
+.card-title-mb-md {
+  margin-bottom: var(--space-md);
+}
+
+.card-title-mb-2px {
+  margin-bottom: 2px;
+}
+
+/* Timeline wake time alignment */
+.timeline-wake {
+  text-align: right;
+}
+
+/* Consistency subtitle */
+.consistency-subtitle {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--space-sm);
+}
+
+/* Divider flush */
+.divider-flush {
+  margin: 0;
+}
+
+/* Notes card text */
+.notes-text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

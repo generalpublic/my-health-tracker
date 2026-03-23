@@ -11,228 +11,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <title>Health Tracker — Calendar</title>
   <link rel="stylesheet" href="design-system.css">
-  <style>
-    /* Override default screen-content scrolling — we handle it ourselves */
-    .screen-content {
-      overflow: hidden;
-      padding-top: 0;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    /* Fixed header area */
-    .cal-fixed-header {
-      flex-shrink: 0;
-      background: var(--bg);
-      z-index: 10;
-      position: relative;
-    }
-
-    .cal-top-bar {
-      display: flex;
-      align-items: center;
-      padding: var(--space-md) var(--space-xl);
-      gap: var(--space-md);
-    }
-
-    .cal-back {
-      font-size: 24px;
-      color: var(--primary);
-      cursor: pointer;
-      line-height: 1;
-      padding: 4px;
-    }
-
-    .cal-page-title {
-      font-size: var(--text-xl);
-      font-weight: 700;
-      flex: 1;
-    }
-
-    .cal-metric-row {
-      padding: 0 var(--space-xl) var(--space-md);
-    }
-
-    /* Fade gradient below sticky header */
-    .cal-fade {
-      position: relative;
-      flex-shrink: 0;
-      height: 20px;
-      background: linear-gradient(to bottom, var(--bg), transparent);
-      z-index: 5;
-      pointer-events: none;
-      margin-top: -1px;
-    }
-
-    /* Scrollable calendar area */
-    .cal-scroll {
-      flex: 1;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: var(--space-xl);
-      margin-top: -16px;
-    }
-
-    .cal-scroll::-webkit-scrollbar { display: none; }
-
-    /* Month block */
-    .cal-month {
-      padding: var(--space-lg) var(--space-xl);
-    }
-
-    .cal-month-title {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      margin-bottom: var(--space-md);
-      color: var(--text);
-    }
-
-    .cal-weekday-row {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-      margin-bottom: 6px;
-    }
-
-    .cal-weekday {
-      text-align: center;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      padding: 2px 0;
-    }
-
-    .cal-weekday.weekend {
-      color: var(--primary);
-      opacity: 0.7;
-    }
-
-    .cal-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
-    }
-
-    .cal-day {
-      aspect-ratio: 1;
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      position: relative;
-      transition: transform 0.15s ease;
-    }
-
-    .cal-day:active {
-      transform: scale(0.92);
-    }
-
-    .cal-day-empty {
-      background: transparent;
-      cursor: default;
-    }
-
-    .cal-day-nodata {
-      background: var(--border);
-      color: var(--text-muted);
-    }
-
-    .cal-day-today {
-      box-shadow: 0 0 0 2.5px var(--primary);
-    }
-
-    .cal-day-future {
-      background: transparent;
-      color: var(--text-muted);
-      opacity: 0.3;
-      cursor: default;
-    }
-
-    /* Month divider */
-    .cal-divider {
-      height: 1px;
-      background: var(--border-subtle);
-      margin: 0 var(--space-xl);
-    }
-
-    /* Day detail overlay */
-    .cal-detail-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.4);
-      backdrop-filter: blur(6px);
-      z-index: 100;
-      align-items: flex-end;
-      justify-content: center;
-    }
-
-    .cal-detail-overlay.visible {
-      display: flex;
-    }
-
-    .cal-detail-sheet {
-      width: 100%;
-      max-width: 393px;
-      background: var(--surface);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-      padding: var(--space-xl);
-      padding-bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0px));
-      max-height: 70vh;
-      overflow-y: auto;
-      animation: slideUp 0.25s ease;
-      transition: transform 0.25s ease;
-      touch-action: none;
-    }
-
-    @keyframes slideUp {
-      from { transform: translateY(100%); }
-      to { transform: translateY(0); }
-    }
-
-    .cal-detail-handle {
-      width: 36px;
-      height: 4px;
-      border-radius: 2px;
-      background: var(--border);
-      margin: 0 auto var(--space-lg);
-    }
-
-    .cal-detail-date {
-      font-size: var(--text-lg);
-      font-weight: 700;
-      margin-bottom: var(--space-lg);
-    }
-
-    .cal-detail-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-md);
-    }
-
-    .cal-detail-item {
-      padding: var(--space-md);
-      background: var(--bg);
-      border-radius: var(--radius-md);
-    }
-
-    .cal-detail-label {
-      font-size: var(--text-xs);
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-
-    .cal-detail-value {
-      font-size: var(--text-lg);
-      font-weight: 700;
-    }
-  </style>
+  <link rel="stylesheet" href="css/calendar.css">
 </head>
 <body>
   <div class="phone-frame">
@@ -249,7 +28,7 @@
         <!-- Fixed header: title + metric pills -->
         <div class="cal-fixed-header">
           <div class="cal-top-bar">
-            <div class="cal-back" onclick="navigateTo('profile.html')">&#8249;</div>
+            <div class="cal-back">&#8249;</div>
             <div class="cal-page-title">Calendar</div>
           </div>
           <div class="cal-metric-row">
@@ -271,9 +50,9 @@
   </div>
 
   <!-- Day detail bottom sheet -->
-  <div class="cal-detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
-    <div class="cal-detail-sheet" onclick="event.stopPropagation()">
-      <div class="cal-detail-handle" onclick="dismissSheet()"></div>
+  <div class="cal-detail-overlay" id="detailOverlay">
+    <div class="cal-detail-sheet">
+      <div class="cal-detail-handle"></div>
       <div class="cal-detail-date" id="detailDate"></div>
       <div id="detailContent"></div>
     </div>

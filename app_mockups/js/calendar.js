@@ -1,4 +1,4 @@
-// --- Global functions for onclick handlers ---
+// --- Navigation helper ---
     function navigateTo(page) { window.location.href = page; }
     function setCalMetric(key, el) {
       currentCalMetric = calMetrics.find(m => m.key === key);
@@ -61,7 +61,7 @@
 
     (function renderCalPills() {
       document.getElementById('calMetricPills').innerHTML = calMetrics.map((m, i) =>
-        `<div class="pill ${i === 0 ? 'pill-active' : ''}" onclick="setCalMetric('${m.key}', this)">${m.label}</div>`
+        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-cal-metric="${m.key}">${m.label}</div>`
       ).join('');
     })();
 
@@ -132,7 +132,7 @@
             const val = record[currentCalMetric.field];
             const color = getStatusColor(val, currentCalMetric.threshold);
             const textColor = isLightColor(color) ? '#333' : '#fff';
-            html += `<div class="cal-day${isToday ? ' cal-day-today' : ''}" style="background:${color};color:${textColor}" onclick="showDetail('${dateStr}')">
+            html += `<div class="cal-day${isToday ? ' cal-day-today' : ''}" style="background:${color};color:${textColor}" data-cal-date="${dateStr}">
               ${d}
             </div>`;
           } else {
@@ -258,3 +258,38 @@
         '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">Something went wrong</div>' +
         '<div style="font-size:13px;">' + err.message + '</div></div>';
     }); // end initData().then()
+
+// --- Event listeners (DOM ready) ---
+document.addEventListener('DOMContentLoaded', function() {
+  // Back button
+  document.querySelector('.cal-back').addEventListener('click', function() {
+    navigateTo('profile.html');
+  });
+
+  // Detail overlay backdrop — close on click outside sheet
+  document.getElementById('detailOverlay').addEventListener('click', function(e) {
+    closeDetail(e);
+  });
+
+  // Detail sheet — stop propagation so clicks inside don't close
+  document.querySelector('.cal-detail-sheet').addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
+
+  // Handle — dismiss sheet
+  document.querySelector('.cal-detail-handle').addEventListener('click', function() {
+    dismissSheet();
+  });
+
+  // Metric pills — delegate from #calMetricPills
+  document.getElementById('calMetricPills').addEventListener('click', function(e) {
+    var pill = e.target.closest('[data-cal-metric]');
+    if (pill) setCalMetric(pill.getAttribute('data-cal-metric'), pill);
+  });
+
+  // Calendar day cells — delegate from .cal-scroll for dynamically rendered days
+  document.querySelector('.cal-scroll').addEventListener('click', function(e) {
+    var day = e.target.closest('[data-cal-date]');
+    if (day) showDetail(day.getAttribute('data-cal-date'));
+  });
+});

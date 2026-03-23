@@ -449,7 +449,7 @@
               <div class="habit-toggle-icon">${h.icon}</div>
               <div class="habit-toggle-name">${h.label}</div>
             </div>
-            <div class="toggle-switch ${done ? 'active' : ''}" onclick="this.classList.toggle('active')"></div>
+            <div class="toggle-switch ${done ? 'active' : ''}" data-action="toggle-self"></div>
           </div>`;
       }).join('');
     }
@@ -813,7 +813,7 @@
 
     (function renderPills() {
       document.getElementById('metricPills').innerHTML = metrics.map((m, i) =>
-        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-metric="${m.key}" onclick="setMetric('${m.key}', this)">${m.label}</div>`
+        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-metric="${m.key}">${m.label}</div>`
       ).join('');
     })();
 
@@ -1190,7 +1190,7 @@
         const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' });
         const numDate = `${date.getMonth()+1}/${date.getDate()}/${date.getFullYear()}`;
         return `
-          <div class="week-session" onclick="showSessionDetail(${i})" style="cursor:pointer">
+          <div class="week-session" data-session-idx="${i}" style="cursor:pointer">
             <div class="week-date"><div style="font-size:var(--text-xs);color:var(--text-secondary)">${numDate}</div><div>${dayStr}</div></div>
             <div style="color:var(--text-secondary);display:flex;align-items:center">${getActivityIcon(s.type, 22)}</div>
             <div class="week-dur">${s.duration} min</div>
@@ -1489,7 +1489,7 @@
 
     (function renderCalPills() {
       document.getElementById('calMetricPills').innerHTML = calMetrics.map((m, i) =>
-        `<div class="pill ${i === 0 ? 'pill-active' : ''}" onclick="setCalMetric('${m.key}', this)">${m.label}</div>`
+        `<div class="pill ${i === 0 ? 'pill-active' : ''}" data-cal-metric="${m.key}">${m.label}</div>`
       ).join('');
     })();
 
@@ -1571,7 +1571,7 @@
             const color = getStatusColor(val, currentCalMetric.threshold);
             const textColor = isLightColor(color) ? '#333' : '#fff';
             const dots = _activityDots(record.sessions);
-            html += `<div class="cal-day${isToday ? ' cal-day-today' : ''}" style="background:${color};color:${textColor}" onclick="showDetail('${dateStr}')">
+            html += `<div class="cal-day${isToday ? ' cal-day-today' : ''}" style="background:${color};color:${textColor}" data-cal-date="${dateStr}">
               ${d}${dots}
             </div>`;
           } else {
@@ -1775,3 +1775,189 @@
     }).catch(err => {
       console.error('[SPA] initData failed:', err);
     });
+
+    // ============================================
+    // Event Listeners (replaces all inline handlers)
+    // ============================================
+    // Script is loaded at end of <body> so DOM is already ready; run immediately.
+    (function () {
+
+      // --- Day navigation arrows ---
+      document.getElementById('dayNavPrev').addEventListener('click', function () { navDay(-1); });
+      document.getElementById('dayNavNext').addEventListener('click', function () { navDay(1); });
+
+      // --- Readiness card expand (delegate from #view-today) ---
+      document.getElementById('view-today').addEventListener('click', function (e) {
+        const card = e.target.closest('[data-action="toggle-expand"]');
+        if (card) toggleExpand(card);
+      });
+
+      // --- Sleep card navigate to sleep view ---
+      document.getElementById('sleepCard').addEventListener('click', function () { navigate('sleep'); });
+
+      // --- Trends range pills (delegate from #rangePills) ---
+      document.getElementById('rangePills').addEventListener('click', function (e) {
+        const pill = e.target.closest('[data-range]');
+        if (pill) setRange(parseInt(pill.dataset.range), pill);
+      });
+
+      // --- Trends/calendar month nav arrows (delegate from document) ---
+      document.addEventListener('click', function (e) {
+        const arrow = e.target.closest('[data-cal-nav]');
+        if (arrow) navigateCalMonth(parseInt(arrow.dataset.calNav));
+      });
+
+      // --- Log hub: category cards ---
+      document.getElementById('hubView').addEventListener('click', function (e) {
+        const card = e.target.closest('[data-form]');
+        if (card) showForm(card.dataset.form);
+      });
+
+      // --- Log forms: back buttons ---
+      document.getElementById('view-log').addEventListener('click', function (e) {
+        if (e.target.closest('[data-action="show-hub"]')) showHub();
+      });
+
+      // --- Form save buttons ---
+      document.getElementById('saveMorningBtn').addEventListener('click', function () {
+        saveForm('morning', 'Morning check-in saved');
+      });
+      document.getElementById('saveMiddayBtn').addEventListener('click', function () {
+        saveForm('midday', 'Midday check-in saved');
+      });
+      document.getElementById('saveEveningBtn').addEventListener('click', function () {
+        saveForm('evening', 'Evening review saved');
+      });
+      document.getElementById('saveNutritionBtn').addEventListener('click', function () {
+        saveForm('nutrition', 'Nutrition saved');
+      });
+      document.getElementById('saveCognitionBtn').addEventListener('click', function () {
+        saveForm('cognition', 'Cognition saved');
+      });
+      document.getElementById('saveSleepNotesBtn').addEventListener('click', function () {
+        saveForm('sleep_notes', 'Sleep notes saved');
+      });
+
+      // --- Sliders: delegate from #view-log ---
+      document.getElementById('view-log').addEventListener('input', function (e) {
+        const el = e.target;
+        if (el.tagName !== 'INPUT' || el.type !== 'range') return;
+        if (el.dataset.sliderInverted) {
+          updateSliderInverted(el, el.dataset.sliderTarget);
+        } else if (el.dataset.sliderTarget) {
+          updateSlider(el, el.dataset.sliderTarget, el.dataset.sliderMetric);
+        } else if (el.id === 'rpeSlider' && el.dataset.rpeDisplay) {
+          document.getElementById(el.dataset.rpeDisplay).textContent = el.value;
+        }
+      });
+
+      // --- Cognition stepper ---
+      document.getElementById('cognitionDown').addEventListener('click', function () { stepCognition(-1); });
+      document.getElementById('cognitionUp').addEventListener('click', function () { stepCognition(1); });
+
+      // --- Activity segment control ---
+      document.getElementById('segSessions').addEventListener('click', function () { showView('sessions'); });
+      document.getElementById('segStrength').addEventListener('click', function () { showView('strength'); });
+
+      // --- Add exercise toggle ---
+      document.getElementById('addBtn').addEventListener('click', toggleAddForm);
+      document.getElementById('doneAddFormBtn').addEventListener('click', toggleAddForm);
+      document.getElementById('addSetBtn').addEventListener('click', addStrengthSet);
+
+      // --- Muscle group pills (delegate from #muscleGroupPills) ---
+      document.getElementById('muscleGroupPills').addEventListener('click', function (e) {
+        const pill = e.target.closest('.pill');
+        if (pill) selectPill(pill);
+      });
+
+      // --- Stepper buttons (delegate from #addForm) ---
+      document.getElementById('addForm').addEventListener('click', function (e) {
+        const btn = e.target.closest('[data-step-target]');
+        if (btn) stepValue(btn.dataset.stepTarget, parseInt(btn.dataset.stepDelta));
+      });
+
+      // --- RPE slider ---
+      document.getElementById('rpeSlider').addEventListener('input', function () {
+        document.getElementById('rpeDisplay').textContent = this.value;
+      });
+
+      // --- Profile menu items with data-nav ---
+      document.getElementById('view-profile').addEventListener('click', function (e) {
+        const item = e.target.closest('[data-nav]');
+        if (item) { navigate(item.dataset.nav); return; }
+        const alertItem = e.target.closest('[data-alert]');
+        if (alertItem) { alert(alertItem.dataset.alert); return; }
+        if (e.target.closest('[data-action="toggle-notifications"]')) {
+          toggleNotifications(e.target.closest('[data-action="toggle-notifications"]'));
+        }
+      });
+
+      // --- Sleep detail nav back ---
+      document.getElementById('view-sleep').addEventListener('click', function (e) {
+        if (e.target.closest('[data-nav="today"]')) navigate('today');
+      });
+
+      // --- Calendar view back ---
+      document.getElementById('view-calendar').addEventListener('click', function (e) {
+        if (e.target.closest('[data-nav="profile"]')) navigate('profile');
+      });
+
+      // --- Tab bar (delegate from #tabBar) ---
+      document.getElementById('tabBar').addEventListener('click', function (e) {
+        const tabItem = e.target.closest('.tab-item');
+        if (!tabItem) return;
+        // Center log button uses data-nav
+        if (tabItem.dataset.nav) { navigate(tabItem.dataset.nav); return; }
+        // Regular tabs use data-view
+        if (tabItem.dataset.view) navigate(tabItem.dataset.view);
+      });
+
+      // --- Calendar day detail overlay ---
+      document.getElementById('detailOverlay').addEventListener('click', function (e) {
+        if (e.target === this) dismissSheet();
+      });
+      document.getElementById('calDetailSheet').addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+      document.getElementById('calDetailHandle').addEventListener('click', dismissSheet);
+
+      // --- Session detail overlay ---
+      document.getElementById('sessionDetailOverlay').addEventListener('click', function (e) {
+        if (e.target === this) dismissSessionDetail();
+      });
+      document.getElementById('sessionDetailSheet').addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+      document.getElementById('sessionDetailHandle').addEventListener('click', dismissSessionDetail);
+
+      // --- Metric pills in Trends view (delegate from #metricPills — dynamically rendered) ---
+      document.getElementById('metricPills').addEventListener('click', function (e) {
+        const pill = e.target.closest('[data-metric]');
+        if (pill) setMetric(pill.dataset.metric, pill);
+      });
+
+      // --- Calendar metric pills (delegate from #calMetricPills — dynamically rendered) ---
+      document.getElementById('calMetricPills').addEventListener('click', function (e) {
+        const pill = e.target.closest('[data-cal-metric]');
+        if (pill) setCalMetric(pill.dataset.calMetric, pill);
+      });
+
+      // --- Calendar day cells (delegate from #calMonths — dynamically rendered) ---
+      document.getElementById('calMonths').addEventListener('click', function (e) {
+        const day = e.target.closest('[data-cal-date]');
+        if (day) showDetail(day.dataset.calDate);
+      });
+
+      // --- Week session rows (delegate from #weekSessions — dynamically rendered) ---
+      document.getElementById('weekSessions').addEventListener('click', function (e) {
+        const row = e.target.closest('[data-session-idx]');
+        if (row) showSessionDetail(parseInt(row.dataset.sessionIdx));
+      });
+
+      // --- Habit toggle switches (delegate from #view-log for renderHabits output) ---
+      document.getElementById('view-log').addEventListener('click', function (e) {
+        const toggle = e.target.closest('[data-action="toggle-self"]');
+        if (toggle) toggle.classList.toggle('active');
+      });
+
+    }());

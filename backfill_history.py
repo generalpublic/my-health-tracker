@@ -334,7 +334,7 @@ def _fetch_data(client, target_date):
         if sleep and "dailySleepDTO" in sleep:
             dto    = sleep["dailySleepDTO"]
             scores = dto.get("sleepScores") or {}
-            secs   = dto.get("sleepTimeSeconds", 0)
+            secs   = dto.get("sleepTimeSeconds") or 0
             data["sleep_duration"] = round(secs / 3600, 2) if secs else ""
             overall = scores.get("overall", {})
             data["sleep_score"] = overall.get("value", "") if isinstance(overall, dict) else ""
@@ -344,16 +344,16 @@ def _fetch_data(client, target_date):
             data["sleep_bedtime"]   = datetime.fromtimestamp(start_gmt/1000).strftime("%H:%M") if start_gmt else ""
             data["sleep_wake_time"] = datetime.fromtimestamp(end_gmt/1000).strftime("%H:%M") if end_gmt   else ""
             data["sleep_time_in_bed"] = round((end_gmt - start_gmt)/1000/3600, 2) if start_gmt and end_gmt else ""
-            data["sleep_deep_min"]  = round(dto.get("deepSleepSeconds",  0)/60, 1)
-            data["sleep_light_min"] = round(dto.get("lightSleepSeconds", 0)/60, 1)
-            data["sleep_rem_min"]   = round(dto.get("remSleepSeconds",   0)/60, 1)
-            data["sleep_awake_min"] = round(dto.get("awakeSleepSeconds", 0)/60, 1)
+            data["sleep_deep_min"]  = round((dto.get("deepSleepSeconds")  or 0)/60, 1)
+            data["sleep_light_min"] = round((dto.get("lightSleepSeconds") or 0)/60, 1)
+            data["sleep_rem_min"]   = round((dto.get("remSleepSeconds")   or 0)/60, 1)
+            data["sleep_awake_min"] = round((dto.get("awakeSleepSeconds") or 0)/60, 1)
             def _pct(key):
                 v = scores.get(key, {})
                 return v.get("value", "") if isinstance(v, dict) else ""
             data["sleep_deep_pct"] = _pct("deepPercentage")
             data["sleep_rem_pct"]  = _pct("remPercentage")
-            sleep_levels = sleep.get("sleepLevels", [])
+            sleep_levels = sleep.get("sleepLevels") or []
             prev_level = None
             cycle_count = 0
             for s in sleep_levels:
