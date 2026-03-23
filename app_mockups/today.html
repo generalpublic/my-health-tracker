@@ -909,7 +909,9 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // ============================================
@@ -1140,21 +1142,21 @@
         const effects = expect.effects || [];
         const effectsHtml = effects.map(e => {
           if (e.domain === 'Status') {
-            return `<div class="expect-line"><span class="expect-domain" style="color:var(--text)">${e.domain}:</span><span>${e.text}</span></div>`;
+            return `<div class="expect-line"><span class="expect-domain" style="color:var(--text)">${escapeHtml(e.domain)}:</span><span>${escapeHtml(e.text)}</span></div>`;
           }
           const gradClass = e.domain === 'Mind' ? 'gradient-text-mind' : 'gradient-text-energy';
-          return `<div class="expect-line"><span class="expect-domain gradient-text ${gradClass}">${e.domain}:</span><span>${e.text}</span></div>`;
+          return `<div class="expect-line"><span class="expect-domain gradient-text ${gradClass}">${escapeHtml(e.domain)}:</span><span>${escapeHtml(e.text)}</span></div>`;
         }).join('');
         document.getElementById('expectEffects').innerHTML = effectsHtml;
 
         const flags = (briefing.flags || []);
         document.getElementById('flagsList').innerHTML = flags.map(f =>
-          `<div class="flag-item"><div class="flag-bullet"></div><span>${f}</span></div>`
+          `<div class="flag-item"><div class="flag-bullet"></div><span>${escapeHtml(f)}</span></div>`
         ).join('');
 
         const doItems = (briefing.do_items || []);
         document.getElementById('doList').innerHTML = doItems.map(d =>
-          `<div class="do-item"><div class="do-icon"></div><span>${d}</span></div>`
+          `<div class="do-item"><div class="do-icon"></div><span>${escapeHtml(d)}</span></div>`
         ).join('');
       } catch (e) {
         console.error('[today] Readiness render failed:', e);
@@ -1242,7 +1244,7 @@
       document.getElementById('sleepContextStats').innerHTML = contextItems.map(item =>
         `<div class="context-stat">
           <span class="status-dot status-dot-${item.status}" style="width:6px;height:6px"></span>
-          <span>${item.label}: <span class="context-stat-value">${item.value}</span></span>
+          <span>${escapeHtml(item.label)}: <span class="context-stat-value">${escapeHtml(item.value)}</span></span>
         </div>`
       ).join('');
     }

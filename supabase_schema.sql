@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS garmin (
     zone_3_min REAL,
     zone_4_min REAL,
     zone_5_min REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS sleep (
     sleep_feedback TEXT,
     bedtime_variability_7d REAL,
     wake_variability_7d REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -85,6 +87,7 @@ CREATE TABLE IF NOT EXISTS overall_analysis (
     key_insights TEXT,
     recommendations TEXT,
     training_load_status TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -112,6 +115,7 @@ CREATE TABLE IF NOT EXISTS daily_log (
     perceived_stress REAL,
     day_rating REAL,
     evening_notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -139,6 +143,7 @@ CREATE TABLE IF NOT EXISTS session_log (
     zone_ranges TEXT,
     source TEXT,
     elevation_m REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (date, activity_name)
 );
@@ -161,6 +166,7 @@ CREATE TABLE IF NOT EXISTS nutrition (
     water_l REAL,
     calorie_balance REAL,
     notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -175,10 +181,12 @@ CREATE TABLE IF NOT EXISTS strength_log (
     reps INTEGER,
     rpe REAL,
     notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_strength_log_date ON strength_log(date);
+CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, date);
 
 -- raw_data_archive: full Garmin export mirror (all text columns)
 CREATE TABLE IF NOT EXISTS raw_data_archive (
@@ -199,51 +207,114 @@ CREATE TABLE IF NOT EXISTS raw_data_archive (
     activity_calories TEXT, activity_elevation TEXT, activity_avg_speed TEXT,
     aerobic_te TEXT, anaerobic_te TEXT,
     zone_1 TEXT, zone_2 TEXT, zone_3 TEXT, zone_4 TEXT, zone_5 TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- _meta: schema versioning
+-- _meta: schema versioning (system metadata, no user_id)
 CREATE TABLE IF NOT EXISTS _meta (
     key TEXT PRIMARY KEY,
     value TEXT,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- illness_state: illness episode tracking
+CREATE TABLE IF NOT EXISTS illness_state (
+    onset_date TEXT PRIMARY KEY,
+    confirmed_date TEXT,
+    resolved_date TEXT,
+    resolution_method TEXT,
+    peak_score REAL,
+    notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- illness_daily_log: daily illness anomaly scores
+CREATE TABLE IF NOT EXISTS illness_daily_log (
+    date TEXT PRIMARY KEY,
+    illness_state_id REAL,
+    anomaly_score REAL,
+    signals TEXT,
+    label TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ==========================================================================
--- RLS Policies: anon = SELECT only. All writes go through Edge Functions
--- using service_role (which bypasses RLS). This prevents browser clients
--- from inserting, updating, or deleting data directly.
+-- Owner-scoped UNIQUE constraints for upsert targets
+-- (Existing PKs are kept. These constraints give PostgREST the composite
+-- key it needs for ON CONFLICT (user_id, date) without PK surgery.)
 -- ==========================================================================
 
--- garmin
-ALTER TABLE garmin ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "garmin_anon_select" ON garmin;
-DROP POLICY IF EXISTS "garmin_anon_insert" ON garmin;
-DROP POLICY IF EXISTS "garmin_anon_update" ON garmin;
-DROP POLICY IF EXISTS "garmin_anon_delete" ON garmin;
-CREATE POLICY "garmin_anon_select" ON garmin FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "garmin_authenticated_all" ON garmin;
-CREATE POLICY "garmin_authenticated_all" ON garmin FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'garmin_owner_uq' AND conrelid = 'garmin'::regclass) THEN
+    ALTER TABLE garmin ADD CONSTRAINT garmin_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
 
--- sleep
-ALTER TABLE sleep ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "sleep_anon_select" ON sleep;
-DROP POLICY IF EXISTS "sleep_anon_insert" ON sleep;
-DROP POLICY IF EXISTS "sleep_anon_update" ON sleep;
-DROP POLICY IF EXISTS "sleep_anon_delete" ON sleep;
-CREATE POLICY "sleep_anon_select" ON sleep FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "sleep_authenticated_all" ON sleep;
-CREATE POLICY "sleep_authenticated_all" ON sleep FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sleep_owner_uq' AND conrelid = 'sleep'::regclass) THEN
+    ALTER TABLE sleep ADD CONSTRAINT sleep_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
 
--- overall_analysis
-ALTER TABLE overall_analysis ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "overall_analysis_anon_select" ON overall_analysis;
-DROP POLICY IF EXISTS "overall_analysis_anon_insert" ON overall_analysis;
-DROP POLICY IF EXISTS "overall_analysis_anon_update" ON overall_analysis;
-DROP POLICY IF EXISTS "overall_analysis_anon_delete" ON overall_analysis;
-CREATE POLICY "overall_analysis_anon_select" ON overall_analysis FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "overall_analysis_authenticated_all" ON overall_analysis;
-CREATE POLICY "overall_analysis_authenticated_all" ON overall_analysis FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'overall_analysis_owner_uq' AND conrelid = 'overall_analysis'::regclass) THEN
+    ALTER TABLE overall_analysis ADD CONSTRAINT overall_analysis_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'daily_log_owner_uq' AND conrelid = 'daily_log'::regclass) THEN
+    ALTER TABLE daily_log ADD CONSTRAINT daily_log_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'session_log_owner_uq' AND conrelid = 'session_log'::regclass) THEN
+    ALTER TABLE session_log ADD CONSTRAINT session_log_owner_uq UNIQUE (user_id, date, activity_name);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'nutrition_owner_uq' AND conrelid = 'nutrition'::regclass) THEN
+    ALTER TABLE nutrition ADD CONSTRAINT nutrition_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'raw_data_archive_owner_uq' AND conrelid = 'raw_data_archive'::regclass) THEN
+    ALTER TABLE raw_data_archive ADD CONSTRAINT raw_data_archive_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'illness_state_owner_uq' AND conrelid = 'illness_state'::regclass) THEN
+    ALTER TABLE illness_state ADD CONSTRAINT illness_state_owner_uq UNIQUE (user_id, onset_date);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'illness_daily_log_owner_uq' AND conrelid = 'illness_daily_log'::regclass) THEN
+    ALTER TABLE illness_daily_log ADD CONSTRAINT illness_daily_log_owner_uq UNIQUE (user_id, date);
+  END IF;
+END $$;
+
+-- ==========================================================================
+-- RLS Policies: per-table least privilege, scoped to auth.uid()
+--
+-- Browser writable: daily_log, nutrition, session_log, sleep, overall_analysis
+--   -> SELECT + INSERT + UPDATE (no DELETE)
+-- Browser insert-only: strength_log
+--   -> SELECT + INSERT (no UPDATE, no DELETE)
+-- Browser read-only: garmin, illness_state, illness_daily_log
+--   -> SELECT only
+-- Server-only: raw_data_archive, _meta
+--   -> No browser policies (service_role bypasses RLS)
+-- ==========================================================================
+
+-- ---------- Browser writable: SELECT + INSERT + UPDATE ----------
 
 -- daily_log
 ALTER TABLE daily_log ENABLE ROW LEVEL SECURITY;
@@ -251,19 +322,13 @@ DROP POLICY IF EXISTS "daily_log_anon_select" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_insert" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_update" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_delete" ON daily_log;
-CREATE POLICY "daily_log_anon_select" ON daily_log FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "daily_log_authenticated_all" ON daily_log;
-CREATE POLICY "daily_log_authenticated_all" ON daily_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
--- session_log
-ALTER TABLE session_log ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "session_log_anon_select" ON session_log;
-DROP POLICY IF EXISTS "session_log_anon_insert" ON session_log;
-DROP POLICY IF EXISTS "session_log_anon_update" ON session_log;
-DROP POLICY IF EXISTS "session_log_anon_delete" ON session_log;
-CREATE POLICY "session_log_anon_select" ON session_log FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "session_log_authenticated_all" ON session_log;
-CREATE POLICY "session_log_authenticated_all" ON session_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "daily_log_owner_select" ON daily_log;
+DROP POLICY IF EXISTS "daily_log_owner_insert" ON daily_log;
+DROP POLICY IF EXISTS "daily_log_owner_update" ON daily_log;
+CREATE POLICY "daily_log_owner_select" ON daily_log FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "daily_log_owner_insert" ON daily_log FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "daily_log_owner_update" ON daily_log FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- nutrition
 ALTER TABLE nutrition ENABLE ROW LEVEL SECURITY;
@@ -271,9 +336,57 @@ DROP POLICY IF EXISTS "nutrition_anon_select" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_insert" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_update" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_delete" ON nutrition;
-CREATE POLICY "nutrition_anon_select" ON nutrition FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "nutrition_authenticated_all" ON nutrition;
-CREATE POLICY "nutrition_authenticated_all" ON nutrition FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "nutrition_owner_select" ON nutrition;
+DROP POLICY IF EXISTS "nutrition_owner_insert" ON nutrition;
+DROP POLICY IF EXISTS "nutrition_owner_update" ON nutrition;
+CREATE POLICY "nutrition_owner_select" ON nutrition FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "nutrition_owner_insert" ON nutrition FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "nutrition_owner_update" ON nutrition FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- session_log
+ALTER TABLE session_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "session_log_anon_select" ON session_log;
+DROP POLICY IF EXISTS "session_log_anon_insert" ON session_log;
+DROP POLICY IF EXISTS "session_log_anon_update" ON session_log;
+DROP POLICY IF EXISTS "session_log_anon_delete" ON session_log;
+DROP POLICY IF EXISTS "session_log_authenticated_all" ON session_log;
+DROP POLICY IF EXISTS "session_log_owner_select" ON session_log;
+DROP POLICY IF EXISTS "session_log_owner_insert" ON session_log;
+DROP POLICY IF EXISTS "session_log_owner_update" ON session_log;
+CREATE POLICY "session_log_owner_select" ON session_log FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "session_log_owner_insert" ON session_log FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "session_log_owner_update" ON session_log FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- sleep
+ALTER TABLE sleep ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sleep_anon_select" ON sleep;
+DROP POLICY IF EXISTS "sleep_anon_insert" ON sleep;
+DROP POLICY IF EXISTS "sleep_anon_update" ON sleep;
+DROP POLICY IF EXISTS "sleep_anon_delete" ON sleep;
+DROP POLICY IF EXISTS "sleep_authenticated_all" ON sleep;
+DROP POLICY IF EXISTS "sleep_owner_select" ON sleep;
+DROP POLICY IF EXISTS "sleep_owner_insert" ON sleep;
+DROP POLICY IF EXISTS "sleep_owner_update" ON sleep;
+CREATE POLICY "sleep_owner_select" ON sleep FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "sleep_owner_insert" ON sleep FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "sleep_owner_update" ON sleep FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- overall_analysis
+ALTER TABLE overall_analysis ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "overall_analysis_anon_select" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_anon_insert" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_anon_update" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_anon_delete" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_authenticated_all" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_owner_select" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_owner_insert" ON overall_analysis;
+DROP POLICY IF EXISTS "overall_analysis_owner_update" ON overall_analysis;
+CREATE POLICY "overall_analysis_owner_select" ON overall_analysis FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "overall_analysis_owner_insert" ON overall_analysis FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "overall_analysis_owner_update" ON overall_analysis FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- ---------- Browser insert-only: SELECT + INSERT ----------
 
 -- strength_log
 ALTER TABLE strength_log ENABLE ROW LEVEL SECURITY;
@@ -281,26 +394,52 @@ DROP POLICY IF EXISTS "strength_log_anon_select" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_insert" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_update" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_delete" ON strength_log;
-CREATE POLICY "strength_log_anon_select" ON strength_log FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "strength_log_authenticated_all" ON strength_log;
-CREATE POLICY "strength_log_authenticated_all" ON strength_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "strength_log_owner_select" ON strength_log;
+DROP POLICY IF EXISTS "strength_log_owner_insert" ON strength_log;
+CREATE POLICY "strength_log_owner_select" ON strength_log FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY "strength_log_owner_insert" ON strength_log FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 
--- raw_data_archive
+-- ---------- Browser read-only: SELECT only ----------
+
+-- garmin
+ALTER TABLE garmin ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "garmin_anon_select" ON garmin;
+DROP POLICY IF EXISTS "garmin_anon_insert" ON garmin;
+DROP POLICY IF EXISTS "garmin_anon_update" ON garmin;
+DROP POLICY IF EXISTS "garmin_anon_delete" ON garmin;
+DROP POLICY IF EXISTS "garmin_authenticated_all" ON garmin;
+DROP POLICY IF EXISTS "garmin_owner_select" ON garmin;
+CREATE POLICY "garmin_owner_select" ON garmin FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- illness_state
+ALTER TABLE illness_state ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "illness_state_anon_select" ON illness_state;
+DROP POLICY IF EXISTS "illness_state_authenticated_all" ON illness_state;
+DROP POLICY IF EXISTS "illness_state_owner_select" ON illness_state;
+CREATE POLICY "illness_state_owner_select" ON illness_state FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- illness_daily_log
+ALTER TABLE illness_daily_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "illness_daily_log_anon_select" ON illness_daily_log;
+DROP POLICY IF EXISTS "illness_daily_log_authenticated_all" ON illness_daily_log;
+DROP POLICY IF EXISTS "illness_daily_log_owner_select" ON illness_daily_log;
+CREATE POLICY "illness_daily_log_owner_select" ON illness_daily_log FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- ---------- Server-only: no browser policies ----------
+
+-- raw_data_archive (service_role only — no authenticated policies)
 ALTER TABLE raw_data_archive ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "raw_data_archive_anon_select" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_insert" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_update" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_delete" ON raw_data_archive;
-CREATE POLICY "raw_data_archive_anon_select" ON raw_data_archive FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "raw_data_archive_authenticated_all" ON raw_data_archive;
-CREATE POLICY "raw_data_archive_authenticated_all" ON raw_data_archive FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- _meta
+-- _meta (service_role only — no authenticated policies)
 ALTER TABLE _meta ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "_meta_anon_select" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_insert" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_update" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_delete" ON _meta;
-CREATE POLICY "_meta_anon_select" ON _meta FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "_meta_authenticated_all" ON _meta;
-CREATE POLICY "_meta_authenticated_all" ON _meta FOR ALL TO authenticated USING (true) WITH CHECK (true);

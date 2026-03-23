@@ -23,50 +23,127 @@ function escapeHtml(str) {
 
 // --- Supabase Config ---
 // Loaded from config.js (must be included before this script)
+// auth.js must also be loaded — it creates the `htSupabase` client singleton.
 if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
   document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;padding:2rem;text-align:center"><div><h2>Setup Required</h2><p>Copy <code>config.example.js</code> to <code>config.js</code> and add your Supabase credentials.</p></div></div>';
   throw new Error('Missing config.js — see config.example.js');
 }
 
 // ============================================
-// Supabase REST API helper
+// Supabase Query — uses authenticated client from auth.js
 // ============================================
 
 async function supabaseQuery(table, params = {}) {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url, {
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Accept': 'application/json',
-      'Cache-Control': 'no-cache',
-    },
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    console.error(`[data-loader] ${table} query failed: ${res.status} ${res.statusText}`, body);
-    throw new Error(`Supabase ${table}: ${res.status} ${res.statusText} — ${body}`);
+  // Build query using the supabase-js client (carries the user's JWT automatically)
+  let query = htSupabase.from(table).select(params.select || '*');
+
+  // Apply filters — translate PostgREST filter syntax to supabase-js
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'select' || key === 'order' || key === 'limit') continue;
+    if (value.startsWith('eq.')) query = query.eq(key, value.substring(3));
+    else if (value.startsWith('gte.')) query = query.gte(key, value.substring(4));
+    else if (value.startsWith('lte.')) query = query.lte(key, value.substring(4));
+    else if (value.startsWith('is.')) query = query.is(key, value.substring(3) === 'null' ? null : value.substring(3));
   }
-  const data = await res.json();
-  // rows loaded
-  return data;
+
+  // Apply ordering
+  if (params.order) {
+    const parts = params.order.split(',');
+    for (const part of parts) {
+      const [col, dir] = part.split('.');
+      query = query.order(col, { ascending: dir !== 'desc' });
+    }
+  }
+
+  // Apply limit
+  if (params.limit) query = query.limit(parseInt(params.limit));
+
+  const { data, error } = await query;
+  if (error) {
+    console.error(`[data-loader] ${table} query failed:`, error.message);
+    throw new Error(`Supabase ${table}: ${error.message}`);
+  }
+  return data || [];
 }
 
 // ============================================
-// Supabase Write — DISABLED (auth migration in progress)
-// Writes will be re-enabled with Supabase Auth JWT.
+// Supabase Write — authenticated via JWT
 // ============================================
 
 async function supabaseMutate(table, data, matchColumns = null) {
-  console.warn('[data-loader] Writes disabled — auth migration in progress');
-  return null;
+  // Lazy auth — prompt login on first write if not already signed in
+  const user = await requireAuth();
+  if (!user) {
+    console.warn('[data-loader] Write cancelled — auth declined');
+    return null;
+  }
+
+  try {
+    // Inject authenticated user's ID for RLS-scoped writes
+    const payload = { ...data, user_id: user.id };
+
+    let result;
+    if (matchColumns) {
+      // UPSERT — merge on match columns
+      const onConflict = matchColumns.replace(/\s/g, '');
+      const { data: rows, error } = await htSupabase
+        .from(table)
+        .upsert(payload, { onConflict })
+        .select();
+      if (error) throw error;
+      result = rows;
+    } else {
+      // Plain INSERT (e.g., strength_log with auto-increment id)
+      const { data: rows, error } = await htSupabase
+        .from(table)
+        .insert(payload)
+        .select();
+      if (error) throw error;
+      result = rows;
+    }
+    console.log(`[data-loader] ${table} write OK`, result);
+    return result;
+  } catch (err) {
+    console.error(`[data-loader] ${table} write failed:`, err.message);
+    // Queue for offline retry
+    _enqueueOffline(table, data, matchColumns);
+    return null;
+  }
 }
 
-function flushOfflineQueue() {
-  // Clear any stale offline queue from before the migration
-  try { localStorage.removeItem('ht_offline_queue'); } catch {}
+// ============================================
+// Offline Queue — retries failed writes when back online
+// ============================================
+
+function _enqueueOffline(table, data, matchColumns) {
+  try {
+    const queue = JSON.parse(localStorage.getItem('ht_offline_queue') || '[]');
+    queue.push({ table, data, matchColumns, ts: Date.now() });
+    localStorage.setItem('ht_offline_queue', JSON.stringify(queue));
+    console.log(`[data-loader] Queued offline write for ${table}`);
+  } catch {}
+}
+
+async function flushOfflineQueue() {
+  if (!isAuthenticated()) return;
+  try {
+    const queue = JSON.parse(localStorage.getItem('ht_offline_queue') || '[]');
+    if (queue.length === 0) return;
+    console.log(`[data-loader] Flushing ${queue.length} offline writes`);
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        await supabaseMutate(item.table, item.data, item.matchColumns);
+      } catch {
+        remaining.push(item);
+      }
+    }
+    if (remaining.length > 0) {
+      localStorage.setItem('ht_offline_queue', JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem('ht_offline_queue');
+    }
+  } catch {}
 }
 
 // ============================================
@@ -120,7 +197,7 @@ function saveHabitToggle(dateStr, habitKey, value, habitsTotal) {
   _habitDebounceTimer = setTimeout(() => {
     const data = { ..._habitPendingData };
     _habitPendingData = {};
-    supabaseMutate('daily_log', data, 'date');
+    supabaseMutate('daily_log', data, 'user_id,date');
   }, 500);
 }
 
@@ -137,7 +214,7 @@ async function saveMorningCheckin() {
     habits_total: habitsTotal,
     manual_source: 'pwa',
   };
-  return supabaseMutate('daily_log', data, 'date');
+  return supabaseMutate('daily_log', data, 'user_id,date');
 }
 
 /** Midday Check-in -> daily_log (midday fields) */
@@ -154,7 +231,7 @@ async function saveMiddayCheckin() {
     midday_notes: (textarea && textarea.value) || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('daily_log', data, 'date');
+  return supabaseMutate('daily_log', data, 'user_id,date');
 }
 
 /** Evening Review -> daily_log (evening fields + habits + day_rating + stress) */
@@ -176,7 +253,7 @@ async function saveEveningReview() {
     evening_notes: (textarea && textarea.value) || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('daily_log', data, 'date');
+  return supabaseMutate('daily_log', data, 'user_id,date');
 }
 
 /** Nutrition -> nutrition (meals + macros) */
@@ -205,7 +282,7 @@ async function saveNutrition() {
     notes: notes || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('nutrition', data, 'date');
+  return supabaseMutate('nutrition', data, 'user_id,date');
 }
 
 /** Cognition -> overall_analysis (cognition + cognition_notes only) */
@@ -219,7 +296,7 @@ async function saveCognition() {
     cognition_notes: (textarea && textarea.value) || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('overall_analysis', data, 'date');
+  return supabaseMutate('overall_analysis', data, 'user_id,date');
 }
 
 /** Sleep Notes -> sleep (notes column only) */
@@ -231,7 +308,7 @@ async function saveSleepNotes() {
     notes: (textarea && textarea.value) || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('sleep', data, 'date');
+  return supabaseMutate('sleep', data, 'user_id,date');
 }
 
 /** Strength Set -> strength_log (plain INSERT, auto-increment ID) */
@@ -263,7 +340,7 @@ async function saveSessionManualFields(activityName, perceivedEffort, postWorkou
     notes: notes || null,
     manual_source: 'pwa',
   };
-  return supabaseMutate('session_log', data, 'date,activity_name');
+  return supabaseMutate('session_log', data, 'user_id,date,activity_name');
 }
 
 // ============================================
@@ -870,6 +947,12 @@ function _buildSleepContextItems(sl) {
  * @returns {object} Result with status and sync info
  */
 async function triggerCloudRefresh(date = null) {
+  // Require auth — Edge Function validates JWT
+  const user = await requireAuth();
+  if (!user) {
+    return { status: 'error', error: 'Authentication required for sync' };
+  }
+
   const edgeFnUrl = (typeof EDGE_FUNCTION_URL !== 'undefined' && EDGE_FUNCTION_URL)
     ? EDGE_FUNCTION_URL
     : `${SUPABASE_URL}/functions/v1/refresh`;
@@ -881,9 +964,17 @@ async function triggerCloudRefresh(date = null) {
   const targetDate = date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   try {
+    // Include auth JWT so the Edge Function can verify the caller
+    const { data: { session } } = await htSupabase.auth.getSession();
+    const authHeaders = { 'Content-Type': 'application/json' };
+    if (session?.access_token) {
+      authHeaders['Authorization'] = `Bearer ${session.access_token}`;
+      authHeaders['apikey'] = SUPABASE_ANON_KEY;
+    }
+
     const res = await fetch(edgeFnUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders,
       body: JSON.stringify({ date: targetDate }),
     });
 
@@ -952,7 +1043,10 @@ function estimateReadiness(garmin, sleep) {
  * handle gracefully).
  */
 async function initData() {
-  // Flush any offline-queued writes from previous session
+  // Require auth — shows login modal on first visit, silent restore after
+  await checkAuth();
+
+  // Flush any offline-queued writes if already authenticated
   await flushOfflineQueue();
 
   try {

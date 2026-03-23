@@ -4,9 +4,9 @@
  * Receives POST from PWA, validates origin, rate limits (1 per 5 min),
  * calls Google Cloud Function, returns result to PWA.
  *
- * Deploy: supabase functions deploy refresh --no-verify-jwt
- * (--no-verify-jwt is required because the PWA calls this without a Supabase JWT.
- *  The function validates requests via rate limiting + origin check instead.)
+ * Deploy: supabase functions deploy refresh
+ * (JWT verification is handled automatically by Supabase — only authenticated
+ *  users with a valid session can invoke this function.)
  *
  * Env vars (set via supabase secrets set):
  *   GCF_URL            — Google Cloud Function URL
@@ -19,17 +19,17 @@ const GCF_URL = Deno.env.get("GCF_URL") ?? "";
 const REFRESH_SECRET = Deno.env.get("REFRESH_SECRET") ?? "";
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "").split(",").map(s => s.trim()).filter(Boolean);
 
-function getCorsOrigin(req: Request): string {
+function getCorsOrigin(req: Request): string | null {
   const origin = req.headers.get("Origin") ?? "";
-  if (ALLOWED_ORIGINS.length === 0) return origin; // fallback: echo (less safe, but unblocked)
-  return ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  if (ALLOWED_ORIGINS.length === 0) return null; // no config = reject all
+  return ALLOWED_ORIGINS.includes(origin) ? origin : null;
 }
 
-function corsHeaders(req: Request) {
+function corsHeaders(origin: string) {
   return {
-    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
     "Vary": "Origin",
   };
 }
@@ -38,7 +38,16 @@ function corsHeaders(req: Request) {
 const lastRefresh = new Map<string, number>();
 
 Deno.serve(async (req: Request) => {
-  const headers = corsHeaders(req);
+  // Strict CORS — reject disallowed or unconfigured origins with 403
+  const allowedOrigin = getCorsOrigin(req);
+  if (!allowedOrigin) {
+    return new Response(
+      JSON.stringify({ error: "Origin not allowed" }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const headers = corsHeaders(allowedOrigin);
 
   // CORS preflight
   if (req.method === "OPTIONS") {

@@ -458,7 +458,9 @@
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   </style>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // --- Global functions for onclick handlers ---
@@ -572,7 +574,7 @@
 
         // Append to visible list
         const list = document.getElementById('strengthList');
-        const setHtml = `<div class="strength-exercise"><div class="strength-header"><div class="strength-name">${exercise}</div><span class="muscle-tag">${muscleGroup}</span></div><div class="strength-sets">Set: ${weight} lbs x ${reps} @ RPE ${rpe}</div></div>`;
+        const setHtml = `<div class="strength-exercise"><div class="strength-header"><div class="strength-name">${escapeHtml(exercise)}</div><span class="muscle-tag">${escapeHtml(muscleGroup)}</span></div><div class="strength-sets">Set: ${escapeHtml(String(weight))} lbs x ${escapeHtml(String(reps))} @ RPE ${escapeHtml(String(rpe))}</div></div>`;
         list.insertAdjacentHTML('beforeend', setHtml);
       } catch (err) {
         console.error('[strength] Save failed:', err);

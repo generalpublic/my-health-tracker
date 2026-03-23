@@ -24,6 +24,8 @@ Environment variables (set via GCP Secret Manager or --set-env-vars):
     SUPABASE_URL              — Supabase project URL
     SUPABASE_SERVICE_ROLE_KEY — Supabase service role key (from Secret Manager)
     REFRESH_SECRET            — Shared secret for request authentication
+    ALLOWED_ORIGINS           — Comma-separated allowed CORS origins
+                                (e.g. "https://user.github.io,http://localhost:8000")
 """
 
 import json
@@ -334,9 +336,25 @@ def health_refresh(request):
             "data_summary": {"steps": 6239, "hrv": 42, ...}
         }
     """
+    # CORS — reject if Origin header is present and not in allowed list.
+    # Missing Origin = server-to-server (Edge Function) — allowed.
+    # CORS is browser hygiene; real auth is REFRESH_SECRET.
+    allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    request_origin = request.headers.get("Origin", "")
+
+    if request_origin and allowed_origins and request_origin not in allowed_origins:
+        return (
+            json.dumps({"error": "Origin not allowed"}),
+            403,
+            {"Content-Type": "application/json"},
+        )
+
+    # Set CORS header to the request origin (if present), or omit
+    cors_origin = request_origin if request_origin else ""
+
     headers = {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": cors_origin,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, X-Refresh-Secret",
     }

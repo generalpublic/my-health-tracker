@@ -2664,6 +2664,13 @@
           </div>
         </div>
 
+        <!-- Account -->
+        <div class="menu-section">
+          <div class="menu-item" id="auth-menu-btn" style="justify-content:center">
+            <div class="menu-label" id="auth-menu-label" style="font-weight:600">Sign In</div>
+          </div>
+        </div>
+
         <div class="version-text">Health Tracker v1.0</div>
 
         </div>
@@ -2841,7 +2848,9 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // ============================================
@@ -3365,24 +3374,24 @@
       const effects = expect.effects || [];
       const effectsHtml = effects.map(e => {
         if (e.domain === 'Status') {
-          return `<div class="expect-line"><span class="expect-domain" style="color:var(--text)">${e.domain}:</span><span>${e.text}</span></div>`;
+          return `<div class="expect-line"><span class="expect-domain" style="color:var(--text)">${escapeHtml(e.domain)}:</span><span>${escapeHtml(e.text)}</span></div>`;
         }
         const gradClass = e.domain === 'Mind' ? 'gradient-text-mind' : 'gradient-text-energy';
-        return `<div class="expect-line"><span class="expect-domain gradient-text ${gradClass}">${e.domain}:</span><span>${e.text}</span></div>`;
+        return `<div class="expect-line"><span class="expect-domain gradient-text ${gradClass}">${escapeHtml(e.domain)}:</span><span>${escapeHtml(e.text)}</span></div>`;
       }).join('');
       document.getElementById('expectEffects').innerHTML = effectsHtml;
 
       // FLAGS
       const flags = (briefing.flags || []);
       const flagsHtml = flags.map(f =>
-        `<div class="flag-item"><div class="flag-bullet"></div><span>${f}</span></div>`
+        `<div class="flag-item"><div class="flag-bullet"></div><span>${escapeHtml(f)}</span></div>`
       ).join('');
       document.getElementById('flagsList').innerHTML = flagsHtml;
 
       // DO
       const doItems = (briefing.do_items || []);
       const doHtml = doItems.map(d =>
-        `<div class="do-item"><div class="do-icon"></div><span>${d}</span></div>`
+        `<div class="do-item"><div class="do-icon"></div><span>${escapeHtml(d)}</span></div>`
       ).join('');
       document.getElementById('doList').innerHTML = doHtml;
     } catch (e) {
@@ -3484,7 +3493,7 @@
       document.getElementById('sleepContextStats').innerHTML = contextItems.map(item =>
         `<div class="context-stat">
           <span class="status-dot status-dot-${item.status}" style="width:6px;height:6px"></span>
-          <span>${item.label}: <span class="context-stat-value">${item.value}</span></span>
+          <span>${escapeHtml(item.label)}: <span class="context-stat-value">${escapeHtml(item.value)}</span></span>
         </div>`
       ).join('');
     })();
@@ -4540,6 +4549,27 @@
     }
 
     // ============================================
+    // Auth Button (dynamic Sign In / Sign Out)
+    // ============================================
+    function _updateAuthButton() {
+      const btn = document.getElementById('auth-menu-btn');
+      const label = document.getElementById('auth-menu-label');
+      if (!btn || !label) return;
+      if (isAuthenticated()) {
+        label.textContent = 'Sign Out';
+        label.style.color = '#F87171';
+        btn.onclick = async () => { await logout(); _updateAuthButton(); };
+      } else {
+        label.textContent = 'Sign In';
+        label.style.color = '#8B5CF6';
+        btn.onclick = async () => { await requireAuth(); _updateAuthButton(); };
+      }
+    }
+    // Listen for logout events to update button
+    window.addEventListener('ht-auth-logout', () => _updateAuthButton());
+    window.addEventListener('ht-auth-ready', () => _updateAuthButton());
+
+    // ============================================
     // Boot Sequence
     // ============================================
     window._dataReady = false;
@@ -4554,6 +4584,8 @@
         updateTabBar('today');
         viewRendered['today'] = true;
       }
+      // Update auth button state
+      _updateAuthButton();
     }).catch(err => {
       console.error('[SPA] initData failed:', err);
     });

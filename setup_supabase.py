@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS garmin (
     zone_5_min REAL,
     spo2_avg REAL,
     spo2_min REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS sleep (
     sleep_feedback TEXT,
     bedtime_variability_7d REAL,
     wake_variability_7d REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -118,6 +120,7 @@ CREATE TABLE IF NOT EXISTS overall_analysis (
     key_insights TEXT,
     recommendations TEXT,
     training_load_status TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -145,6 +148,7 @@ CREATE TABLE IF NOT EXISTS daily_log (
     perceived_stress REAL,
     day_rating REAL,
     evening_notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -172,6 +176,7 @@ CREATE TABLE IF NOT EXISTS session_log (
     zone_ranges TEXT,
     source TEXT,
     elevation_m REAL,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (date, activity_name)
 );
@@ -194,6 +199,7 @@ CREATE TABLE IF NOT EXISTS nutrition (
     water_l REAL,
     calorie_balance REAL,
     notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -208,10 +214,12 @@ CREATE TABLE IF NOT EXISTS strength_log (
     reps INTEGER,
     rpe REAL,
     notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_strength_log_date ON strength_log(date);
+CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, date);
 
 -- raw_data_archive: full Garmin export mirror (all text columns)
 CREATE TABLE IF NOT EXISTS raw_data_archive (
@@ -232,13 +240,37 @@ CREATE TABLE IF NOT EXISTS raw_data_archive (
     activity_calories TEXT, activity_elevation TEXT, activity_avg_speed TEXT,
     aerobic_te TEXT, anaerobic_te TEXT,
     zone_1 TEXT, zone_2 TEXT, zone_3 TEXT, zone_4 TEXT, zone_5 TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- _meta: schema versioning
+-- _meta: schema versioning (system metadata, no user_id)
 CREATE TABLE IF NOT EXISTS _meta (
     key TEXT PRIMARY KEY,
     value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- illness_state: illness episode tracking
+CREATE TABLE IF NOT EXISTS illness_state (
+    onset_date TEXT PRIMARY KEY,
+    confirmed_date TEXT,
+    resolved_date TEXT,
+    resolution_method TEXT,
+    peak_score REAL,
+    notes TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- illness_daily_log: daily illness anomaly scores
+CREATE TABLE IF NOT EXISTS illness_daily_log (
+    date TEXT PRIMARY KEY,
+    illness_state_id REAL,
+    anomaly_score REAL,
+    signals TEXT,
+    label TEXT,
+    user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 """
@@ -249,38 +281,73 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 RLS_TABLES = [
     "garmin", "sleep", "overall_analysis", "daily_log",
-    "session_log", "nutrition", "strength_log", "raw_data_archive", "_meta"
+    "session_log", "nutrition", "strength_log", "raw_data_archive", "_meta",
+    "illness_state", "illness_daily_log",
 ]
 
+# Per-table access levels for least-privilege RLS
+# "rw"       = SELECT + INSERT + UPDATE (browser writable)
+# "insert"   = SELECT + INSERT (browser insert-only)
+# "ro"       = SELECT only (browser read-only)
+# "none"     = no browser policies (server-only via service_role)
+_TABLE_ACCESS = {
+    "daily_log": "rw",
+    "nutrition": "rw",
+    "session_log": "rw",
+    "sleep": "rw",
+    "overall_analysis": "rw",
+    "strength_log": "insert",
+    "garmin": "ro",
+    "illness_state": "ro",
+    "illness_daily_log": "ro",
+    "raw_data_archive": "none",
+    "_meta": "none",
+}
+
+
 def _rls_sql():
-    """Generate RLS enable + policy statements for all tables."""
+    """Generate RLS enable + per-table least-privilege policies scoped to auth.uid()."""
     stmts = []
     for table in RLS_TABLES:
+        access = _TABLE_ACCESS.get(table, "none")
         stmts.append(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;")
-        # Drop existing policies first (idempotent)
-        stmts.append(
-            f"DROP POLICY IF EXISTS \"{table}_anon_select\" ON {table};"
-        )
-        stmts.append(
-            f"DROP POLICY IF EXISTS \"{table}_anon_insert\" ON {table};"
-        )
-        stmts.append(
-            f"DROP POLICY IF EXISTS \"{table}_anon_update\" ON {table};"
-        )
-        stmts.append(
-            f"DROP POLICY IF EXISTS \"{table}_anon_delete\" ON {table};"
-        )
-        # Anon: SELECT only (reads). All writes go through service_role or authenticated JWT.
-        stmts.append(
-            f"CREATE POLICY \"{table}_anon_select\" ON {table} FOR SELECT TO anon USING (true);"
-        )
-        # Authenticated: full access (for browser writes via Supabase Auth JWT)
-        stmts.append(
-            f"DROP POLICY IF EXISTS \"{table}_authenticated_all\" ON {table};"
-        )
-        stmts.append(
-            f"CREATE POLICY \"{table}_authenticated_all\" ON {table} FOR ALL TO authenticated USING (true) WITH CHECK (true);"
-        )
+
+        # Drop ALL old policy names (anon, authenticated, owner) for idempotency
+        for suffix in ["anon_select", "anon_insert", "anon_update", "anon_delete",
+                        "authenticated_all", "owner_select", "owner_insert", "owner_update"]:
+            stmts.append(f"DROP POLICY IF EXISTS \"{table}_{suffix}\" ON {table};")
+
+        if access == "none":
+            # Server-only: no browser policies. service_role bypasses RLS.
+            stmts.append(f"-- {table}: server-only (no authenticated policies)")
+        elif access == "ro":
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_select\" ON {table} "
+                f"FOR SELECT TO authenticated USING (user_id = auth.uid());"
+            )
+        elif access == "insert":
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_select\" ON {table} "
+                f"FOR SELECT TO authenticated USING (user_id = auth.uid());"
+            )
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_insert\" ON {table} "
+                f"FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());"
+            )
+        elif access == "rw":
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_select\" ON {table} "
+                f"FOR SELECT TO authenticated USING (user_id = auth.uid());"
+            )
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_insert\" ON {table} "
+                f"FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());"
+            )
+            stmts.append(
+                f"CREATE POLICY \"{table}_owner_update\" ON {table} "
+                f"FOR UPDATE TO authenticated "
+                f"USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());"
+            )
     return "\n".join(stmts)
 
 
@@ -630,6 +697,12 @@ _INTEGER_COLS = {
 
 def seed_from_sqlite(supabase):
     """Copy all data from local SQLite database to Supabase."""
+    owner_uuid = os.environ.get("SUPABASE_OWNER_UUID")
+    if not owner_uuid:
+        print("ERROR: SUPABASE_OWNER_UUID not set in .env — required for seeding.")
+        print("  Get it from: Supabase Dashboard -> Auth -> Users -> your UUID")
+        sys.exit(1)
+
     if not SQLITE_DB.exists():
         print(f"ERROR: SQLite database not found at {SQLITE_DB}")
         sys.exit(1)
@@ -673,6 +746,11 @@ def seed_from_sqlite(supabase):
                 record[col] = val
             records.append(record)
 
+        # Inject user_id for all data tables (not _meta)
+        if table_name != "_meta":
+            for record in records:
+                record["user_id"] = owner_uuid
+
         # Batch upsert into Supabase
         row_count = len(records)
         print(f"  [{table_name}] Seeding {row_count} rows...", end=" ", flush=True)
@@ -686,12 +764,12 @@ def seed_from_sqlite(supabase):
                     batch = records[i:i + BATCH_SIZE]
                     supabase.table(table_name).insert(batch).execute()
             elif pk:
-                # Upsert using primary key
-                pk_str = ",".join(pk)
+                # Upsert using owner-scoped UNIQUE constraint
+                conflict_cols = "user_id," + ",".join(pk)
                 for i in range(0, len(records), BATCH_SIZE):
                     batch = records[i:i + BATCH_SIZE]
                     supabase.table(table_name).upsert(
-                        batch, on_conflict=pk_str
+                        batch, on_conflict=conflict_cols
                     ).execute()
             else:
                 # Insert without conflict resolution
@@ -712,11 +790,14 @@ def seed_from_sqlite(supabase):
 # Verify: check that tables exist and have data
 # ---------------------------------------------------------------------------
 
+_VERIFY_TABLES = list(TABLE_CONFIGS.keys()) + ["_meta", "illness_state", "illness_daily_log"]
+
+
 def verify_tables(supabase):
     """Verify all tables exist and report row counts."""
     print("\nVerifying tables...")
     all_ok = True
-    for table_name in TABLE_CONFIGS:
+    for table_name in _VERIFY_TABLES:
         try:
             result = supabase.table(table_name).select("*", count="exact").limit(0).execute()
             count = result.count if result.count is not None else "?"
@@ -724,15 +805,6 @@ def verify_tables(supabase):
         except Exception as e:
             print(f"  [{table_name}] FAIL - {e}")
             all_ok = False
-
-    # Also check _meta
-    try:
-        result = supabase.table("_meta").select("*", count="exact").limit(0).execute()
-        count = result.count if result.count is not None else "?"
-        print(f"  [_meta] OK - {count} rows")
-    except Exception as e:
-        print(f"  [_meta] FAIL - {e}")
-        all_ok = False
 
     return all_ok
 

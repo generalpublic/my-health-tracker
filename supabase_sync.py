@@ -47,6 +47,24 @@ def _day_from_date(date_str):
 
 
 # ---------------------------------------------------------------------------
+# Owner injection — every server-side write must include user_id
+# ---------------------------------------------------------------------------
+
+_OWNER_UUID = os.environ.get("SUPABASE_OWNER_UUID")
+
+
+def _with_owner(row: dict) -> dict:
+    """Inject owner user_id for service-role writes. Fails fast if unset."""
+    if not _OWNER_UUID:
+        raise RuntimeError(
+            "SUPABASE_OWNER_UUID not set — refusing to write rows without owner. "
+            "Set it in .env (value: Supabase Dashboard -> Auth -> Users -> your UUID)."
+        )
+    row["user_id"] = _OWNER_UUID
+    return row
+
+
+# ---------------------------------------------------------------------------
 # Client initialization
 # ---------------------------------------------------------------------------
 
@@ -135,7 +153,7 @@ def upsert_garmin(client, date_str, data):
             "zone_5_min": _to_num(data.get("zone_5")),
             # spo2_avg and spo2_min: add after running ALTER TABLE in Supabase dashboard
         }
-        client.table("garmin").upsert(row, on_conflict="date").execute()
+        client.table("garmin").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] garmin upserted for {date_str}")
     except Exception as e:
         print(f"[Supabase] garmin upsert failed for {date_str}: {e}")
@@ -174,7 +192,7 @@ def upsert_sleep(client, date_str, data):
             "bedtime_variability_7d": _to_num(data.get("bedtime_variability_7d")),
             "wake_variability_7d": _to_num(data.get("wake_variability_7d")),
         }
-        client.table("sleep").upsert(row, on_conflict="date").execute()
+        client.table("sleep").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] sleep upserted for {date_str}")
     except Exception as e:
         print(f"[Supabase] sleep upsert failed for {date_str}: {e}")
@@ -192,7 +210,7 @@ def upsert_nutrition(client, date_str, data):
             "active_calories_burned": _to_num(data.get("active_calories")),
             "bmr_calories": _to_num(data.get("bmr_calories")),
         }
-        client.table("nutrition").upsert(row, on_conflict="date").execute()
+        client.table("nutrition").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] nutrition upserted for {date_str}")
     except Exception as e:
         print(f"[Supabase] nutrition upsert failed for {date_str}: {e}")
@@ -241,7 +259,7 @@ def upsert_session_log(client, date_str, data):
             "elevation_m": _to_num(data.get("activity_elevation")),
         }
         # Composite primary key: (date, activity_name)
-        client.table("session_log").upsert(row, on_conflict="date,activity_name").execute()
+        client.table("session_log").upsert(_with_owner(row), on_conflict="user_id,date,activity_name").execute()
         print(f"[Supabase] session_log upserted for {date_str} - {activity_name}")
     except Exception as e:
         print(f"[Supabase] session_log upsert failed for {date_str}: {e}")
@@ -272,7 +290,7 @@ def upsert_overall_analysis(client, date_str, data):
             val = data.get(data_key)
             if val is not None and val != "":
                 row[col_name] = converter(val)
-        client.table("overall_analysis").upsert(row, on_conflict="date").execute()
+        client.table("overall_analysis").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] overall_analysis upserted for {date_str}")
     except Exception as e:
         print(f"[Supabase] overall_analysis upsert failed for {date_str}: {e}")
@@ -307,7 +325,7 @@ def upsert_daily_log(client, date_str, data):
             "day_rating": _to_num(data.get("day_rating")),
             "evening_notes": _to_text(data.get("evening_notes")),
         }
-        client.table("daily_log").upsert(row, on_conflict="date").execute()
+        client.table("daily_log").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] daily_log upserted for {date_str}")
     except Exception as e:
         print(f"[Supabase] daily_log upsert failed for {date_str}: {e}")
@@ -523,7 +541,7 @@ def upsert_illness_state(client, data):
             "peak_score": _to_num(data.get("peak_score")),
             "notes": _to_text(data.get("notes")),
         }
-        client.table("illness_state").upsert(row, on_conflict="onset_date").execute()
+        client.table("illness_state").upsert(_with_owner(row), on_conflict="user_id,onset_date").execute()
         print(f"[Supabase] illness_state upserted for {row['onset_date']}")
     except Exception as e:
         print(f"[Supabase] illness_state upsert failed: {e}")
@@ -544,6 +562,6 @@ def upsert_illness_daily(client, date_str, data):
             "signals": json.dumps(data.get("signals", [])),
             "label": _to_text(data.get("label")),
         }
-        client.table("illness_daily_log").upsert(row, on_conflict="date").execute()
+        client.table("illness_daily_log").upsert(_with_owner(row), on_conflict="user_id,date").execute()
     except Exception as e:
         print(f"[Supabase] illness_daily_log upsert failed for {date_str}: {e}")
