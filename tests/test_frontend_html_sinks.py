@@ -46,20 +46,20 @@ ALLOWLIST = {
 
     # --- today.js ---
     "js/today.js:102",   # habit circle toggle (predefined icon/checkmark)
-    "js/today.js:201",   # readiness gauge SVG (computed numeric values)
-    "js/today.js:234",   # expect effects (escapeHtml on all text)
-    "js/today.js:237",   # flags list (escapeHtml on all text)
-    "js/today.js:242",   # do items list (escapeHtml on all text)
-    "js/today.js:278",   # sleep stages bar (computed percentages, CSS vars)
-    "js/today.js:297",   # sleep stages detail (computed values, predefined labels)
-    "js/today.js:328",   # sleep context stats (escapeHtml on label and value)
-    "js/today.js:344",   # body battery gauge SVG (computed numeric values)
-    "js/today.js:383",   # habits row (predefined icons/labels, computed state)
-    "js/today.js:409",   # activity sessions (escapeHtml on activity_name)
-    "js/today.js:449",   # insights list (escapeHtml on all text)
-    "js/today.js:456",   # recommendations section (escapeHtml on all text)
-    "js/today.js:463",   # recommendations clear (empty string)
-    "js/today.js:489",   # insertAdjacentHTML — preliminary badge (static markup)
+    "js/today.js:263",   # readiness gauge SVG (computed numeric values)
+    "js/today.js:296",   # expect effects (escapeHtml on all text)
+    "js/today.js:299",   # flags list (escapeHtml on all text)
+    "js/today.js:304",   # do items list (escapeHtml on all text)
+    "js/today.js:340",   # sleep stages bar (computed percentages, CSS vars)
+    "js/today.js:359",   # sleep stages detail (computed values, predefined labels)
+    "js/today.js:390",   # sleep context stats (escapeHtml on label and value)
+    "js/today.js:406",   # body battery gauge SVG (computed numeric values)
+    "js/today.js:445",   # habits row (predefined icons/labels, computed state)
+    "js/today.js:471",   # activity sessions (escapeHtml on activity_name)
+    "js/today.js:511",   # insights list (escapeHtml on all text)
+    "js/today.js:518",   # recommendations section (escapeHtml on all text)
+    "js/today.js:525",   # recommendations clear (empty string)
+    "js/today.js:551",   # insertAdjacentHTML — preliminary badge (static markup)
 
     # --- activity.js ---
     "js/activity.js:40",    # session detail overlay (escapeHtml on activity_name)
@@ -96,36 +96,36 @@ ALLOWLIST = {
     "js/index.js:352",    # insertAdjacentHTML strength set (escapeHtml on all fields)
     "js/index.js:444",    # habit toggles (SVG icons from predefined array)
     "js/index.js:483",    # render error display (escapeHtml on name/message/stack)
-    "js/index.js:510",    # readiness gauge SVG
-    "js/index.js:547",    # expect effects (escapeHtml)
-    "js/index.js:554",    # flags list (escapeHtml)
-    "js/index.js:561",    # do items list (escapeHtml)
-    "js/index.js:599",    # sleep stages bar
-    "js/index.js:619",    # sleep stages detail
-    "js/index.js:658",    # sleep context stats (escapeHtml)
-    "js/index.js:677",    # body battery gauge SVG
-    "js/index.js:723",    # habits row
-    "js/index.js:749",    # activity sessions (escapeHtml)
-    "js/index.js:790",    # insights list (escapeHtml)
-    "js/index.js:797",    # recommendations section (escapeHtml)
-    "js/index.js:817",    # metric pills (predefined)
-    "js/index.js:889",    # trend chart SVG
-    "js/index.js:893",    # chart x-axis labels
-    "js/index.js:989",    # weekday row
-    "js/index.js:1026",   # calendar grid
-    "js/index.js:1078",   # "No sessions today" (static)
-    "js/index.js:1118",   # today session render (escapeHtml)
-    "js/index.js:1191",   # week sessions list
-    "js/index.js:1221",   # strength list (escapeHtml)
-    "js/index.js:1320",   # sleep score gauge SVG
-    "js/index.js:1368",   # sleep timeline bar
-    "js/index.js:1383",   # sleep stage rows
-    "js/index.js:1407",   # vitals grid
-    "js/index.js:1469",   # sleep trend SVG
-    "js/index.js:1472",   # sleep trend labels
-    "js/index.js:1512",   # calendar metric pills
-    "js/index.js:1608",   # calendar grid
-    "js/index.js:1705",   # detail content
+    "js/index.js:541",    # readiness gauge SVG
+    "js/index.js:578",    # expect effects (escapeHtml)
+    "js/index.js:585",    # flags list (escapeHtml)
+    "js/index.js:592",    # do items list (escapeHtml)
+    "js/index.js:630",    # sleep stages bar
+    "js/index.js:650",    # sleep stages detail
+    "js/index.js:689",    # sleep context stats (escapeHtml)
+    "js/index.js:708",    # body battery gauge SVG
+    "js/index.js:754",    # habits row
+    "js/index.js:780",    # activity sessions (escapeHtml)
+    "js/index.js:821",    # insights list (escapeHtml)
+    "js/index.js:828",    # recommendations section (escapeHtml)
+    "js/index.js:879",    # metric pills (predefined)
+    "js/index.js:951",    # trend chart SVG
+    "js/index.js:955",    # chart x-axis labels
+    "js/index.js:1051",   # weekday row
+    "js/index.js:1088",   # calendar grid
+    "js/index.js:1140",   # "No sessions today" (static)
+    "js/index.js:1180",   # today session render (escapeHtml)
+    "js/index.js:1253",   # week sessions list
+    "js/index.js:1283",   # strength list (escapeHtml)
+    "js/index.js:1382",   # sleep score gauge SVG
+    "js/index.js:1430",   # sleep timeline bar
+    "js/index.js:1445",   # sleep stage rows
+    "js/index.js:1469",   # vitals grid
+    "js/index.js:1531",   # sleep trend SVG
+    "js/index.js:1534",   # sleep trend labels
+    "js/index.js:1574",   # calendar metric pills
+    "js/index.js:1670",   # calendar grid
+    "js/index.js:1767",   # detail content
 }
 
 # How many lines of drift to tolerate before flagging
