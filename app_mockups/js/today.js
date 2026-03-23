@@ -123,11 +123,12 @@
       renderIllnessBanner(D);
       renderDataWarnings(D);
       renderReadiness(D);
+      renderInsights(D);
+      renderTonight(D);
       renderSleep(D);
       renderBody(D);
       renderHabits(D);
       renderActivity(D);
-      renderInsights(D);
     }
 
     function renderDataWarnings(D) {
@@ -158,6 +159,36 @@
         ]);
       });
       replaceChildren(document.getElementById('dataWarningsList'), nodes);
+    }
+
+    function renderTonight(D) {
+      var card = document.getElementById('tonightCard');
+      if (!card) return;
+
+      var isToday = window.currentViewDate === _todayStr();
+      var mode = D.day_mode || 'day';
+      var show = isToday && (mode === 'evening' || mode === 'night');
+
+      if (!show || !D.briefing.sleep_need_hrs) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = '';
+
+      setText(document.getElementById('tonightSleepTarget'),
+        formatHours(D.briefing.sleep_need_hrs));
+      setText(document.getElementById('tonightBedtime'),
+        D.briefing.recommended_bedtime || '--');
+      setText(document.getElementById('tonightSleepDebt'),
+        D.briefing.sleep_debt || '0h');
+
+      var trustEl = document.getElementById('tonightTrust');
+      if (D.trust_note) {
+        trustEl.style.display = '';
+        setText(trustEl, D.trust_note);
+      } else {
+        trustEl.style.display = 'none';
+      }
     }
 
     function renderIllnessBanner(D) {

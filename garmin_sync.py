@@ -311,6 +311,9 @@ def sleep_notify_mode():
                     "sleep_context": result.get("sleep_context"),
                     "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
                     "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+                    "sleep_need_hrs": result.get("sleep_need", {}).get("sleep_need_hrs") if result.get("sleep_need") else None,
+                    "recommended_bedtime": result.get("sleep_need", {}).get("recommended_bedtime") if result.get("sleep_need") else None,
+                    "sleep_debt": result.get("sleep_debt"),
                 })
             except Exception as e:
                 print(f"  Supabase overall_analysis write warning: {e}")
@@ -560,6 +563,9 @@ def _run_full_sync(target_date, do_backfill=True):
                     "sleep_context": result.get("sleep_context"),
                     "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
                     "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+                    "sleep_need_hrs": result.get("sleep_need", {}).get("sleep_need_hrs") if result.get("sleep_need") else None,
+                    "recommended_bedtime": result.get("sleep_need", {}).get("recommended_bedtime") if result.get("sleep_need") else None,
+                    "sleep_debt": result.get("sleep_debt"),
                 })
             except Exception as e:
                 print(f"  Supabase overall_analysis write warning: {e}\n{traceback.format_exc()}")

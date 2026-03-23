@@ -493,6 +493,23 @@ function _isSyncStale(garminDate) {
   return garminDate < today && new Date().getHours() >= 2;
 }
 
+function _getDayMode() {
+  var hr = new Date().getHours();
+  if (hr >= 5 && hr < 12) return 'morning';
+  if (hr >= 12 && hr < 18) return 'day';
+  if (hr >= 18 && hr < 22) return 'evening';
+  return 'night';
+}
+
+function _deriveTrustNote(ds) {
+  if (!ds) return null;
+  if (ds.sync_stale) return 'Data may be outdated \u2014 last sync missed';
+  if (ds.quality_flags && ds.quality_flags.length > 0)
+    return 'Partial data: ' + ds.quality_flags.join(', ');
+  if (ds.analysis_pending) return 'Analysis pending';
+  return null;
+}
+
 function _dayOfWeek(dateStr) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const d = new Date(dateStr + 'T12:00:00');
@@ -615,6 +632,9 @@ function _parseTodayRpc(rpc, dateStr) {
   const sleepContext = oa.sleep_context || '';
   const dataQuality = oa.data_quality || '';
   const qualityFlags = (oa.quality_flags || '').split(' | ').map(s => s.trim()).filter(Boolean);
+  const sleepNeedHrs = _num(oa.sleep_need_hrs);
+  const recommendedBedtime = oa.recommended_bedtime || '';
+  const sleepDebt = _num(oa.sleep_debt);
   const expectBlock = _parseExpectBlock(cogAssessment);
   const sleepAnalysis = sl.sleep_analysis || '';
   const sleepFeedback = sl.sleep_feedback || _sleepFeedbackFromScore(_num(sl.sleep_analysis_score));
@@ -640,6 +660,15 @@ function _parseTodayRpc(rpc, dateStr) {
     muscle_group: s.muscle_group || '', exercise: s.exercise || '',
     weight: _num(s.weight_lbs), reps: _num(s.reps), rpe: _num(s.rpe), notes: s.notes || '',
   }));
+
+  var _ds = {
+    has_garmin: !!g.date, has_analysis: readinessScore > 0,
+    analysis_pending: !!g.date && readinessScore === 0,
+    stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
+    last_sync: g.updated_at || g.date || null,
+    data_quality: dataQuality, quality_flags: qualityFlags,
+    sync_stale: _isSyncStale(g.date),
+  };
 
   return {
     date: dateStr, day: day,
@@ -707,19 +736,16 @@ function _parseTodayRpc(rpc, dateStr) {
       return { label: dailyLabel !== 'normal' ? dailyLabel : 'illness_ongoing', onset_date: ill.onset_date, confirmed: !!ill.confirmed_date, peak_score: ill.peak_score };
     })(),
     briefing: {
-      expect: expectBlock, sleep_line: sleepLine, sleep_debt: '0h',
+      expect: expectBlock, sleep_line: sleepLine,
+      sleep_debt: sleepDebt > 0 ? sleepDebt.toFixed(1) + 'h' : '0h',
+      sleep_need_hrs: sleepNeedHrs,
+      recommended_bedtime: recommendedBedtime,
       sleep_context_items: sleepContextItems, sleep_context: sleepContext,
       flags: flags, do_items: doItems,
     },
-    data_status: {
-      has_garmin: !!g.date, has_analysis: readinessScore > 0,
-      analysis_pending: !!g.date && readinessScore === 0,
-      stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
-      last_sync: g.updated_at || g.date || null,
-      data_quality: dataQuality,
-      quality_flags: qualityFlags,
-      sync_stale: _isSyncStale(g.date),
-    },
+    data_status: _ds,
+    day_mode: _getDayMode(),
+    trust_note: _deriveTrustNote(_ds),
   };
 }
 
@@ -830,6 +856,9 @@ async function fetchToday(overrideDate, _depth = 0) {
   const sleepContext = oa.sleep_context || '';
   const dataQuality = oa.data_quality || '';
   const qualityFlags = (oa.quality_flags || '').split(' | ').map(s => s.trim()).filter(Boolean);
+  const sleepNeedHrs = _num(oa.sleep_need_hrs);
+  const recommendedBedtime = oa.recommended_bedtime || '';
+  const sleepDebt = _num(oa.sleep_debt);
 
   // Build expect block from cognitive assessment text
   const expectBlock = _parseExpectBlock(cogAssessment);
@@ -878,6 +907,15 @@ async function fetchToday(overrideDate, _depth = 0) {
     rpe: _num(s.rpe),
     notes: s.notes || '',
   }));
+
+  var _ds2 = {
+    has_garmin: !!g.date, has_analysis: readinessScore > 0,
+    analysis_pending: !!g.date && readinessScore === 0,
+    stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
+    last_sync: g.updated_at || g.date || null,
+    data_quality: dataQuality, quality_flags: qualityFlags,
+    sync_stale: _isSyncStale(g.date),
+  };
 
   const todayData = {
     date: today,
@@ -1008,7 +1046,9 @@ async function fetchToday(overrideDate, _depth = 0) {
     briefing: {
       expect: expectBlock,
       sleep_line: sleepLine,
-      sleep_debt: '0h',
+      sleep_debt: sleepDebt > 0 ? sleepDebt.toFixed(1) + 'h' : '0h',
+      sleep_need_hrs: sleepNeedHrs,
+      recommended_bedtime: recommendedBedtime,
       sleep_context_items: sleepContextItems,
       sleep_context: sleepContext,
       flags: flags,
@@ -1016,16 +1056,9 @@ async function fetchToday(overrideDate, _depth = 0) {
     },
 
     // Data freshness indicators
-    data_status: {
-      has_garmin: !!g.date,
-      has_analysis: readinessScore > 0,
-      analysis_pending: !!g.date && readinessScore === 0,
-      stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
-      last_sync: g.updated_at || g.date || null,
-      data_quality: dataQuality,
-      quality_flags: qualityFlags,
-      sync_stale: _isSyncStale(g.date),
-    },
+    data_status: _ds2,
+    day_mode: _getDayMode(),
+    trust_note: _deriveTrustNote(_ds2),
   };
 
   // Fallback: if initial load (no overrideDate) and data is empty, try yesterday
@@ -1507,8 +1540,10 @@ function _buildFallbackToday() {
     sessions: [],
     strength: [],
     nutrition: { total_calories_burned: 0, active_calories: 0, bmr_calories: 0, breakfast: '', lunch: '', dinner: '', snacks: '', total_calories_consumed: 0, protein_g: 0, carbs_g: 0, fats_g: 0, water_l: 0, calorie_balance: 0, notes: '' },
-    briefing: { expect: { level: '--', effects: [] }, sleep_line: '--', sleep_debt: '0h', sleep_context_items: [{ label: 'No data', value: '--', status: 'yellow' }], sleep_context: '', flags: [], do_items: [] },
+    briefing: { expect: { level: '--', effects: [] }, sleep_line: '--', sleep_debt: '0h', sleep_need_hrs: 0, recommended_bedtime: '', sleep_context_items: [{ label: 'No data', value: '--', status: 'yellow' }], sleep_context: '', flags: [], do_items: [] },
     data_status: { has_garmin: false, has_analysis: false, analysis_pending: false, stale_steps: false, last_sync: null, data_quality: '', quality_flags: [], sync_stale: true },
+    day_mode: _getDayMode(),
+    trust_note: null,
   };
 }
 

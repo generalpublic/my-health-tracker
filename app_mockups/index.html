@@ -99,6 +99,28 @@
           <div id="recommendationsSection"></div>
         </div>
 
+        <!-- Tonight Priorities Card (evening/night only, viewing today only) -->
+        <div class="card card-tonight animate-in" id="tonightCard" style="display:none">
+          <div class="card-header">
+            <div class="card-title card-title-tonight">&#9790; Tonight</div>
+          </div>
+          <div class="tonight-content">
+            <div class="tonight-row">
+              <span class="tonight-label">Sleep target</span>
+              <span class="tonight-value" id="tonightSleepTarget">--</span>
+            </div>
+            <div class="tonight-row">
+              <span class="tonight-label">Bedtime</span>
+              <span class="tonight-value" id="tonightBedtime">--</span>
+            </div>
+            <div class="tonight-row">
+              <span class="tonight-label">Sleep debt</span>
+              <span class="tonight-value" id="tonightSleepDebt">--</span>
+            </div>
+            <div class="tonight-trust" id="tonightTrust" style="display:none"></div>
+          </div>
+        </div>
+
         <!-- 3. Sleep Summary Card -->
         <div class="card animate-in" id="sleepCard" data-nav="sleep">
           <div class="card-header">

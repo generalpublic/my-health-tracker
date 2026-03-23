@@ -127,6 +127,38 @@
   margin-top: 5px;
 }
 
+/* Tonight Priorities Card — indigo/moonlight theme */
+.card-tonight {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.05));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+}
+.card-title-tonight { color: #4338CA; }
+.tonight-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.tonight-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-xs) 0;
+}
+.tonight-label { font-size: var(--text-sm); color: var(--text-muted); }
+.tonight-value { font-size: var(--text-sm); font-weight: 600; color: var(--text); }
+.tonight-trust {
+  font-size: var(--text-xs);
+  color: #4338CA;
+  opacity: 0.7;
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: rgba(99, 102, 241, 0.06);
+  border-radius: var(--radius-sm);
+}
+
 /* Readiness Hero Card */
 .readiness-card {
   text-align: center;

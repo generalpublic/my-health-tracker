@@ -4695,6 +4695,9 @@ def main():
                 "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
                 "data_quality": result.get("data_quality_text", ""),
                 "quality_flags": result.get("quality_flags_text", ""),
+                "sleep_need_hrs": result.get("sleep_need", {}).get("sleep_need_hrs") if result.get("sleep_need") else None,
+                "recommended_bedtime": result.get("sleep_need", {}).get("recommended_bedtime") if result.get("sleep_need") else None,
+                "sleep_debt": result.get("sleep_debt"),
             })
             print("[cloud] Results written to Supabase.")
     else:

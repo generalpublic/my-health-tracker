@@ -288,6 +288,9 @@ def upsert_overall_analysis(client, date_str, data):
             "training_load_status": ("training_load_status", _to_text),
             "data_quality": ("data_quality", _to_text),
             "quality_flags": ("quality_flags", _to_text),
+            "sleep_need_hrs": ("sleep_need_hrs", _to_num),
+            "recommended_bedtime": ("recommended_bedtime", _to_text),
+            "sleep_debt": ("sleep_debt", _to_num),
         }
         for data_key, (col_name, converter) in _field_map.items():
             val = data.get(data_key)
