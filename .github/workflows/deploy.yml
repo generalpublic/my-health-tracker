@@ -29,6 +29,53 @@ jobs:
           const USER_NAME = '${{ secrets.USER_NAME }}';
           const EDGE_FUNCTION_URL = '${{ secrets.EDGE_FUNCTION_URL }}';
           CONFIGEOF
+      - name: Remove debug page from deploy
+        run: rm -f app_mockups/debug.html
+      - name: Pre-deploy verification
+        run: |
+          echo "=== CSP check ==="
+          MISSING_CSP=""
+          for f in app_mockups/index.html app_mockups/today.html app_mockups/activity.html \
+                   app_mockups/calendar.html app_mockups/trends.html app_mockups/sleep-detail.html \
+                   app_mockups/log-entry.html app_mockups/profile.html; do
+            if ! grep -q "Content-Security-Policy" "$f"; then
+              MISSING_CSP="$MISSING_CSP $f"
+            fi
+          done
+          if [ -n "$MISSING_CSP" ]; then
+            echo "FAIL: Missing CSP in:$MISSING_CSP"
+            exit 1
+          fi
+          echo "All pages have CSP"
+
+          echo "=== Inline script check ==="
+          INLINE_FOUND=""
+          for f in app_mockups/index.html app_mockups/today.html app_mockups/activity.html \
+                   app_mockups/calendar.html app_mockups/trends.html app_mockups/sleep-detail.html \
+                   app_mockups/log-entry.html app_mockups/profile.html; do
+            # Count <script> tags without src= that have body content
+            if grep -P '<script>(?![\s]*$)' "$f" > /dev/null 2>&1; then
+              INLINE_FOUND="$INLINE_FOUND $f"
+            fi
+          done
+          if [ -n "$INLINE_FOUND" ]; then
+            echo "FAIL: Inline scripts in:$INLINE_FOUND"
+            exit 1
+          fi
+          echo "No inline scripts in deployed pages"
+
+          echo "=== Secrets scan ==="
+          if grep -rn "eyJ" app_mockups/config.js 2>/dev/null; then
+            echo "FAIL: Possible JWT/key in config.js"
+            exit 1
+          fi
+          if grep -rn "ghp_\|gho_\|github_pat_" app_mockups/ 2>/dev/null; then
+            echo "FAIL: GitHub token found in source"
+            exit 1
+          fi
+          echo "No secrets detected"
+
+          echo "=== All pre-deploy checks passed ==="
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -112,6 +112,44 @@ async function supabaseMutate(table, data, matchColumns = null) {
 }
 
 // ============================================
+// Sync Status UI — shows write state to the user
+// ============================================
+
+let _syncStatusTimer = null;
+
+function _updateSyncStatus(state, count = 0) {
+  let el = document.getElementById('ht-sync-status');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'ht-sync-status';
+    document.body.appendChild(el);
+  }
+  el.className = 'ht-sync-status';
+  clearTimeout(_syncStatusTimer);
+
+  if (state === 'synced') {
+    el.textContent = 'Synced';
+    el.classList.add('ht-sync-synced');
+    el.classList.add('ht-sync-visible');
+    _syncStatusTimer = setTimeout(() => el.classList.remove('ht-sync-visible'), 2000);
+  } else if (state === 'syncing') {
+    el.textContent = `Syncing ${count} item${count > 1 ? 's' : ''}...`;
+    el.classList.add('ht-sync-syncing');
+    el.classList.add('ht-sync-visible');
+  } else if (state === 'queued') {
+    el.textContent = `${count} queued`;
+    el.classList.add('ht-sync-queued');
+    el.classList.add('ht-sync-visible');
+    _syncStatusTimer = setTimeout(() => el.classList.remove('ht-sync-visible'), 3000);
+  } else if (state === 'retry_failed') {
+    el.textContent = `${count} failed — will retry`;
+    el.classList.add('ht-sync-failed');
+    el.classList.add('ht-sync-visible');
+    _syncStatusTimer = setTimeout(() => el.classList.remove('ht-sync-visible'), 5000);
+  }
+}
+
+// ============================================
 // Offline Queue — retries failed writes when back online
 // ============================================
 
@@ -121,7 +159,35 @@ async function _enqueueOffline(table, data, matchColumns) {
     queue.push({ table, data, matchColumns, ts: Date.now() });
     await CryptoStore.setItem('ht_offline_queue', queue);
     console.log(`[data-loader] Queued offline write for ${table}`);
+    _updateSyncStatus('queued', queue.length);
   } catch {}
+}
+
+/**
+ * Direct write to Supabase — used by flushOfflineQueue to avoid
+ * re-enqueuing failed replays (supabaseMutate would re-enqueue on failure).
+ */
+async function _directWrite(table, data, matchColumns) {
+  const user = getCurrentUser();
+  if (!user) throw new Error('Not authenticated');
+  const payload = { ...data, user_id: user.id };
+
+  if (matchColumns) {
+    const onConflict = matchColumns.replace(/\s/g, '');
+    const { data: rows, error } = await htSupabase
+      .from(table)
+      .upsert(payload, { onConflict })
+      .select();
+    if (error) throw error;
+    return rows;
+  } else {
+    const { data: rows, error } = await htSupabase
+      .from(table)
+      .insert(payload)
+      .select();
+    if (error) throw error;
+    return rows;
+  }
 }
 
 async function flushOfflineQueue() {
@@ -130,20 +196,31 @@ async function flushOfflineQueue() {
     const queue = await CryptoStore.getItem('ht_offline_queue', []);
     if (queue.length === 0) return;
     console.log(`[data-loader] Flushing ${queue.length} offline writes`);
+    _updateSyncStatus('syncing', queue.length);
     const remaining = [];
     for (const item of queue) {
       try {
-        await supabaseMutate(item.table, item.data, item.matchColumns);
+        await _directWrite(item.table, item.data, item.matchColumns);
       } catch {
         remaining.push(item);
       }
     }
     if (remaining.length > 0) {
       await CryptoStore.setItem('ht_offline_queue', remaining);
+      _updateSyncStatus('retry_failed', remaining.length);
     } else {
       CryptoStore.removeItem('ht_offline_queue');
+      _updateSyncStatus('synced');
     }
   } catch {}
+}
+
+// Auto-retry when coming back online
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[data-loader] Back online — flushing offline queue');
+    flushOfflineQueue();
+  });
 }
 
 // ============================================

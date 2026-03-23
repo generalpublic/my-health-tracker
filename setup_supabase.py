@@ -27,7 +27,7 @@ BATCH_SIZE = 500
 
 # Schema version — single source of truth.
 # Update here when migrations change the schema. Must match supabase_schema.sql header.
-SCHEMA_VERSION = "3.1"
+SCHEMA_VERSION = "3.2"
 
 # ---------------------------------------------------------------------------
 # SQL: Table creation (idempotent — CREATE TABLE IF NOT EXISTS)
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS strength_log (
     day TEXT,
     muscle_group TEXT,
     exercise TEXT,
-    set_id TEXT,
+    set_id TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     weight_lbs REAL,
     reps INTEGER,
     rpe REAL,
@@ -562,6 +562,7 @@ TABLE_CONFIGS = {
             "duration_min", "avg_hr", "max_hr", "calories", "elevation_gain_m",
             "avg_speed_mph", "aerobic_training_effect", "anaerobic_training_effect",
             "zone_1_min", "zone_2_min", "zone_3_min", "zone_4_min", "zone_5_min",
+            "spo2_avg", "spo2_min",
             "updated_at",
         ],
     },
@@ -617,10 +618,10 @@ TABLE_CONFIGS = {
         ],
     },
     "strength_log": {
-        "pk": None,  # Auto-increment ID, no natural upsert key
+        "pk": ["user_id", "set_id"],
         "columns": [
-            "date", "day", "muscle_group", "exercise", "weight_lbs",
-            "reps", "rpe", "notes", "manual_source", "updated_at",
+            "date", "day", "muscle_group", "exercise", "set_id",
+            "weight_lbs", "reps", "rpe", "notes", "manual_source", "updated_at",
         ],
         "sqlite_select_extra": "id",  # Read ID from SQLite for dedup
     },
@@ -683,7 +684,7 @@ _NUMERIC_COLS = {
         "distance_mi", "duration_min", "avg_hr", "max_hr", "calories",
         "elevation_gain_m", "avg_speed_mph", "aerobic_training_effect",
         "anaerobic_training_effect", "zone_1_min", "zone_2_min", "zone_3_min",
-        "zone_4_min", "zone_5_min",
+        "zone_4_min", "zone_5_min", "spo2_avg", "spo2_min",
     },
     "sleep": {
         "garmin_sleep_score", "sleep_analysis_score", "total_sleep_hrs",
@@ -789,12 +790,18 @@ def seed_from_sqlite(supabase):
 
         try:
             if table_name == "strength_log":
-                # strength_log uses auto-increment ID - delete and re-insert
-                # to avoid ID conflicts between SQLite and Supabase
-                supabase.table(table_name).delete().neq("date", "___never___").execute()
+                # strength_log uses set_id for dedup — upsert on (user_id, set_id)
+                # Generate set_id for legacy rows that don't have one
+                for rec in records:
+                    if not rec.get("set_id"):
+                        import uuid
+                        rec["set_id"] = str(uuid.uuid4())
+                conflict_cols = "user_id,set_id"
                 for i in range(0, len(records), BATCH_SIZE):
                     batch = records[i:i + BATCH_SIZE]
-                    supabase.table(table_name).insert(batch).execute()
+                    supabase.table(table_name).upsert(
+                        batch, on_conflict=conflict_cols
+                    ).execute()
             elif pk:
                 # Upsert using composite PK (user_id already in pk list)
                 conflict_cols = ",".join(pk)

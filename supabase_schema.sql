@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS strength_log (
     day TEXT,
     muscle_group TEXT,
     exercise TEXT,
-    set_id TEXT,
+    set_id TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     weight_lbs REAL,
     reps INTEGER,
     rpe REAL,

@@ -428,7 +428,7 @@ def health_refresh(request):
         print(f"[health-refresh] ERROR: {traceback.format_exc()}")
         error_response = {
             "status": "error",
-            "error": str(e),
+            "error": "Internal server error",
             "date": date_str if 'date_str' in dir() else None,
         }
         return (json.dumps(error_response), 500, headers)

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-tracker-v24';
+const CACHE_NAME = 'health-tracker-v25';
 const ASSETS = [
   'today.html',
   'sleep-detail.html',
@@ -9,8 +9,19 @@ const ASSETS = [
   'calendar.html',
   'design-system.css',
   'config.js',
+  'auth.js',
   'crypto-store.js',
   'data-loader.js',
+  'js/sw-register.js',
+  'js/index.js',
+  'js/today.js',
+  'js/activity.js',
+  'js/calendar.js',
+  'js/trends.js',
+  'js/sleep-detail.js',
+  'js/log-entry.js',
+  'js/profile.js',
+  'js/pull-to-refresh.js',
   'icon.svg',
   'manifest.json'
 ];

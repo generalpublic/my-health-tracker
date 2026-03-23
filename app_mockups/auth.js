@@ -14,7 +14,13 @@
 // --- Supabase Client (singleton) ---
 // Named _supabaseClient to avoid colliding with window.supabase (the CDN library object)
 const _supabaseClient = window.supabase
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+      },
+    })
   : null;
 
 if (!_supabaseClient) {
@@ -55,97 +61,7 @@ function _createLoginModal() {
     </div>
   `;
 
-  // Inline styles scoped to the modal (no external CSS dependency)
-  const style = document.createElement('style');
-  style.textContent = `
-    #ht-auth-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 10, 40, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      padding: 20px;
-    }
-    .ht-auth-modal {
-      background: rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      border-radius: 20px;
-      padding: 40px 32px 32px;
-      width: 100%;
-      max-width: 340px;
-      text-align: center;
-      color: #fff;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    }
-    .ht-auth-icon {
-      font-size: 36px;
-      margin-bottom: 8px;
-    }
-    .ht-auth-modal h2 {
-      margin: 0 0 4px;
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
-    }
-    .ht-auth-subtitle {
-      margin: 0 0 24px;
-      font-size: 14px;
-      opacity: 0.7;
-    }
-    .ht-auth-modal input {
-      display: block;
-      width: 100%;
-      padding: 12px 14px;
-      margin-bottom: 12px;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 12px;
-      background: rgba(255,255,255,0.08);
-      color: #fff;
-      font-size: 15px;
-      outline: none;
-      transition: border-color 0.2s;
-      box-sizing: border-box;
-    }
-    .ht-auth-modal input::placeholder {
-      color: rgba(255,255,255,0.45);
-    }
-    .ht-auth-modal input:focus {
-      border-color: rgba(139, 92, 246, 0.7);
-    }
-    .ht-auth-modal button {
-      display: block;
-      width: 100%;
-      padding: 12px;
-      margin-top: 8px;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #8B5CF6, #6D28D9);
-      color: #fff;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .ht-auth-modal button:hover { opacity: 0.9; }
-    .ht-auth-modal button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .ht-auth-error {
-      margin-top: 12px;
-      font-size: 13px;
-      color: #f87171;
-      min-height: 18px;
-    }
-  `;
-
-  document.head.appendChild(style);
+  // Styles are in design-system.css (ht-auth-* classes)
   document.body.appendChild(overlay);
 
   // Wire up form
@@ -197,12 +113,7 @@ function _showConnectionError(onRetry) {
       <div class="ht-auth-icon">&#x26A0;</div>
       <h2>Connection Error</h2>
       <p class="ht-auth-subtitle">Unable to reach the server. Check your connection and try again.</p>
-      <button id="ht-auth-retry" style="
-        display:block; width:100%; padding:12px; margin-top:16px;
-        border:none; border-radius:12px;
-        background:linear-gradient(135deg,#8B5CF6,#6D28D9);
-        color:#fff; font-size:15px; font-weight:600; cursor:pointer;
-      ">Retry</button>
+      <button id="ht-auth-retry">Retry</button>
     </div>
   `;
   document.body.appendChild(overlay);
