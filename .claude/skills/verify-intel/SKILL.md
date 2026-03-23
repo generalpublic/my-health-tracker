@@ -150,6 +150,68 @@ If the user says yes, hand off to `/update-intel` with the filtered content. If 
 
 ---
 
+## Batch Verification Mode (`--batch [domain]`)
+
+When invoked with `/verify-intel --batch [domain]` (e.g., `/verify-intel --batch Sleep`):
+
+### Purpose
+Verify all `"confidence": "Pending"` entries in `reference/health_knowledge.json` for the specified domain. This is the primary tool for clearing the verification backlog systematically.
+
+### Process
+
+1. **Load and filter entries:**
+   - Read `reference/health_knowledge.json`
+   - Filter to entries where `domain` matches the specified domain AND `confidence == "Pending"`
+   - Skip entries already marked High, Medium-High, Medium, or Low
+   - Report: "Found N pending entries in [domain]. Starting verification."
+
+2. **For each pending entry, verify the core claim:**
+   - Extract the key assertion from `interpretation`, `cognitive_impact`, and `energy_impact`
+   - Cross-reference using the standard Phase 3-5 pipeline (WebSearch for corroborating/contradicting evidence)
+   - Rate using the standard Phase 4 ratings (Verified, Partially Supported, Contested, Unsupported, Misleading, Unverifiable)
+
+3. **Update the KB entry in-place:**
+   - **Verified** → set `confidence` to "High", add `source_claim_id` if a domain claim file exists
+   - **Partially Supported** → set `confidence` to "Medium", add caveat to `interpretation`
+   - **Contested** → set `confidence` to "Low", add contradiction note to `interpretation`
+   - **Unsupported/Misleading** → flag for removal, do NOT auto-delete (present to user for decision)
+   - **Unverifiable** → keep as "Pending", add note: `"verification_note": "Unverifiable as of YYYY-MM-DD"`
+
+4. **Rate limiting:**
+   - Process a maximum of **5 entries per batch** to stay within WebSearch rate limits and maintain verification quality
+   - After each batch of 5, report progress and ask: "Continue with next batch? (N remaining)"
+   - If `--batch all` is used, process all domains alphabetically, 5 entries at a time
+
+5. **Cache results:**
+   - Track verified entries by adding `"date_verified": "YYYY-MM-DD"` to each processed entry
+   - On subsequent runs, skip entries with `date_verified` within the last 90 days
+
+### Batch Summary Report
+
+After each batch of 5:
+```
+--- Batch Verification Report ([domain]) ---
+Processed: [N] of [total pending]
+  Verified (→ High): [N]
+  Partially Supported (→ Medium): [N]
+  Contested (→ Low): [N]
+  Unsupported (flagged for removal): [N]
+  Unverifiable (remains Pending): [N]
+
+Remaining in [domain]: [N]
+Total pending across all domains: [N]
+```
+
+### Batch Flags
+| Flag | Behavior |
+|---|---|
+| `--batch Sleep` | Verify pending entries in Sleep domain only |
+| `--batch all` | Verify all domains, alphabetically, 5 at a time |
+| `--batch --recheck` | Re-verify entries last checked >90 days ago |
+| `--batch --flagged` | Show all entries flagged for removal, ask user to confirm deletion |
+
+---
+
 ## Rules
 
 - **Never rubber-stamp.** If you can't find corroborating evidence, say so. "Unverifiable" is always an option.

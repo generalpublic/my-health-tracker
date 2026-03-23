@@ -17,10 +17,13 @@ You manage the user's health research library. Your primary job is to compile ne
 | Nutrition | Meal timing, macros, micronutrients, gut health, supplements | `reference/Nutrition Research Universe.md` |
 | Training | Exercise programming, load management, periodization, mobility | `reference/Training Research Universe.md` |
 | Recovery | HRV, ANS regulation, body battery, deload, rest protocols | `reference/Recovery Research Universe.md` |
-| Cardio | VO2max, zone training, endurance, cardiac adaptation | `reference/Cardio Research Universe.md` |
+| Cardio | VO2max, zone training, endurance, cardiac adaptation, RHR | `reference/Cardio Research Universe.md` |
 | Neurological | Cognition, focus, memory, executive function, brain health | `reference/Neurological Research Universe.md` |
 | Metabolic | Hormones, glucose/blood sugar, body composition, thyroid, cortisol | `reference/Metabolic Research Universe.md` |
 | Psychology | Stress management, behavioral patterns, habits, motivation | `reference/Psychology Research Universe.md` |
+| Methodology | N-of-1 design, scoring methodology, statistical guardrails, wearable accuracy | `reference/Methodology Research Universe.md` |
+| Supplementation | Creatine, hydration, nootropics, dose-response, timing protocols | `reference/Supplementation Research Universe.md` |
+| Digital Hygiene | Screen time, attention fragmentation, dopamine, morning/evening routines | `reference/Digital Hygiene Research Universe.md` |
 
 A single source can span multiple domains. If it does, classify it under its **primary** domain and add cross-reference notes in secondary domain files.
 
@@ -56,6 +59,78 @@ If the user invokes `/update-intel --verify [source]` or `/update-intel verify [
 This mode combines both skills into a single workflow: verify first, then compile only what passes. Use this for sources from lower-reliability tiers (podcasts, social media, influencer content).
 
 Without `--verify`, the default behavior is compile-first (Phases 1-5 below) — use this for sources you've already vetted or that come from high-reliability tiers (textbooks, meta-analyses, clinical guidelines).
+
+---
+
+## Phase 0.9: Academic Source Mode (`--academic` or auto-detected)
+
+**Trigger:** Invoked with `--academic`, or auto-detected when the source is:
+- A PubMed/PMC URL or DOI link
+- A PDF with abstract/methods/results/discussion structure
+- A Firstbeat/manufacturer white paper
+- A clinical guideline (AASM, AHA, ACSM, etc.)
+- A file in `reference/papers/` directory
+
+Academic sources are fundamentally different from transcripts — they're structured, citation-dense, and often short (3-15 pages). The standard transcript-cleaning pipeline doesn't apply.
+
+### Step 1: Identify Source Metadata
+Extract and record:
+- **Title** — full paper title
+- **Authors** — first author et al. format
+- **Year** — publication year
+- **Journal/Publisher** — journal name or publisher (e.g., "Firstbeat Technologies")
+- **DOI/PMCID** — if available
+- **Source type** — meta-analysis, systematic review, RCT, cohort study, guideline, white paper, narrative review
+- **Sample size** — total N (or N of included studies for meta-analyses)
+
+### Step 2: Structured Claim Extraction
+Instead of the transcript-oriented cleaning (Phase 1), extract **every discrete claim** in structured format:
+
+```
+Claim #[N]:
+  Statement: [exact finding — preserve original quantification]
+  Evidence tier: [meta-analysis | systematic review | RCT | cohort | cross-sectional | case study | white paper | expert consensus]
+  Sample: [N participants, N studies for meta-analyses]
+  Effect size: [Cohen's d, SMD, OR, HR, r, percentage, or "not reported"]
+  Confidence interval: [95% CI if reported, or "not reported"]
+  Population: [age range, sex, health status, athlete vs general]
+  Limitations: [key caveats from the paper itself]
+```
+
+### Step 3: Evidence Quality Assessment
+Rate each claim using the evidence hierarchy:
+| Tier | Source Type | Default Confidence |
+|---|---|---|
+| 1 | Meta-analysis / systematic review (Cochrane, PRISMA) | High |
+| 2 | Large RCT (N>100, pre-registered) | High |
+| 3 | Small RCT (N<100) or large cohort | Medium-High |
+| 4 | Cross-sectional or observational | Medium |
+| 5 | White paper (manufacturer) | Medium (note: not peer-reviewed) |
+| 6 | Narrative review / expert opinion | Low-Medium |
+| 7 | Case study / N-of-1 | Low |
+
+### Step 4: Proceed to Phase 3 (Compilation)
+Feed the structured claims into the standard Phase 3 deduplication and merge pipeline. The key differences:
+- **Skip transcript cleaning** — academic text is already clean
+- **Preserve exact quantification** — "SMD 0.37 (95% CI 0.18-0.56)" not "moderate effect"
+- **Record effect sizes in the Universe file** — these are the primary value of academic sources
+- **Citation format**: `Author Year (PMCID/DOI)` — not informal podcast references
+
+### Step 5: Enhanced KB Entry Generation
+When generating health_knowledge.json entries (Phase 3.5), academic sources produce higher-quality entries:
+- Set `"confidence"` based on evidence tier (not always "Pending")
+- Include `"effect_size"` field (new — see KB schema v2 in priority field task)
+- Include `"sample_size"` field (new)
+- Include `"evidence_tier"` field (new) — one of: meta-analysis, systematic_review, rct, cohort, cross_sectional, white_paper, guideline, narrative_review
+
+### Auto-Detection Rules
+If the user doesn't specify `--academic`, auto-detect and switch to academic mode when:
+1. URL contains `pubmed`, `pmc`, `doi.org`, `firstbeat`, `mdpi`, `frontiersin`, `jama`, `lancet`, `bmj`
+2. File content starts with "Abstract" or contains "Methods" + "Results" + "Discussion" sections
+3. File is in `reference/papers/` directory
+4. File extension is `.pdf` and contains DOI or PMCID references
+
+When auto-detected, print: "Academic source detected — using structured extraction mode."
 
 ---
 
@@ -220,7 +295,9 @@ For each extracted threshold, create a `health_knowledge.json` entry:
   "energy_impact": "{How this affects energy — perceived energy, recovery capacity, physical performance}",
   "citation": "{Source author/study — from the compiled content}",
   "recommendation": "{Specific actionable step when this pattern is detected}",
+  "priority": "{Critical | High | Medium | Low}",
   "confidence": "Pending",
+  "evidence_strength": "{strong | moderate | weak | empirical}",
   "source_claim_id": null,
   "source_file": "{relative path to the Research Universe file}",
   "date_extracted": "{YYYY-MM-DD}"
@@ -283,6 +360,58 @@ If the extracted threshold maps to a metric the system actually tracks, add a `"
 - If the source doesn't contain any quantifiable, actionable thresholds, skip this phase entirely and note "No actionable thresholds extracted" in the Phase 5 summary
 - After adding entries, validate the JSON file is still parseable (no trailing commas, valid structure)
 
+### Evidence Tier Assignment (MANDATORY for all entries)
+
+Every new KB entry MUST have an explicit `evidence_tier` field (integer 1-7):
+
+| Tier | Source Type |
+|------|-----------|
+| 1 | Meta-analysis / systematic review (Cochrane, PRISMA) |
+| 2 | Large RCT (N>100, pre-registered) |
+| 3 | Small RCT / large cohort / clinical guideline (AASM, AHA, ACSM) |
+| 4 | Cross-sectional / observational |
+| 5 | Manufacturer white paper / internal empirical methodology |
+| 6 | Narrative review / expert opinion |
+| 7 | Podcast / book without primary citation |
+
+Derive from the `citation` field. If a single entry cites multiple sources at different tiers, use the **strongest** (lowest number) tier. This field is used at runtime by the contradiction resolution engine to determine which entry wins when two entries conflict.
+
+### Contradiction Group Assignment (MANDATORY check for new entries)
+
+When adding a new KB entry, check for potential contradictions:
+
+1. Read all existing entries in `health_knowledge.json`
+2. For each new entry, check if any existing entry makes a claim about the **same phenomenon** but reaches a **different conclusion** (e.g., "bad sleep drops HRV" vs "one bad night doesn't affect HRV")
+3. If a contradiction exists:
+   a. If the existing entry already has a `contradiction_group`, assign the **same group** to the new entry
+   b. If no group exists yet, create one: `{topic}_{dimension}` in snake_case (e.g., `sleep_hrv_acute_impact`)
+   c. Assign the same group string to BOTH the existing and new entry
+   d. Add a `validation_pair` to each entry in the group (see schema below)
+   e. Author a shared `conservative_recommendation` — the safest actionable advice when evidence is split
+4. If no contradiction exists: set `"contradiction_group": null`
+5. Entries that are **complementary** (same topic, different non-conflicting claims) do NOT get a contradiction group
+
+**Contradiction group schema fields:**
+```json
+{
+  "contradiction_group": "sleep_hrv_acute_impact",
+  "evidence_tier": 3,
+  "validation_pair": {
+    "predictor": {"tab": "sleep", "field": "Total Sleep (hrs)"},
+    "outcome": {"tab": "garmin", "field": "HRV (overnight avg)"},
+    "lag_days": 1,
+    "expected_direction": "positive"
+  },
+  "conservative_recommendation": "Don't overreact to one bad night, but watch for 2+ consecutive nights.",
+  "conflicts_with_hardcoded": null,
+  "personal_validation": null
+}
+```
+
+- `validation_pair.expected_direction`: `"positive"` (more X = more Y), `"negative"` (more X = less Y), or `"none"` (claims no relationship). Set **per-entry**, not per-group — two contradicting entries will have different expected directions.
+- `conflicts_with_hardcoded`: list of hardcoded KB IDs (from `_kb_insight()` calls in `generate_insights()`) that this entry would contradict. Set to `null` for most entries. Only needed when a dynamic KB trigger could produce an insight that contradicts a hardcoded insight path.
+- `personal_validation`: always set to `null` on creation — computed monthly by the runtime validation job.
+
 ### Upgrading Pending Entries
 When the user later runs explicit claim evaluation (Phase 5 optional), and a claim matches a Pending entry:
 - Update `"confidence"` from `"Pending"` to the evaluated level (High/Medium/Low)
@@ -291,9 +420,123 @@ When the user later runs explicit claim evaluation (Phase 5 optional), and a cla
 
 ---
 
+## Phase 3.5B: Contradiction Resolution Against Existing KB Entries
+
+**Purpose:** When Phase 3A flags contradictions in the Research Universe text, this phase checks whether any existing `health_knowledge.json` entries are affected and presents a resolution plan before stale entries keep firing incorrect insights.
+
+**Trigger:** Runs automatically whenever Phase 3A reports 1+ contradictions flagged. Skipped if zero contradictions.
+
+### Step 1: Identify Affected KB Entries
+
+For each contradiction flagged in Phase 3A:
+1. Extract the **contradicted claim** (the existing content that conflicts with the new source)
+2. Extract the **new claim** (what the new source asserts instead)
+3. Search `health_knowledge.json` for entries whose `interpretation`, `pattern`, `citation`, or `recommendation` fields overlap with the contradicted topic
+4. Match by semantic overlap — e.g., if the contradiction is about "caffeine half-life," match entries with `pattern` containing `caffeine` or `interpretation` mentioning half-life
+
+### Step 2: Compare Evidence Quality
+
+For each matched KB entry, compare the evidence tier of the existing claim vs. the new claim:
+
+| Evidence Tier | Rank | Examples |
+|---|---|---|
+| Meta-analysis / systematic review | 1 (strongest) | Cochrane, PRISMA |
+| Large RCT (N>100, pre-registered) | 2 | — |
+| Small RCT / large cohort | 3 | — |
+| Clinical guideline | 3 | AASM, AHA, ACSM |
+| Cross-sectional / observational | 4 | — |
+| Manufacturer white paper | 5 | Firstbeat, Garmin |
+| Narrative review / expert opinion | 6 | — |
+| Podcast / book (no primary citation) | 7 (weakest) | — |
+
+Determine the tier of:
+- **Existing entry** — from its `citation` field and `evidence_strength`
+- **New claim** — from the source being ingested (use Phase 0.9 evidence tier if academic mode)
+
+### Step 3: Determine Resolution Action
+
+| Comparison | Action | What Changes |
+|---|---|---|
+| **New evidence stronger** (lower tier number) | **UPDATE** | Replace `interpretation`, update `citation`, set `date_modified`, add old claim to `contradiction_refs`, upgrade `confidence` if warranted |
+| **Evidence roughly equal** (same tier) | **FLAG AS CONTESTED** | Add both positions to `interpretation` (clearly labeled), set `confidence` to one level below current, add to `contradiction_refs`, present to user for manual resolution |
+| **New evidence weaker** (higher tier number) | **NOTE ONLY** | Keep existing entry unchanged, add a `contradiction_refs` entry documenting the weaker contradicting source for reference |
+
+### Step 4: Present Contradiction Report
+
+Before writing any changes, present the full report to the user:
+
+```
+--- Contradiction Report ---
+[N] existing KB entries affected by new source: [source name]
+
+UPDATES (new evidence stronger):
+  #1 [entry_id]: "[existing interpretation summary]"
+      Existing evidence: [citation] (Tier [N]: [type])
+      New evidence: "[new claim]" (Tier [N]: [type])
+      → Will update interpretation, citation, date_modified
+
+CONTESTED (equal evidence):
+  #2 [entry_id]: "[existing interpretation summary]"
+      Existing evidence: [citation] (Tier [N]: [type])
+      New evidence: "[new claim]" (Tier [N]: [type])
+      → Will flag both positions, lower confidence
+
+NOTES ONLY (existing evidence stronger):
+  #3 [entry_id]: "[existing interpretation summary]"
+      Existing evidence: [citation] (Tier [N]: [type])
+      New evidence: "[new claim]" (Tier [N]: [type])
+      → No changes, contradiction noted in refs
+
+Apply changes? [Y/n/edit]
+```
+
+### Step 5: Apply Changes
+
+On user confirmation:
+1. For **UPDATE** entries: rewrite `interpretation`, `citation`, `recommendation` fields; set `date_modified` to today; add to `contradiction_refs`; update `evidence_tier` if the new source changes it
+2. For **CONTESTED** entries: append both positions to `interpretation` with clear labels ("Position A (meta-analysis): ... | Position B (RCT): ..."); lower `confidence` by one level; add to `contradiction_refs`; **assign a shared `contradiction_group`** to both old and new entries; populate `validation_pair` and `conservative_recommendation` on both entries (see Phase 3.5 "Contradiction Group Assignment" for schema)
+3. For **NOTE ONLY** entries: add to `contradiction_refs` only
+4. Validate JSON is still parseable after changes
+
+### Schema Fields Used
+
+These fields support contradiction tracking (added to all entries, backwards-compatible):
+
+```json
+{
+  "date_modified": "YYYY-MM-DD",
+  "contradiction_refs": [
+    {
+      "claim": "Brief description of contradicting claim",
+      "source": "Author Year or source reference",
+      "evidence_tier": "meta-analysis | rct | cohort | ...",
+      "date": "YYYY-MM-DD",
+      "resolution": "updated | contested | noted"
+    }
+  ],
+  "superseded_by": null
+}
+```
+
+- `date_modified` — set whenever an entry's substantive content changes (not just metadata)
+- `contradiction_refs` — append-only log of all contradictions encountered, regardless of resolution
+- `superseded_by` — if an entry is fully replaced by a new entry (rare), point to the successor's `id`. The superseded entry remains in the JSON for audit trail but is skipped at runtime
+
+### Rules
+- **Never silently update a KB entry.** Always present the contradiction report first.
+- **Never delete an entry due to contradiction.** Either update it, flag it as contested, or note the contradiction. Deletion requires explicit user action.
+- **Preserve the audit trail.** The `contradiction_refs` array is append-only — never remove entries from it.
+- **If no KB entries match a flagged contradiction**, skip this phase for that contradiction — it only affects the Research Universe text (already handled by Phase 3A).
+
+---
+
 ## Phase 3.6: Regenerate Domain Brief
 
-After compiling a source and extracting thresholds, regenerate the domain brief to keep it current:
+After compiling a source and extracting thresholds, regenerate the domain brief to keep it current.
+
+**Skip condition:** If the user passed `--skip-brief-regen` (useful during batch ingestion of multiple sources into the same domain), skip this phase and note "Brief regeneration deferred" in the Phase 5 summary. The user should run `/update-intel --regen-briefs` after the batch completes.
+
+**Auto-trigger:** This phase runs automatically after every single-source compilation. No user action required.
 
 1. Read the full Research Universe doc for this domain (e.g., `reference/Sleep Research Universe.md`)
 2. Compress into `reference/knowledge/summaries/{domain}_brief.md` (target: under 200 lines)
@@ -438,7 +681,7 @@ Use this when:
 
 ## Rules
 
-- **Compile first, extract thresholds, regenerate brief, evaluate later.** The default action is to compile source material into the Research Universe, auto-extract actionable thresholds (Phase 3.5), and regenerate the domain brief (Phase 3.6). Full claim evaluation only happens when explicitly requested.
+- **Compile first, extract thresholds, resolve contradictions, regenerate brief, evaluate later.** The default action is to compile source material into the Research Universe, auto-extract actionable thresholds (Phase 3.5), resolve contradictions against existing KB entries (Phase 3.5B), and regenerate the domain brief (Phase 3.6). Full claim evaluation only happens when explicitly requested.
 - **Never auto-apply code changes.** Claim evaluation recommends. The user decides what to change.
 - **Always update the manifest.** Every processed source must be logged in `reference/INGESTED.md`.
 - **Detect modified files.** If a file's current MD5 differs from the stored hash, flag it as modified.
@@ -447,4 +690,4 @@ Use this when:
 - **Clean, don't rewrite.** Preserve the source's voice and substance. Remove only filler, sponsors, and noise.
 - **Be honest about uncertainty.** When evaluating claims, if you can't verify it, say so.
 - **Weight evidence hierarchy strictly.** A podcast host's opinion does not outweigh a meta-analysis.
-- **Flag contradictions prominently.** When a new claim contradicts an existing assumption, make it impossible to miss.
+- **Flag contradictions prominently.** When a new claim contradicts an existing assumption, make it impossible to miss. Phase 3.5B automatically checks `health_knowledge.json` for affected entries — never let a contradicted KB entry keep firing stale insights.
