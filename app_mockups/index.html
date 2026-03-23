@@ -3108,7 +3108,7 @@
       document.getElementById('sessionDetailContent').innerHTML = `
         <div style="display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-sm)">
           <span style="color:var(--text-primary)">${getActivityIcon(s.type, 28)}</span>
-          <div style="font-size:var(--text-lg);font-weight:700">${s.activity_name}</div>
+          <div style="font-size:var(--text-lg);font-weight:700">${escapeHtml(s.activity_name)}</div>
         </div>
         <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-lg)">${dateLabel}</div>
         <div class="session-stats">
@@ -3581,7 +3581,7 @@
             <div class="activity-info">
               <div class="activity-icon">${icon}</div>
               <div>
-                <div class="activity-name">${s.activity_name}</div>
+                <div class="activity-name">${escapeHtml(s.activity_name)}</div>
                 <div class="activity-subtitle">${s.duration_min}min &bull; ${s.distance_mi}mi &bull; ${s.avg_hr} bpm avg</div>
               </div>
             </div>
@@ -3613,7 +3613,7 @@
 
       const insights = D.readiness.key_insights.slice(0, 3);
       document.getElementById('insightsList').innerHTML = insights.map(i =>
-        `<div class="flag-item"><div class="insight-bullet"></div><span style="font-size:var(--text-sm);">${cap(i)}</span></div>`
+        `<div class="flag-item"><div class="insight-bullet"></div><span style="font-size:var(--text-sm);">${escapeHtml(cap(i))}</span></div>`
       ).join('');
 
       const recs = (D.readiness.recommendations || []).slice(0, 3);
@@ -3623,7 +3623,7 @@
           `<div class="recs-divider"></div>` +
           `<div class="recs-title">Recommendations</div>` +
           recs.map(r =>
-            `<div class="flag-item"><div class="rec-bullet"></div><span style="font-size:var(--text-sm);">${cap(r)}</span></div>`
+            `<div class="flag-item"><div class="rec-bullet"></div><span style="font-size:var(--text-sm);">${escapeHtml(cap(r))}</span></div>`
           ).join('');
       }
     })();
@@ -3922,7 +3922,7 @@
           <div class="session-info">
             <div class="session-icon">${icons[s.activity_type] || '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,12 9,3 12,21 15,7 18,12 22,12"/></svg>'}</div>
             <div>
-              <div class="session-name">${s.activity_name}</div>
+              <div class="session-name">${escapeHtml(s.activity_name)}</div>
               <div class="session-meta">${s.duration_min} min &bull; ${s.distance_mi} mi</div>
             </div>
           </div>
@@ -3979,7 +3979,7 @@
             <span class="manual-label">Post-Workout Energy</span>
             <span class="manual-pill">${s.post_workout_energy}/10</span>
           </div>
-          ${s.notes ? `<div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:var(--space-sm);">"${s.notes}"</div>` : ''}
+          ${s.notes ? `<div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:var(--space-sm);">"${escapeHtml(s.notes)}"</div>` : ''}
         </div>`;
     })();
 
@@ -4023,11 +4023,11 @@
       document.getElementById('strengthList').innerHTML = Object.values(grouped).map(g => `
         <div class="strength-exercise">
           <div class="strength-header">
-            <div class="strength-name">${g.exercise}</div>
-            <span class="muscle-tag">${g.muscle_group}</span>
+            <div class="strength-name">${escapeHtml(g.exercise)}</div>
+            <span class="muscle-tag">${escapeHtml(g.muscle_group)}</span>
           </div>
           <div class="strength-sets">
-            ${g.sets.map((s, i) => `Set ${i+1}: ${s.weight} lbs x ${s.reps} @ RPE ${s.rpe}`).join('<br>')}
+            ${g.sets.map((s, i) => `Set ${i+1}: ${escapeHtml(String(s.weight))} lbs x ${escapeHtml(String(s.reps))} @ RPE ${escapeHtml(String(s.rpe))}`).join('<br>')}
           </div>
         </div>
       `).join('');
@@ -4458,7 +4458,7 @@
               <div style="display:flex;align-items:center;gap:var(--space-sm)">
                 <div style="width:36px;height:36px;border-radius:var(--radius-md);background:var(--primary-bg);display:flex;align-items:center;justify-content:center;font-size:18px">${icon}</div>
                 <div>
-                  <div style="font-size:var(--text-base);font-weight:600">${s.activity_name}</div>
+                  <div style="font-size:var(--text-base);font-weight:600">${escapeHtml(s.activity_name)}</div>
                   <div style="font-size:var(--text-xs);color:var(--text-muted)">${subtitle}</div>
                 </div>
               </div>

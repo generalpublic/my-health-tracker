@@ -191,7 +191,6 @@ health-tracker/
     HEALTH_INTEL.md         Evaluated health claims index
     *Research Universe.md   Domain-specific compiled research
   dashboard/                Web dashboard export
-  voice_logger/             Voice-based logging API (separate deploy)
   scripts/                  Scheduler setup scripts
   tests/                    Unit tests
   migrations/               Historical one-time migration scripts

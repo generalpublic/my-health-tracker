@@ -4,7 +4,6 @@ Cross-platform interactive setup for non-technical users.
 """
 
 import sys
-import os
 import json
 import subprocess
 import webbrowser
@@ -23,7 +22,7 @@ BACKFILL_SCRIPT = PROJECT_DIR / "backfill_history.py"
 # ── ANSI Colors ───────────────────────────────────────────────────────────────
 # Enable on Windows 10+
 if platform.system() == "Windows":
-    os.system("color")
+    subprocess.run(["cmd", "/c", "color"], capture_output=True)
 
 GREEN  = "\033[92m"
 RED    = "\033[91m"
@@ -638,17 +637,20 @@ def _schedule_windows():
     script_path = str(GARMIN_SCRIPT)
     python_path = sys.executable
     task_name = "Health Tracker - Daily Sync"
-    cmd = (
-        f'schtasks /create /tn "{task_name}" '
-        f'/tr "\\"{python_path}\\" \\"{script_path}\\"" '
-        f'/sc daily /st 20:00 /f'
-    )
+    cmd = [
+        "schtasks", "/create",
+        "/tn", task_name,
+        "/tr", f'"{python_path}" "{script_path}"',
+        "/sc", "daily",
+        "/st", "20:00",
+        "/f",
+    ]
 
     print_info("Creating a Windows Scheduled Task to run garmin_sync.py at 8 PM daily...")
     print()
 
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             print_success(f"Scheduled task created: '{task_name}'")
             print_success("Your data will sync automatically every day at 8 PM.")
@@ -772,8 +774,8 @@ def step9_backfill():
     print()
 
     try:
-        # os.system so output streams live to terminal
-        ret = os.system(f'"{sys.executable}" "{BACKFILL_SCRIPT}"')
+        # subprocess.call streams output live to terminal (replaces os.system)
+        ret = subprocess.call([sys.executable, str(BACKFILL_SCRIPT)])
         if ret == 0:
             print_success("Historical backfill complete!")
         else:

@@ -15,6 +15,12 @@
 // Falls back to empty/default structure with _error flag if fetch fails.
 // ============================================
 
+// --- HTML Sanitization ---
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // --- Supabase Config ---
 // Loaded from config.js (must be included before this script)
 if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
@@ -49,90 +55,19 @@ async function supabaseQuery(table, params = {}) {
 }
 
 // ============================================
-// Supabase REST API — Write (upsert) helper
+// Supabase Write — DISABLED (auth migration in progress)
+// Writes will be re-enabled with Supabase Auth JWT.
 // ============================================
 
-/**
- * Write data to Supabase via POST with upsert semantics.
- * Only columns included in `data` are written — other columns on the row are untouched.
- *
- * @param {string} table - Supabase table name
- * @param {object} data - Row data to upsert
- * @param {string|null} matchColumns - Conflict columns for upsert (e.g. "date" or "date,activity_name"). Null = plain INSERT.
- * @returns {object|null} The written row, or null if queued offline.
- */
 async function supabaseMutate(table, data, matchColumns = null) {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
-  if (matchColumns) {
-    url.searchParams.set('on_conflict', matchColumns);
-  }
-  const headers = {
-    'apikey': SUPABASE_ANON_KEY,
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json',
-    'Prefer': 'resolution=merge-duplicates,return=representation',
-  };
-
-  try {
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Supabase ${table} write: ${res.status} — ${body}`);
-    }
-    const rows = await res.json();
-    // upsert ok
-    return rows[0] || data;
-  } catch (err) {
-    // If offline, queue for later
-    if (!navigator.onLine || err instanceof TypeError) {
-      _enqueueOffline(table, data, matchColumns);
-      return null;
-    }
-    throw err;
-  }
+  console.warn('[data-loader] Writes disabled — auth migration in progress');
+  return null;
 }
 
-// ============================================
-// Offline Queue — localStorage persistence
-// ============================================
-
-const _OFFLINE_QUEUE_KEY = 'ht_offline_queue';
-
-function _getOfflineQueue() {
-  try { return JSON.parse(localStorage.getItem(_OFFLINE_QUEUE_KEY) || '[]'); }
-  catch { return []; }
+function flushOfflineQueue() {
+  // Clear any stale offline queue from before the migration
+  try { localStorage.removeItem('ht_offline_queue'); } catch {}
 }
-
-function _saveOfflineQueue(queue) {
-  localStorage.setItem(_OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-}
-
-function _enqueueOffline(table, data, matchColumns) {
-  const queue = _getOfflineQueue();
-  queue.push({ table, data, matchColumns, timestamp: Date.now() });
-  _saveOfflineQueue(queue);
-  // queued
-}
-
-async function flushOfflineQueue() {
-  const queue = _getOfflineQueue();
-  if (queue.length === 0) return;
-  // flushing
-  const failed = [];
-  for (const item of queue) {
-    try {
-      await supabaseMutate(item.table, item.data, item.matchColumns);
-    } catch (e) {
-      console.warn('[offline] Flush failed:', e);
-      failed.push(item);
-    }
-  }
-  _saveOfflineQueue(failed);
-  if (failed.length > 0) console.warn(`[offline] ${failed.length} writes still pending`);
-}
-
-// Auto-flush when coming back online
-window.addEventListener('online', () => flushOfflineQueue());
 
 // ============================================
 // PWA Write Functions — one per form type
@@ -923,50 +858,46 @@ function _buildSleepContextItems(sl) {
 }
 
 // ============================================
-// Pull-to-Refresh — Cloud Sync (Phase 1)
+// Pull-to-Refresh — Cloud Sync via Edge Function
 // ============================================
 
 /**
- * Trigger a full data refresh via GitHub Actions workflow_dispatch.
- * Dispatches the garmin-sync workflow which fetches Garmin data, runs sleep
- * analysis, writes to Supabase, and runs full overall_analysis.
+ * Trigger a full data refresh via the Supabase Edge Function.
+ * The Edge Function calls the Google Cloud Function which fetches Garmin data,
+ * runs sleep analysis, and writes to Supabase. No secrets in the browser.
  *
  * @param {string|null} date - Optional "YYYY-MM-DD" (defaults to yesterday)
- * @returns {object} Result with status and dispatch info
+ * @returns {object} Result with status and sync info
  */
 async function triggerCloudRefresh(date = null) {
-  const pat = (typeof GITHUB_PAT !== 'undefined') ? GITHUB_PAT : '';
-  const repo = (typeof GITHUB_REPO !== 'undefined') ? GITHUB_REPO : '';
-  if (!pat || !repo) {
-    return { status: 'error', error: 'GITHUB_PAT or GITHUB_REPO not configured in config.js' };
+  const edgeFnUrl = (typeof EDGE_FUNCTION_URL !== 'undefined' && EDGE_FUNCTION_URL)
+    ? EDGE_FUNCTION_URL
+    : `${SUPABASE_URL}/functions/v1/refresh`;
+
+  if (!edgeFnUrl || edgeFnUrl.includes('undefined')) {
+    return { status: 'error', error: 'Edge Function URL not configured' };
   }
 
   const targetDate = date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${repo}/actions/workflows/garmin-sync.yml/dispatches`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-        body: JSON.stringify({
-          ref: 'main',
-          inputs: { date: targetDate, mode: 'full' }
-        }),
-      }
-    );
+    const res = await fetch(edgeFnUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDate }),
+    });
 
-    if (res.status === 204) {
-      return { status: 'dispatched', date: targetDate };
+    if (res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      return { status: 'error', error: `Rate limited — retry in ${body.retry_after_seconds || 300}s` };
     }
-    if (res.status === 401 || res.status === 403) {
-      return { status: 'error', error: 'GitHub PAT expired or invalid' };
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { status: 'error', error: body.error || `HTTP ${res.status}` };
     }
-    const err = await res.json().catch(() => ({}));
-    return { status: 'error', error: err.message || `HTTP ${res.status}` };
+
+    const result = await res.json();
+    return { status: 'success', date: targetDate, ...result };
   } catch (err) {
     return { status: 'error', error: err.message };
   }

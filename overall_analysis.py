@@ -3698,10 +3698,11 @@ def run_analysis(wb, target_date, cloud=False):
                 json.dump(config, f, indent=2)
             print(f"  Adaptive weights saved to user_config.json")
 
-    # Notes flags (expand lookback to 3 days for alcohol cognitive window)
-    # Includes Session Log notes and Sleep notes alongside Daily Log and Nutrition
+    # Notes flags -- today + yesterday (days_back=2). Same-night is the causal
+    # window for sugar/alcohol -> sleep. Multi-day patterns are covered by
+    # analyze_food_cognition_lag() (30-day correlation).
     note_flags = parse_notes_for_flags(daily_log_by_date, nutrition_by_date,
-                                       target_date, days_back=3,
+                                       target_date, days_back=2,
                                        sessions_by_date=sessions_by_date_map,
                                        sleep_by_date=by_date_sleep)
 

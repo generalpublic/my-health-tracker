@@ -16,5 +16,9 @@ dashboard/dashboard_data.json
 profiles/
 Priv*/
 
+# Config files with secrets (both app trees)
+app_mockups/config.js
+app_v2/config.js
+
 # Local Netlify folder
 .netlify

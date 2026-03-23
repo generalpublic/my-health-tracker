@@ -1331,7 +1331,7 @@
             <div class="activity-info">
               <div class="activity-icon">${icon}</div>
               <div>
-                <div class="activity-name">${s.activity_name}</div>
+                <div class="activity-name">${escapeHtml(s.activity_name)}</div>
                 <div class="activity-subtitle">${s.duration_min}min &bull; ${s.distance_mi}mi &bull; ${s.avg_hr} bpm avg</div>
               </div>
             </div>
@@ -1362,7 +1362,7 @@
 
       const insights = (D.readiness.key_insights || []).slice(0, 3);
       document.getElementById('insightsList').innerHTML = insights.map(i =>
-        `<div class="flag-item"><div class="insight-bullet"></div><span style="font-size:var(--text-sm);">${cap(i)}</span></div>`
+        `<div class="flag-item"><div class="insight-bullet"></div><span style="font-size:var(--text-sm);">${escapeHtml(cap(i))}</span></div>`
       ).join('');
 
       const recs = (D.readiness.recommendations || []).slice(0, 3);
@@ -1372,7 +1372,7 @@
           `<div class="recs-divider"></div>` +
           `<div class="recs-title">Recommendations</div>` +
           recs.map(r =>
-            `<div class="flag-item"><div class="rec-bullet"></div><span style="font-size:var(--text-sm);">${cap(r)}</span></div>`
+            `<div class="flag-item"><div class="rec-bullet"></div><span style="font-size:var(--text-sm);">${escapeHtml(cap(r))}</span></div>`
           ).join('');
       } else {
         recsSection.innerHTML = '';

@@ -82,16 +82,6 @@ The following are excluded from version control:
 2. Update `PUSHOVER_API_TOKEN` in `.env`
 3. Verify: `python garmin_sync.py --sleep-notify`
 
-### TOTP secret (voice logger)
-1. Generate a new secret: `python voice_logger/setup_totp.py`
-2. Update `TOTP_SECRET` in Vercel environment variables
-3. Re-scan the QR code with your authenticator app
-4. Redeploy the voice logger on Vercel
-
-### Anthropic / Nutritionix API keys
-1. Regenerate at the respective provider's dashboard
-2. Update in Vercel environment variables
-3. Redeploy the voice logger
 
 ## If Credentials Are Exposed
 

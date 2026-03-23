@@ -270,18 +270,16 @@ def _rls_sql():
         stmts.append(
             f"DROP POLICY IF EXISTS \"{table}_anon_delete\" ON {table};"
         )
-        # Create permissive policies for anon role
+        # Anon: SELECT only (reads). All writes go through service_role or authenticated JWT.
         stmts.append(
             f"CREATE POLICY \"{table}_anon_select\" ON {table} FOR SELECT TO anon USING (true);"
         )
+        # Authenticated: full access (for browser writes via Supabase Auth JWT)
         stmts.append(
-            f"CREATE POLICY \"{table}_anon_insert\" ON {table} FOR INSERT TO anon WITH CHECK (true);"
+            f"DROP POLICY IF EXISTS \"{table}_authenticated_all\" ON {table};"
         )
         stmts.append(
-            f"CREATE POLICY \"{table}_anon_update\" ON {table} FOR UPDATE TO anon USING (true) WITH CHECK (true);"
-        )
-        stmts.append(
-            f"CREATE POLICY \"{table}_anon_delete\" ON {table} FOR DELETE TO anon USING (true);"
+            f"CREATE POLICY \"{table}_authenticated_all\" ON {table} FOR ALL TO authenticated USING (true) WITH CHECK (true);"
         )
     return "\n".join(stmts)
 

@@ -10,16 +10,6 @@
 
 ---
 
-## In Progress
-
-- [ ] **Voice Logger PWA** — Voice-to-log system for nutrition + workouts from phone
-  - Code is built (`voice_logger/` directory), not yet deployed
-  - **Blocked on user action**: Need Anthropic API key, Nutritionix API key, Vercel account
-  - Next: Set up API keys → run `setup_totp.py` → deploy to Vercel → test from phone
-  - Plan file: `.claude/plans/flickering-hopping-pizza.md`
-
----
-
 ## Pending
 
 - [ ] **Daily prompt system** — Mobile-friendly form that prompts Daily Log fields at the right times (morning energy after waking, midday focus/mood at lunch, evening rating before bed), with phone notifications so there's no need to manually open the spreadsheet. Highest-leverage item — unlocks adaptive weighting, behavioral correlations, and validation study.

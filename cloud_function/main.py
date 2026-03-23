@@ -47,11 +47,11 @@ def _check_auth(request):
     """
     expected = os.environ.get("REFRESH_SECRET")
     if not expected:
-        # No secret configured — allow all requests (dev mode)
-        return None
+        return (json.dumps({"error": "REFRESH_SECRET not configured — refusing all requests"}), 500,
+                {"Content-Type": "application/json"})
 
     provided = request.headers.get("X-Refresh-Secret", "")
-    if provided != expected:
+    if not provided or provided != expected:
         return (json.dumps({"error": "Unauthorized"}), 401,
                 {"Content-Type": "application/json"})
     return None

@@ -1383,5 +1383,310 @@ class TestOrthosomniaSafeguard(unittest.TestCase):
         self.assertIn("4.0", variability[0])  # swing = |8-4| = 4.0
 
 
+# ── _z_to_score ──────────────────────────────────────────────────────────────
+
+class TestZToScore(unittest.TestCase):
+    """Tests for overall_analysis._z_to_score -- sigmoid mapping z-score -> 1-10."""
+
+    def setUp(self):
+        from overall_analysis import _z_to_score
+        self.fn = _z_to_score
+
+    def test_z_zero_near_5_5(self):
+        s = self.fn(0)
+        self.assertAlmostEqual(s, 5.5, places=1)
+
+    def test_positive_z_above_baseline(self):
+        self.assertGreater(self.fn(1.0), 5.5)
+        self.assertGreater(self.fn(2.0), self.fn(1.0))
+
+    def test_negative_z_below_baseline(self):
+        self.assertLess(self.fn(-1.0), 5.5)
+        self.assertLess(self.fn(-2.0), self.fn(-1.0))
+
+    def test_output_range_bounded(self):
+        for z in [-5, -3, -2, -1, 0, 1, 2, 3, 5]:
+            s = self.fn(z)
+            self.assertGreater(s, 1.0)
+            self.assertLess(s, 10.0)
+
+    def test_symmetry(self):
+        center = self.fn(0)
+        self.assertAlmostEqual(self.fn(1) - center, center - self.fn(-1), places=3)
+
+    def test_known_values(self):
+        # 1 + 9/(1+exp(-1.5*1)) = ~8.36, 1 + 9/(1+exp(1.5)) = ~2.64
+        self.assertAlmostEqual(self.fn(1.0), 8.36, delta=0.1)
+        self.assertAlmostEqual(self.fn(-1.0), 2.64, delta=0.1)
+
+    def test_monotonic(self):
+        zs = [i * 0.5 for i in range(-6, 7)]
+        scores = [self.fn(z) for z in zs]
+        for i in range(len(scores) - 1):
+            self.assertLess(scores[i], scores[i + 1])
+
+
+# ── _search_notes (negation-aware keyword parser) ───────────────────────────
+
+class TestSearchNotes(unittest.TestCase):
+    """Tests for overall_analysis._search_notes -- keyword matching with negation."""
+
+    def setUp(self):
+        from overall_analysis import _search_notes, ALCOHOL_KEYWORDS, SUGAR_KEYWORDS
+        self.fn = _search_notes
+        self.alcohol = ALCOHOL_KEYWORDS
+        self.sugar = SUGAR_KEYWORDS
+
+    def test_basic_match(self):
+        result = self.fn("Had a beer after work", self.alcohol)
+        self.assertIn("beer", result)
+
+    def test_no_match(self):
+        result = self.fn("Ate chicken and rice for dinner", self.alcohol)
+        self.assertEqual(result, [])
+
+    def test_empty_text(self):
+        self.assertEqual(self.fn("", self.alcohol), [])
+        self.assertEqual(self.fn(None, self.alcohol), [])
+
+    def test_case_insensitive(self):
+        result = self.fn("Had some WINE with dinner", self.alcohol)
+        self.assertIn("wine", result)
+
+    def test_negation_no(self):
+        result = self.fn("no alcohol tonight", self.alcohol)
+        self.assertEqual(result, [])
+
+    def test_negation_avoided(self):
+        result = self.fn("avoided beer at the party", self.alcohol)
+        self.assertEqual(result, [])
+
+    def test_negation_skipped(self):
+        result = self.fn("skipped the cocktail this time", self.alcohol)
+        self.assertEqual(result, [])
+
+    def test_negation_didnt(self):
+        result = self.fn("didn't drink any wine", self.alcohol)
+        self.assertEqual(result, [])
+
+    def test_negation_beyond_3_words(self):
+        result = self.fn("I decided not to eat but then had beer", self.alcohol)
+        self.assertIn("beer", result)
+
+    def test_multiple_keywords(self):
+        result = self.fn("Had cake and ice cream for dessert", self.sugar)
+        self.assertIn("cake", result)
+        self.assertIn("ice cream", result)
+
+    def test_mixed_negated_and_not(self):
+        result = self.fn("no wine but had a beer", self.alcohol)
+        self.assertIn("beer", result)
+        self.assertNotIn("wine", result)
+
+
+# ── compute_circadian_profile ────────────────────────────────────────────────
+
+class TestComputeCircadianProfile(unittest.TestCase):
+    """Tests for sleep_analysis.compute_circadian_profile -- chronotype classification."""
+
+    def setUp(self):
+        from sleep_analysis import compute_circadian_profile
+        self.fn = compute_circadian_profile
+
+    def _make_history(self, bedtime, wake_time, n=35):
+        return [{"Bedtime": bedtime, "Wake Time": wake_time}] * n
+
+    def test_insufficient_data(self):
+        hist = self._make_history("23:00", "07:00", n=5)
+        self.assertIsNone(self.fn(hist, min_days=30))
+
+    def test_early_chronotype(self):
+        hist = self._make_history("22:00", "06:00")
+        result = self.fn(hist)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["chronotype"], "early")
+
+    def test_intermediate_chronotype(self):
+        hist = self._make_history("23:30", "07:30")
+        result = self.fn(hist)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["chronotype"], "intermediate")
+
+    def test_late_chronotype(self):
+        hist = self._make_history("01:30", "09:30")
+        result = self.fn(hist)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["chronotype"], "late")
+
+    def test_n_nights_correct(self):
+        hist = self._make_history("23:00", "07:00", n=40)
+        result = self.fn(hist)
+        self.assertEqual(result["n_nights"], 40)
+
+    def test_bedtime_std_low_for_identical(self):
+        hist = self._make_history("23:00", "07:00", n=35)
+        result = self.fn(hist)
+        self.assertLess(result["bedtime_std_min"], 1.0)
+
+    def test_missing_fields_skipped(self):
+        hist = self._make_history("23:00", "07:00", n=30)
+        hist += [{"Bedtime": "", "Wake Time": "07:00"}] * 10
+        result = self.fn(hist)
+        self.assertEqual(result["n_nights"], 30)
+
+
+# ── _eval_simple_trigger ─────────────────────────────────────────────────────
+
+class TestEvalSimpleTrigger(unittest.TestCase):
+    """Tests for overall_analysis._eval_simple_trigger -- knowledge base trigger eval."""
+
+    def setUp(self):
+        from overall_analysis import _eval_simple_trigger
+        self.fn = _eval_simple_trigger
+
+    def _data(self, tab, field, values_by_date):
+        return {tab: {d: {field: v} for d, v in values_by_date.items()}}
+
+    def test_any_trigger_fires(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Steps", "op": "<", "value": 5000, "agg": "any", "lookback": 3}
+        data = self._data("garmin", "Steps", {"2026-03-15": 4000, "2026-03-14": 8000, "2026-03-13": 9000})
+        fired, ctx = self.fn(trigger, data, {}, td)
+        self.assertTrue(fired)
+
+    def test_any_trigger_no_fire(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Steps", "op": "<", "value": 5000, "agg": "any", "lookback": 3}
+        data = self._data("garmin", "Steps", {"2026-03-15": 8000, "2026-03-14": 7000, "2026-03-13": 9000})
+        fired, _ = self.fn(trigger, data, {}, td)
+        self.assertFalse(fired)
+
+    def test_avg_trigger(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Steps", "op": "<", "value": 6000, "agg": "avg", "lookback": 3}
+        data = self._data("garmin", "Steps", {"2026-03-15": 4000, "2026-03-14": 5000, "2026-03-13": 6000})
+        fired, ctx = self.fn(trigger, data, {}, td)
+        self.assertTrue(fired)
+        self.assertIn("avg", ctx)
+
+    def test_all_trigger_one_fails(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Steps", "op": ">", "value": 7500, "agg": "all", "lookback": 3}
+        data = self._data("garmin", "Steps", {"2026-03-15": 8000, "2026-03-14": 7000, "2026-03-13": 9000})
+        fired, _ = self.fn(trigger, data, {}, td)
+        self.assertFalse(fired)
+
+    def test_no_data_returns_false(self):
+        from datetime import date
+        trigger = {"tab": "garmin", "field": "Steps", "op": "<", "value": 5000, "agg": "any", "lookback": 3}
+        fired, _ = self.fn(trigger, {}, {}, date(2026, 3, 15))
+        self.assertFalse(fired)
+
+    def test_requires_session_with_session(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Resting HR", "op": ">", "value": 55, "agg": "any",
+                   "lookback": 1, "requires_session": True}
+        data = self._data("garmin", "Resting HR", {"2026-03-15": 60})
+        sessions = {"2026-03-15": [{"Activity Name": "Running"}]}
+        fired, ctx = self.fn(trigger, data, sessions, td)
+        self.assertTrue(fired)
+        self.assertIn("Running", ctx)
+
+    def test_requires_session_no_session(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        trigger = {"tab": "garmin", "field": "Resting HR", "op": ">", "value": 55, "agg": "any",
+                   "lookback": 1, "requires_session": True}
+        data = self._data("garmin", "Resting HR", {"2026-03-15": 60})
+        fired, _ = self.fn(trigger, data, {}, td)
+        self.assertFalse(fired)
+
+
+# ── compute_readiness ────────────────────────────────────────────────────────
+
+class TestComputeReadiness(unittest.TestCase):
+    """Tests for overall_analysis.compute_readiness -- core composite scoring."""
+
+    def setUp(self):
+        from overall_analysis import compute_readiness
+        self.fn = compute_readiness
+
+    def _baselines(self, hrv_z=0, rhr_z=0, sleep_z=0, n=90):
+        return {
+            "hrv": {"mean": 40, "std": 5, "today": 40 + hrv_z * 5, "z": hrv_z, "n": n},
+            "rhr": {"mean": 50, "std": 3, "today": 50 + rhr_z * 3, "z": rhr_z, "n": n},
+            "sleep_score": {"mean": 80, "std": 10, "today": 80 + sleep_z * 10, "z": sleep_z, "n": n},
+            "sleep_duration": {"mean": 7.0, "std": 0.5},
+        }
+
+    def _sleep_ctx(self, debt=0):
+        return ("context text", debt, "stable", "stable", "stable")
+
+    def test_baseline_scores_near_5_5(self):
+        from datetime import date
+        score, label, _, _ = self.fn(self._baselines(), self._sleep_ctx(), {}, date(2026, 3, 15))
+        self.assertAlmostEqual(score, 5.5, delta=0.5)
+        self.assertEqual(label, "Fair")
+
+    def test_positive_z_high_score(self):
+        from datetime import date
+        score, label, _, _ = self.fn(
+            self._baselines(hrv_z=1.5, rhr_z=-1.5, sleep_z=1.5),
+            self._sleep_ctx(), {}, date(2026, 3, 15)
+        )
+        self.assertGreater(score, 7.5)
+
+    def test_negative_z_low_score(self):
+        from datetime import date
+        score, label, _, _ = self.fn(
+            self._baselines(hrv_z=-1.5, rhr_z=1.5, sleep_z=-1.5),
+            self._sleep_ctx(), {}, date(2026, 3, 15)
+        )
+        self.assertLess(score, 4.0)
+
+    def test_missing_component_renormalizes(self):
+        from datetime import date
+        bl = self._baselines()
+        del bl["hrv"]  # Remove HRV entirely so baselines.get("hrv", {}) returns {}
+        score, _, _, _ = self.fn(bl, self._sleep_ctx(), {}, date(2026, 3, 15))
+        self.assertIsNotNone(score)
+
+    def test_van_dongen_penalty_flag(self):
+        from datetime import date, timedelta
+        td = date(2026, 3, 15)
+        dl = {str(td): {"Morning Energy (1-10)": 9},
+              str(td - timedelta(days=1)): {"Day Rating (1-10)": 9}}
+        _, _, comp, _ = self.fn(self._baselines(), self._sleep_ctx(debt=1.0), dl, td)
+        # Van Dongen penalty is stored in the Subjective component detail string
+        subj_detail = comp.get("Subjective", (None, ""))[1]
+        self.assertIn("VAN_DONGEN_PENALTY", subj_detail)
+
+    def test_labels_match_thresholds(self):
+        from datetime import date
+        td = date(2026, 3, 15)
+        s_high, l_high, _, _ = self.fn(self._baselines(hrv_z=2, rhr_z=-2, sleep_z=2), self._sleep_ctx(), {}, td)
+        self.assertIn(l_high, ["Optimal", "Good"])
+        s_low, l_low, _, _ = self.fn(self._baselines(hrv_z=-2, rhr_z=2, sleep_z=-2), self._sleep_ctx(), {}, td)
+        self.assertIn(l_low, ["Low", "Poor"])
+
+    def test_confidence_high(self):
+        from datetime import date, timedelta
+        td = date(2026, 3, 15)
+        dl = {str(td): {"Morning Energy (1-10)": 7},
+              str(td - timedelta(days=1)): {"Day Rating (1-10)": 7}}
+        _, _, _, conf = self.fn(self._baselines(n=90), self._sleep_ctx(), dl, td)
+        self.assertEqual(conf, "High")
+
+    def test_confidence_low(self):
+        from datetime import date
+        _, _, _, conf = self.fn(self._baselines(n=10), self._sleep_ctx(), {}, date(2026, 3, 15))
+        self.assertEqual(conf, "Low")
+
+
 if __name__ == "__main__":
     unittest.main()

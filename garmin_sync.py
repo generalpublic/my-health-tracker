@@ -29,6 +29,7 @@ from pathlib import Path
 import json
 import sys
 import time
+import traceback
 
 from dotenv import load_dotenv
 
@@ -178,7 +179,7 @@ def sync_single_date(wb, sheet, target_date, data):
         _sqlite_append_archive(db, date_str, data)
         db.commit()
     except Exception as e:
-        print(f"  SQLite write warning: {e}")
+        print(f"  SQLite write warning: {e}\n{traceback.format_exc()}")
 
     # 1b. Supabase -- mirrors SQLite writes, failures never break pipeline
     try:
@@ -188,7 +189,7 @@ def sync_single_date(wb, sheet, target_date, data):
             _supa_upsert_nutrition(_supa_client, date_str, data)
             _supa_upsert_session_log(_supa_client, date_str, data)
     except Exception as e:
-        print(f"  Supabase write warning: {e}")
+        print(f"  Supabase write warning: {e}\n{traceback.format_exc()}")
 
     # 1c. Supabase Daily Log -- push existing Sheets habit data so PWA can read it
     try:
@@ -217,7 +218,7 @@ def sync_single_date(wb, sheet, target_date, data):
         archive_sheet = get_or_create_archive_sheet(wb)
         write_to_archive(archive_sheet, date_str, data)
     except Exception as e:
-        print(f"  Google Sheets write FAILED for {date_str}: {e}")
+        print(f"  Google Sheets write FAILED for {date_str}: {e}\n{traceback.format_exc()}")
         print(f"  Data saved to SQLite. Queuing {date_str} for Sheets retry.")
         _queue_pending_sync(date_str)
 
@@ -513,9 +514,9 @@ def _run_full_sync(target_date, do_backfill=True):
                     "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
                 })
             except Exception as e:
-                print(f"  Supabase overall_analysis write warning: {e}")
+                print(f"  Supabase overall_analysis write warning: {e}\n{traceback.format_exc()}")
     except Exception as e:
-        print(f"\n  Overall Analysis skipped (non-fatal): {e}")
+        print(f"\n  Overall Analysis skipped (non-fatal): {e}\n{traceback.format_exc()}")
 
     try:
         sys.path.insert(0, str(Path(__file__).parent / "dashboard"))
@@ -569,6 +570,37 @@ def _run_full_sync(target_date, do_backfill=True):
                 print(f"  Top finding: {top[0]}")
         except Exception as e:
             print(f"\n  Behavioral correlations skipped (non-fatal): {e}")
+
+    # Weekly validation check (runs on Sundays alongside correlations)
+    if target_date.weekday() == 6:  # Sunday
+        try:
+            from overall_analysis import run_validation
+            print("\n  Running weekly validation check...")
+            val_result = run_validation(wb, target_date)
+            # Alert if prediction quality drops
+            if val_result:
+                rs = [val_result.get("r_energy"), val_result.get("r_rating")]
+                rs = [r for r in rs if r is not None]
+                if rs:
+                    avg_r = sum(rs) / len(rs)
+                    if avg_r < 0.15:
+                        try:
+                            import requests as _req
+                            _user = os.getenv("PUSHOVER_USER_KEY")
+                            _token = os.getenv("PUSHOVER_API_TOKEN")
+                            if _user and _token:
+                                _req.post("https://api.pushover.net/1/messages.json", data={
+                                    "token": _token, "user": _user,
+                                    "title": "Health Tracker: Validation Alert",
+                                    "message": f"Readiness predictions not tracking outcomes (avg r={avg_r:.2f}). "
+                                               f"Check Morning Energy/Day Rating logging consistency.",
+                                    "priority": 0,
+                                }, timeout=10)
+                                print("  Pushover: validation alert sent (low prediction quality)")
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"\n  Validation check skipped (non-fatal): {e}")
 
     print(f"\nDone! Data written for {target_date}")
     print(f"  HRV:   {data.get('hrv', 'N/A')} ms  |  7-day avg: {data.get('hrv_7day', 'N/A')} ms")

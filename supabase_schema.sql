@@ -209,84 +209,98 @@ CREATE TABLE IF NOT EXISTS _meta (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ==========================================================================
+-- RLS Policies: anon = SELECT only. All writes go through Edge Functions
+-- using service_role (which bypasses RLS). This prevents browser clients
+-- from inserting, updating, or deleting data directly.
+-- ==========================================================================
+
+-- garmin
 ALTER TABLE garmin ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "garmin_anon_select" ON garmin;
 DROP POLICY IF EXISTS "garmin_anon_insert" ON garmin;
 DROP POLICY IF EXISTS "garmin_anon_update" ON garmin;
 DROP POLICY IF EXISTS "garmin_anon_delete" ON garmin;
 CREATE POLICY "garmin_anon_select" ON garmin FOR SELECT TO anon USING (true);
-CREATE POLICY "garmin_anon_insert" ON garmin FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "garmin_anon_update" ON garmin FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "garmin_anon_delete" ON garmin FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "garmin_authenticated_all" ON garmin;
+CREATE POLICY "garmin_authenticated_all" ON garmin FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- sleep
 ALTER TABLE sleep ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "sleep_anon_select" ON sleep;
 DROP POLICY IF EXISTS "sleep_anon_insert" ON sleep;
 DROP POLICY IF EXISTS "sleep_anon_update" ON sleep;
 DROP POLICY IF EXISTS "sleep_anon_delete" ON sleep;
 CREATE POLICY "sleep_anon_select" ON sleep FOR SELECT TO anon USING (true);
-CREATE POLICY "sleep_anon_insert" ON sleep FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "sleep_anon_update" ON sleep FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "sleep_anon_delete" ON sleep FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "sleep_authenticated_all" ON sleep;
+CREATE POLICY "sleep_authenticated_all" ON sleep FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- overall_analysis
 ALTER TABLE overall_analysis ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "overall_analysis_anon_select" ON overall_analysis;
 DROP POLICY IF EXISTS "overall_analysis_anon_insert" ON overall_analysis;
 DROP POLICY IF EXISTS "overall_analysis_anon_update" ON overall_analysis;
 DROP POLICY IF EXISTS "overall_analysis_anon_delete" ON overall_analysis;
 CREATE POLICY "overall_analysis_anon_select" ON overall_analysis FOR SELECT TO anon USING (true);
-CREATE POLICY "overall_analysis_anon_insert" ON overall_analysis FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "overall_analysis_anon_update" ON overall_analysis FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "overall_analysis_anon_delete" ON overall_analysis FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "overall_analysis_authenticated_all" ON overall_analysis;
+CREATE POLICY "overall_analysis_authenticated_all" ON overall_analysis FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- daily_log
 ALTER TABLE daily_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "daily_log_anon_select" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_insert" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_update" ON daily_log;
 DROP POLICY IF EXISTS "daily_log_anon_delete" ON daily_log;
 CREATE POLICY "daily_log_anon_select" ON daily_log FOR SELECT TO anon USING (true);
-CREATE POLICY "daily_log_anon_insert" ON daily_log FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "daily_log_anon_update" ON daily_log FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "daily_log_anon_delete" ON daily_log FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "daily_log_authenticated_all" ON daily_log;
+CREATE POLICY "daily_log_authenticated_all" ON daily_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- session_log
 ALTER TABLE session_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "session_log_anon_select" ON session_log;
 DROP POLICY IF EXISTS "session_log_anon_insert" ON session_log;
 DROP POLICY IF EXISTS "session_log_anon_update" ON session_log;
 DROP POLICY IF EXISTS "session_log_anon_delete" ON session_log;
 CREATE POLICY "session_log_anon_select" ON session_log FOR SELECT TO anon USING (true);
-CREATE POLICY "session_log_anon_insert" ON session_log FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "session_log_anon_update" ON session_log FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "session_log_anon_delete" ON session_log FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "session_log_authenticated_all" ON session_log;
+CREATE POLICY "session_log_authenticated_all" ON session_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- nutrition
 ALTER TABLE nutrition ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "nutrition_anon_select" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_insert" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_update" ON nutrition;
 DROP POLICY IF EXISTS "nutrition_anon_delete" ON nutrition;
 CREATE POLICY "nutrition_anon_select" ON nutrition FOR SELECT TO anon USING (true);
-CREATE POLICY "nutrition_anon_insert" ON nutrition FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "nutrition_anon_update" ON nutrition FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "nutrition_anon_delete" ON nutrition FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "nutrition_authenticated_all" ON nutrition;
+CREATE POLICY "nutrition_authenticated_all" ON nutrition FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- strength_log
 ALTER TABLE strength_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "strength_log_anon_select" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_insert" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_update" ON strength_log;
 DROP POLICY IF EXISTS "strength_log_anon_delete" ON strength_log;
 CREATE POLICY "strength_log_anon_select" ON strength_log FOR SELECT TO anon USING (true);
-CREATE POLICY "strength_log_anon_insert" ON strength_log FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "strength_log_anon_update" ON strength_log FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "strength_log_anon_delete" ON strength_log FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "strength_log_authenticated_all" ON strength_log;
+CREATE POLICY "strength_log_authenticated_all" ON strength_log FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- raw_data_archive
 ALTER TABLE raw_data_archive ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "raw_data_archive_anon_select" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_insert" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_update" ON raw_data_archive;
 DROP POLICY IF EXISTS "raw_data_archive_anon_delete" ON raw_data_archive;
 CREATE POLICY "raw_data_archive_anon_select" ON raw_data_archive FOR SELECT TO anon USING (true);
-CREATE POLICY "raw_data_archive_anon_insert" ON raw_data_archive FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "raw_data_archive_anon_update" ON raw_data_archive FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "raw_data_archive_anon_delete" ON raw_data_archive FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "raw_data_archive_authenticated_all" ON raw_data_archive;
+CREATE POLICY "raw_data_archive_authenticated_all" ON raw_data_archive FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- _meta
 ALTER TABLE _meta ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "_meta_anon_select" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_insert" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_update" ON _meta;
 DROP POLICY IF EXISTS "_meta_anon_delete" ON _meta;
 CREATE POLICY "_meta_anon_select" ON _meta FOR SELECT TO anon USING (true);
-CREATE POLICY "_meta_anon_insert" ON _meta FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "_meta_anon_update" ON _meta FOR UPDATE TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "_meta_anon_delete" ON _meta FOR DELETE TO anon USING (true);
+DROP POLICY IF EXISTS "_meta_authenticated_all" ON _meta;
+CREATE POLICY "_meta_authenticated_all" ON _meta FOR ALL TO authenticated USING (true) WITH CHECK (true);
