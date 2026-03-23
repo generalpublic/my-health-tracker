@@ -205,7 +205,11 @@ def sync_single_date(wb, sheet, target_date, data):
     _cfg = load_user_config()
     _features = _cfg.get("features", {})
     try:
+        from models import from_garmin_api, to_sheets_row
+        record = from_garmin_api(data, target_date)
         row = build_garmin_row(target_date, data)
+        model_row = to_sheets_row(record)
+        assert row == model_row, f"Model drift: {[i for i,(a,b) in enumerate(zip(row,model_row)) if a!=b]}"
         upsert_row(sheet, date_str, row)
         if _features.get("session_log", True):
             write_to_session_log(wb, target_date, data)
