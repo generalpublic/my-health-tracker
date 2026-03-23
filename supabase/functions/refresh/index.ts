@@ -2,15 +2,19 @@
  * Supabase Edge Function — Pull-to-refresh trigger.
  *
  * Receives POST from PWA, validates origin, rate limits (1 per 5 min),
- * calls Google Cloud Function, returns result to PWA.
+ * calls Google Cloud Function with HMAC-signed request, returns result to PWA.
  *
  * Deploy: supabase functions deploy refresh
  * (JWT verification is handled automatically by Supabase — only authenticated
  *  users with a valid session can invoke this function.)
  *
+ * Auth to GCF: HMAC-SHA256 over "timestamp|body" using REFRESH_SECRET.
+ * Sends X-Refresh-Timestamp (Unix seconds) and X-Refresh-Signature (hex digest).
+ * GCF rejects if signature is invalid or timestamp is outside ±5 min window.
+ *
  * Env vars (set via supabase secrets set):
  *   GCF_URL            — Google Cloud Function URL
- *   REFRESH_SECRET     — Shared secret for GCF auth (MANDATORY)
+ *   REFRESH_SECRET     — HMAC key for GCF auth (MANDATORY)
  *   ALLOWED_ORIGINS    — Comma-separated allowed origins (e.g. "https://user.github.io,http://localhost:8000")
  */
 
@@ -108,14 +112,28 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Forward to Google Cloud Function with shared secret
+    // Forward to Google Cloud Function with HMAC signature
+    const gcfBody = JSON.stringify({ date: body.date });
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const message = timestamp + "|" + gcfBody;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw", encoder.encode(REFRESH_SECRET),
+      { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sigBuf = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+    const signature = Array.from(new Uint8Array(sigBuf))
+      .map(b => b.toString(16).padStart(2, "0")).join("");
+
     const gcfResponse = await fetch(GCF_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Refresh-Secret": REFRESH_SECRET,
+        "X-Refresh-Timestamp": timestamp,
+        "X-Refresh-Signature": signature,
       },
-      body: JSON.stringify({ date: body.date }),
+      body: gcfBody,
     });
 
     const result = await gcfResponse.json();

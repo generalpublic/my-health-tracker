@@ -23,14 +23,17 @@ Environment variables (set via GCP Secret Manager or --set-env-vars):
     GARMIN_PASSWORD           — Garmin Connect password (from Secret Manager)
     SUPABASE_URL              — Supabase project URL
     SUPABASE_SERVICE_ROLE_KEY — Supabase service role key (from Secret Manager)
-    REFRESH_SECRET            — Shared secret for request authentication
+    REFRESH_SECRET            — HMAC key for request authentication (HMAC-SHA256)
     ALLOWED_ORIGINS           — Comma-separated allowed CORS origins
                                 (e.g. "https://user.github.io,http://localhost:8000")
 """
 
+import hashlib
+import hmac
 import json
 import os
 import sys
+import time
 import traceback
 from datetime import datetime, timedelta
 
@@ -42,21 +45,62 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Authentication
 # ---------------------------------------------------------------------------
 
+_HMAC_MAX_AGE_SECONDS = 300  # ±5 minutes
+
+
 def _check_auth(request):
-    """Validate request via shared secret header.
+    """Validate request via HMAC-SHA256 signature.
+
+    Expected headers:
+        X-Refresh-Timestamp — Unix seconds when the request was signed
+        X-Refresh-Signature — HMAC-SHA256(secret, "timestamp|body") as hex
+
+    Fallback: accepts bare X-Refresh-Secret during migration (logs warning).
 
     Returns None if authorized, or an error response tuple if not.
     """
-    expected = os.environ.get("REFRESH_SECRET")
-    if not expected:
-        return (json.dumps({"error": "REFRESH_SECRET not configured — refusing all requests"}), 500,
+    secret = os.environ.get("REFRESH_SECRET")
+    if not secret:
+        return (json.dumps({"error": "REFRESH_SECRET not configured -- refusing all requests"}), 500,
                 {"Content-Type": "application/json"})
 
+    timestamp = request.headers.get("X-Refresh-Timestamp", "")
+    signature = request.headers.get("X-Refresh-Signature", "")
+
+    # --- HMAC path (preferred) ---
+    if timestamp and signature:
+        # Replay protection: reject if timestamp outside ±5 min window
+        try:
+            req_time = int(timestamp)
+        except ValueError:
+            return (json.dumps({"error": "Invalid timestamp"}), 401,
+                    {"Content-Type": "application/json"})
+
+        drift = abs(time.time() - req_time)
+        if drift > _HMAC_MAX_AGE_SECONDS:
+            return (json.dumps({"error": "Request expired", "drift_seconds": int(drift)}), 401,
+                    {"Content-Type": "application/json"})
+
+        # Recompute HMAC over same message format the Edge Function used
+        body_bytes = request.get_data(as_text=True) or ""
+        message = timestamp + "|" + body_bytes
+        expected_sig = hmac.new(
+            secret.encode(), message.encode(), hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_sig, signature):
+            return (json.dumps({"error": "Unauthorized"}), 401,
+                    {"Content-Type": "application/json"})
+        return None
+
+    # --- Legacy fallback: bare shared secret (remove after migration) ---
     provided = request.headers.get("X-Refresh-Secret", "")
-    if not provided or provided != expected:
-        return (json.dumps({"error": "Unauthorized"}), 401,
-                {"Content-Type": "application/json"})
-    return None
+    if provided and hmac.compare_digest(provided, secret):
+        print("[WARN] Request used legacy X-Refresh-Secret — migrate to HMAC signing")
+        return None
+
+    return (json.dumps({"error": "Unauthorized"}), 401,
+            {"Content-Type": "application/json"})
 
 
 # ---------------------------------------------------------------------------
