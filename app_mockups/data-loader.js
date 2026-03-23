@@ -1180,8 +1180,18 @@ async function triggerCloudRefresh(date = null) {
   const targetDate = date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   try {
-    // Include auth JWT so the Edge Function can verify the caller
-    const { data: { session } } = await htSupabase.auth.getSession();
+    // Force a token refresh if expired before hitting the Edge Function.
+    // getSession() can return a stale JWT; refreshSession() ensures a valid one.
+    let session;
+    const { data: current } = await htSupabase.auth.getSession();
+    if (current?.session?.expires_at && current.session.expires_at * 1000 < Date.now() + 30000) {
+      // Token expires within 30s — refresh it
+      const { data: refreshed } = await htSupabase.auth.refreshSession();
+      session = refreshed?.session || current?.session;
+    } else {
+      session = current?.session;
+    }
+
     const authHeaders = { 'Content-Type': 'application/json' };
     if (session?.access_token) {
       authHeaders['Authorization'] = `Bearer ${session.access_token}`;
