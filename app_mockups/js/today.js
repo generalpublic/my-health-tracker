@@ -203,7 +203,7 @@
           <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
             stroke="${color}" stroke-width="${sw}"
             stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
-            stroke-linecap="round" />`;
+            stroke-linecap="round" style="--gauge-circumference:${circ}" />`;
         document.getElementById('readinessScore').textContent = score > 0 ? score.toFixed(1) : '--';
         document.getElementById('readinessScore').style.color = score > 0 ? color : '#94A3B8';
 
@@ -353,7 +353,7 @@
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
           stroke="url(#bbGrad)" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
-          stroke-linecap="round" />`;
+          stroke-linecap="round" style="--gauge-circumference:${circ}" />`;
       document.getElementById('bbValue').style.color = bbColor;
 
       document.getElementById('rhrValue').textContent = g.resting_hr;

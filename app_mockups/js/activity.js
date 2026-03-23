@@ -164,6 +164,7 @@
                 </defs>
                 <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
                 <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+                  style="--gauge-circumference:${circ}"
                   stroke="url(#${gId})" stroke-width="${sw}"
                   stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
                   stroke-linecap="round" />

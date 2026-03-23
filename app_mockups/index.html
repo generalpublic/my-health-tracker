@@ -49,12 +49,6 @@
           <div class="card-header">
             <div class="card-title" id="snapshotTitle">Snapshot</div>
           </div>
-          <!-- EXPECT block — most important at-a-glance info, ABOVE gauge -->
-          <div class="expect-block" id="expectBlock">
-            <div class="expect-level" id="expectLevel">Above baseline</div>
-            <div id="expectEffects"></div>
-          </div>
-
           <div class="readiness-gauge-wrap">
             <div class="gauge gauge-lg">
               <svg id="readinessGaugeSvg" width="140" height="140" viewBox="0 0 140 140"></svg>
@@ -68,6 +62,12 @@
           <div class="readiness-meta">
             <span class="status-pill" id="readinessLabel">Good</span>
             <span class="badge" id="readinessConfidence">High Confidence</span>
+          </div>
+
+          <!-- EXPECT block — status info below the score -->
+          <div class="expect-block" id="expectBlock">
+            <div class="expect-level" id="expectLevel">Above baseline</div>
+            <div id="expectEffects"></div>
           </div>
 
           <!-- Expanded: FLAGS + DO (replaces Pushover) -->
@@ -834,7 +834,7 @@
             <div class="gauge gauge-lg">
               <svg id="sleepGaugeSvg" width="130" height="130" viewBox="0 0 130 130"></svg>
               <div class="gauge-value">
-                <div class="gauge-number" id="heroScore">78</div>
+                <div class="gauge-number" id="heroScore">--</div>
                 <div class="gauge-label">Sleep Score</div>
               </div>
             </div>
@@ -842,7 +842,7 @@
 
           <div class="sleep-verdict">
             <span class="status-pill" id="sleepVerdict">Good</span>
-            <span class="badge">Garmin: 82</span>
+            <span class="badge" id="garminScoreBadge">Garmin: --</span>
           </div>
 
           <div class="sleep-analysis-text" id="analysisText"></div>

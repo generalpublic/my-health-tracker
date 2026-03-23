@@ -227,7 +227,9 @@ def sync_single_date(wb, sheet, target_date, data):
 
 def sleep_notify_mode():
     """Pull today's sleep data with smart retry, write Sleep tab, send notification."""
+    global _supa_client
     today = date.today()
+    date_str = str(today)
     max_attempts = 3
     retry_wait = 1800  # 30 minutes
 
@@ -257,6 +259,9 @@ def sleep_notify_mode():
             print(f"[Sleep Notify] Data still incomplete after {max_attempts} attempts. "
                   f"Sending with available data.")
 
+    # Initialize Supabase client early (used after analysis)
+    _supa_client = _init_supabase()
+
     wb = get_workbook()
     sheet = wb.worksheet("Sleep")
 
@@ -269,11 +274,54 @@ def sleep_notify_mode():
     circ = load_circadian_profile()
     ind_score, analysis, _descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
 
+    # Inject analysis score into data dict before database writes
+    data["sleep_analysis_score"] = ind_score
+    data["sleep_analysis_text"] = analysis
+    data["sleep_descriptor"] = _descriptor
+
+    # SQLite write (after analysis so score is included)
+    try:
+        db = _get_sqlite_db()
+        _sqlite_upsert_sleep(db, date_str, data)
+        _sqlite_upsert_garmin(db, date_str, data)
+        db.commit()
+    except Exception as e:
+        print(f"  SQLite write warning: {e}")
+
+    # Supabase write (after analysis so score is included)
+    try:
+        if _supa_client is not None:
+            _supa_upsert_sleep(_supa_client, date_str, data)
+            _supa_upsert_garmin(_supa_client, date_str, data)
+    except Exception as e:
+        print(f"  Supabase write warning: {e}")
+
     # Run morning briefing: full overall analysis + send notification
     try:
         from overall_analysis import run_analysis
         result = run_analysis(wb, today)
+        # Sync overall analysis to Supabase
+        if _supa_client is not None and result:
+            try:
+                _supa_upsert_overall_analysis(_supa_client, date_str, {
+                    "readiness_score": result.get("score"),
+                    "readiness_label": result.get("label"),
+                    "confidence": result.get("confidence"),
+                    "cognitive_energy_assessment": result.get("cognitive_assessment"),
+                    "sleep_context": result.get("sleep_context"),
+                    "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
+                    "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+                })
+            except Exception as e:
+                print(f"  Supabase overall_analysis write warning: {e}")
         compose_briefing_notification(str(today), result, data)
+        # Sync Daily Log from Sheets so PWA sees morning habits
+        if _supa_client is not None:
+            try:
+                from supabase_sync import push_daily_log_from_sheets
+                push_daily_log_from_sheets(_supa_client, wb, date_str)
+            except Exception as e:
+                print(f"  Supabase daily_log sync warning: {e}")
     except Exception as e:
         print(f"  Morning briefing failed ({e}), falling back to sleep notification.")
         if analysis:

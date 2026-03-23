@@ -1615,6 +1615,7 @@ function createGauge(value, max, color, size = 'lg', gradientColors = null) {
       ${gradDef}
       <circle cx="${s.w / 2}" cy="${s.w / 2}" r="${s.r}" class="gauge-track" stroke-width="${s.sw}" />
       <circle cx="${s.w / 2}" cy="${s.w / 2}" r="${s.r}" class="gauge-fill"
+        style="--gauge-circumference:${circumference}"
         stroke="${strokeAttr}" stroke-width="${s.sw}"
         stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
         stroke-linecap="round" />

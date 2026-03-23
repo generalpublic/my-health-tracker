@@ -510,6 +510,7 @@
       svg.innerHTML = `
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+          style="--gauge-circumference:${circ}"
           stroke="${color}" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" />`;
@@ -683,6 +684,7 @@
         </defs>
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+          style="--gauge-circumference:${circ}"
           stroke="url(#bbGrad)" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" />`;
@@ -1100,6 +1102,7 @@
                 </defs>
                 <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
                 <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+                  style="--gauge-circumference:${circ}"
                   stroke="url(#${gId})" stroke-width="${sw}"
                   stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
                   stroke-linecap="round" />
@@ -1324,15 +1327,21 @@
         </defs>
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-track" stroke-width="${sw}" />
         <circle cx="${w/2}" cy="${w/2}" r="${r}" class="gauge-fill"
+          style="--gauge-circumference:${circ}"
           stroke="url(#sleepGrad)" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" />`;
-      document.getElementById('heroScore').style.color = color;
+      const heroEl = document.getElementById('heroScore');
+      heroEl.textContent = score > 0 ? score : '--';
+      heroEl.style.color = color;
 
       const cls = getStatusClass(score, 'sleep_analysis_score');
       const pill = document.getElementById('sleepVerdict');
       pill.className = `status-pill status-pill-${cls}`;
       pill.textContent = S.sleep_feedback;
+
+      const garminBadge = document.getElementById('garminScoreBadge');
+      if (garminBadge) garminBadge.textContent = S.garmin_score > 0 ? `Garmin: ${S.garmin_score}` : 'Garmin: --';
 
       document.getElementById('analysisText').textContent = S.analysis_text;
     })();
