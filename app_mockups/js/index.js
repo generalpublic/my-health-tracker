@@ -401,7 +401,7 @@
 
     async function saveForm(formType, message) {
       const toast = document.getElementById('toast');
-      toast.innerHTML = '&#10003; ' + message;
+      toast.textContent = '\u2713 ' + message;
       toast.style.background = '';
       toast.classList.add('show');
 
@@ -417,11 +417,11 @@
           default: console.warn('[save] Unknown form type:', formType);
         }
         if (result === null) {
-          toast.innerHTML = '&#128246; Saved offline — will sync when connected';
+          toast.textContent = '\uD83D\uDD16 Saved offline \u2014 will sync when connected';
         }
       } catch (err) {
         console.error(`[save] ${formType} failed:`, err);
-        toast.innerHTML = '&#10007; Save failed — ' + escapeHtml(err.message);
+        toast.textContent = '\u2717 Save failed \u2014 ' + err.message;
         toast.style.background = '#F87171';
       }
 
@@ -1481,11 +1481,23 @@
 
     // Show empty state if no history data
     if (SAMPLE_DATA.history.length === 0) {
-      document.getElementById('calMonths').innerHTML =
-        '<div style="text-align:center;padding:48px 24px;color:var(--text-muted);">' +
-        '<div style="font-size:40px;margin-bottom:16px;">&#128197;</div>' +
-        '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">No Data Available</div>' +
-        '<div style="font-size:13px;">' + (SAMPLE_DATA._error || 'Check your connection and try again') + '</div></div>';
+      var calEmptyEl = document.getElementById('calMonths');
+      calEmptyEl.textContent = '';
+      var calEmptyDiv = document.createElement('div');
+      calEmptyDiv.style.cssText = 'text-align:center;padding:48px 24px;color:var(--text-muted);';
+      var calEmptyIcon = document.createElement('div');
+      calEmptyIcon.style.cssText = 'font-size:40px;margin-bottom:16px;';
+      calEmptyIcon.textContent = '\uD83D\uDCC5';
+      var calEmptyTitle = document.createElement('div');
+      calEmptyTitle.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
+      calEmptyTitle.textContent = 'No Data Available';
+      var calEmptyMsg = document.createElement('div');
+      calEmptyMsg.style.cssText = 'font-size:13px;';
+      calEmptyMsg.textContent = SAMPLE_DATA._error || 'Check your connection and try again';
+      calEmptyDiv.appendChild(calEmptyIcon);
+      calEmptyDiv.appendChild(calEmptyTitle);
+      calEmptyDiv.appendChild(calEmptyMsg);
+      calEmptyEl.appendChild(calEmptyDiv);
       return;
     }
 

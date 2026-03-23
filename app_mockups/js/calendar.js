@@ -44,11 +44,23 @@
 
     // Show empty state if no history data
     if (SAMPLE_DATA.history.length === 0) {
-      document.getElementById('calMonths').innerHTML =
-        '<div style="text-align:center;padding:48px 24px;color:var(--text-muted);">' +
-        '<div style="font-size:40px;margin-bottom:16px;">&#128197;</div>' +
-        '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">No Data Available</div>' +
-        '<div style="font-size:13px;">' + (SAMPLE_DATA._error || 'Check your connection and try again') + '</div></div>';
+      var emptyEl = document.getElementById('calMonths');
+      emptyEl.textContent = '';
+      var emptyDiv = document.createElement('div');
+      emptyDiv.style.cssText = 'text-align:center;padding:48px 24px;color:var(--text-muted);';
+      var emptyIcon = document.createElement('div');
+      emptyIcon.style.cssText = 'font-size:40px;margin-bottom:16px;';
+      emptyIcon.textContent = '\uD83D\uDCC5';
+      var emptyTitle = document.createElement('div');
+      emptyTitle.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
+      emptyTitle.textContent = 'No Data Available';
+      var emptyMsg = document.createElement('div');
+      emptyMsg.style.cssText = 'font-size:13px;';
+      emptyMsg.textContent = SAMPLE_DATA._error || 'Check your connection and try again';
+      emptyDiv.appendChild(emptyIcon);
+      emptyDiv.appendChild(emptyTitle);
+      emptyDiv.appendChild(emptyMsg);
+      emptyEl.appendChild(emptyDiv);
       return;
     }
 
@@ -253,10 +265,19 @@
 
     }).catch(err => {
       console.error('[calendar] Rendering error:', err);
-      document.getElementById('calMonths').innerHTML =
-        '<div style="text-align:center;padding:48px 24px;color:#F87171;">' +
-        '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">Something went wrong</div>' +
-        '<div style="font-size:13px;">' + err.message + '</div></div>';
+      var errContainer = document.getElementById('calMonths');
+      errContainer.textContent = '';
+      var errDiv = document.createElement('div');
+      errDiv.style.cssText = 'text-align:center;padding:48px 24px;color:#F87171;';
+      var errTitle = document.createElement('div');
+      errTitle.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
+      errTitle.textContent = 'Something went wrong';
+      var errMsg = document.createElement('div');
+      errMsg.style.cssText = 'font-size:13px;';
+      errMsg.textContent = err.message;
+      errDiv.appendChild(errTitle);
+      errDiv.appendChild(errMsg);
+      errContainer.appendChild(errDiv);
     }); // end initData().then()
 
 // --- Event listeners (DOM ready) ---

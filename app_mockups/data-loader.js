@@ -25,7 +25,7 @@ function escapeHtml(str) {
 // Loaded from config.js (must be included before this script)
 // auth.js must also be loaded — it creates the `htSupabase` client singleton.
 if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
-  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;padding:2rem;text-align:center"><div><h2>Setup Required</h2><p>Copy <code>config.example.js</code> to <code>config.js</code> and add your Supabase credentials.</p></div></div>';
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;padding:2rem;text-align:center"><div><h2>Setup Required</h2><p>Copy <code>config.example.js</code> to <code>config.js</code> and add your Supabase credentials.</p></div></div>'; // trusted markup — static setup error
   throw new Error('Missing config.js — see config.example.js');
 }
 

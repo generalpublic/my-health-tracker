@@ -47,7 +47,7 @@ function _createLoginModal() {
 
   const overlay = document.createElement('div');
   overlay.id = 'ht-auth-overlay';
-  overlay.innerHTML = `
+  overlay.innerHTML = ` // trusted markup — static login form template
     <div class="ht-auth-modal">
       <div class="ht-auth-icon">&#x1f512;</div>
       <h2>Health Tracker</h2>
@@ -108,7 +108,7 @@ function _showConnectionError(onRetry) {
 
   const overlay = document.createElement('div');
   overlay.id = 'ht-auth-overlay';
-  overlay.innerHTML = `
+  overlay.innerHTML = ` // trusted markup — static connection error template
     <div class="ht-auth-modal">
       <div class="ht-auth-icon">&#x26A0;</div>
       <h2>Connection Error</h2>

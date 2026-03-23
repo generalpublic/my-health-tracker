@@ -39,7 +39,13 @@
     function log(name, status, detail) {
       var el = document.createElement('div');
       el.className = 'test ' + status;
-      el.innerHTML = '<div class="test-name">' + name + ': ' + status.toUpperCase() + '</div><pre>' + detail + '</pre>';
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'test-name';
+      nameDiv.textContent = name + ': ' + status.toUpperCase();
+      var pre = document.createElement('pre');
+      pre.textContent = detail;
+      el.appendChild(nameDiv);
+      el.appendChild(pre);
       document.getElementById('results').appendChild(el);
     }
 

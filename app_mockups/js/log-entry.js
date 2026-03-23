@@ -41,7 +41,7 @@
 
     async function saveForm(formType, message) {
       const toast = document.getElementById('toast');
-      toast.innerHTML = '&#10003; ' + message;
+      toast.textContent = '\u2713 ' + message;
       toast.style.background = '';
       toast.classList.add('show');
 
@@ -57,11 +57,11 @@
           default: console.warn('[save] Unknown form type:', formType);
         }
         if (result === null) {
-          toast.innerHTML = '&#128246; Saved offline — will sync when connected';
+          toast.textContent = '\uD83D\uDD16 Saved offline \u2014 will sync when connected';
         }
       } catch (err) {
         console.error(`[save] ${formType} failed:`, err);
-        toast.innerHTML = '&#10007; Save failed — ' + escapeHtml(err.message);
+        toast.textContent = '\u2717 Save failed \u2014 ' + err.message;
         toast.style.background = '#F87171';
       }
 

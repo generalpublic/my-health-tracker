@@ -315,10 +315,18 @@
     }).catch(err => {
       console.error('[activity] Rendering error:', err);
       var errTarget = document.getElementById('todaySession') || document.body;
-      errTarget.innerHTML =
-        '<div style="text-align:center;padding:48px 24px;color:#F87171;">' +
-        '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">Something went wrong</div>' +
-        '<div style="font-size:13px;">' + err.message + '</div></div>';
+      errTarget.textContent = '';
+      var errDiv = document.createElement('div');
+      errDiv.style.cssText = 'text-align:center;padding:48px 24px;color:#F87171;';
+      var errTitle = document.createElement('div');
+      errTitle.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
+      errTitle.textContent = 'Something went wrong';
+      var errMsg = document.createElement('div');
+      errMsg.style.cssText = 'font-size:13px;';
+      errMsg.textContent = err.message;
+      errDiv.appendChild(errTitle);
+      errDiv.appendChild(errMsg);
+      errTarget.appendChild(errDiv);
     }); // end initData().then()
 
 // ============================================
