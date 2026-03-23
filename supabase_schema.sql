@@ -10,9 +10,10 @@
 --   columns and add key management complexity. RLS already gates per-user access.
 --   Revisit only if multi-user with HIPAA/regulatory requirements.
 --
--- Client-side encryption:
---   localStorage data is encrypted via AES-256-GCM (crypto-store.js).
---   Key derived from user auth session — protects data on stolen/shared devices.
+-- Client-side obfuscation:
+--   localStorage offline queue is encrypted via AES-256-GCM (crypto-store.js).
+--   Key derived from user ID (public UUID) — obfuscation against casual
+--   inspection, not confidentiality against XSS or local forensic access.
 -- =============================================================================
 
 -- garmin: primary daily wellness + activity data from Garmin
@@ -54,6 +55,8 @@ CREATE TABLE IF NOT EXISTS garmin (
     zone_3_min REAL,
     zone_4_min REAL,
     zone_5_min REAL,
+    spo2_avg REAL,
+    spo2_min REAL,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (user_id, date)
@@ -197,12 +200,15 @@ CREATE TABLE IF NOT EXISTS nutrition (
 );
 
 -- strength_log: individual sets for weight training
+-- set_id: client-generated UUID per set — allows multiple sets of the same
+-- exercise on the same day while deduplicating offline replays.
 CREATE TABLE IF NOT EXISTS strength_log (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     date TEXT NOT NULL,
     day TEXT,
     muscle_group TEXT,
     exercise TEXT,
+    set_id TEXT,
     weight_lbs REAL,
     reps INTEGER,
     rpe REAL,
@@ -218,11 +224,11 @@ CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, d
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'strength_log_owner_uq'
+    WHERE conname = 'strength_log_set_uq'
     AND conrelid = 'strength_log'::regclass
   ) THEN
     ALTER TABLE strength_log
-      ADD CONSTRAINT strength_log_owner_uq UNIQUE (user_id, date, exercise);
+      ADD CONSTRAINT strength_log_set_uq UNIQUE (user_id, set_id);
   END IF;
 END $$;
 

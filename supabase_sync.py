@@ -151,7 +151,8 @@ def upsert_garmin(client, date_str, data):
             "zone_3_min": _to_num(data.get("zone_3")),
             "zone_4_min": _to_num(data.get("zone_4")),
             "zone_5_min": _to_num(data.get("zone_5")),
-            # spo2_avg and spo2_min: add after running ALTER TABLE in Supabase dashboard
+            "spo2_avg": _to_num(data.get("spo2_avg")),
+            "spo2_min": _to_num(data.get("spo2_min")),
         }
         client.table("garmin").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] garmin upserted for {date_str}")

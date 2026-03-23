@@ -25,6 +25,10 @@ SQLITE_DB = Path(__file__).parent / "health_tracker.db"
 # Batch size for upserts
 BATCH_SIZE = 500
 
+# Schema version — single source of truth.
+# Update here when migrations change the schema. Must match supabase_schema.sql header.
+SCHEMA_VERSION = "3.1"
+
 # ---------------------------------------------------------------------------
 # SQL: Table creation (idempotent — CREATE TABLE IF NOT EXISTS)
 # ---------------------------------------------------------------------------
@@ -214,12 +218,15 @@ CREATE TABLE IF NOT EXISTS nutrition (
 );
 
 -- strength_log: individual sets for weight training
+-- set_id: client-generated UUID per set — allows multiple sets of same exercise
+-- per day while deduplicating offline replays.
 CREATE TABLE IF NOT EXISTS strength_log (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     date TEXT NOT NULL,
     day TEXT,
     muscle_group TEXT,
     exercise TEXT,
+    set_id TEXT,
     weight_lbs REAL,
     reps INTEGER,
     rpe REAL,
@@ -235,11 +242,11 @@ CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, d
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'strength_log_owner_uq'
+    WHERE conname = 'strength_log_set_uq'
     AND conrelid = 'strength_log'::regclass
   ) THEN
     ALTER TABLE strength_log
-      ADD CONSTRAINT strength_log_owner_uq UNIQUE (user_id, date, exercise);
+      ADD CONSTRAINT strength_log_set_uq UNIQUE (user_id, set_id);
   END IF;
 END $$;
 
@@ -872,9 +879,9 @@ def main():
     try:
         supabase.table("_meta").upsert({
             "key": "schema_version",
-            "value": "1",
+            "value": SCHEMA_VERSION,
         }, on_conflict="key").execute()
-        print("  Schema version set to 1")
+        print(f"  Schema version set to {SCHEMA_VERSION}")
     except Exception as e:
         print(f"  WARNING: Could not set schema version: {e}")
 

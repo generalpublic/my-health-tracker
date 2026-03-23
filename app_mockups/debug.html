@@ -43,9 +43,9 @@
       document.getElementById('results').appendChild(el);
     }
 
-    // Use vars from data-loader.js (no redeclaration)
-    var SB_URL = (typeof SUPABASE_URL !== 'undefined') ? SUPABASE_URL : 'https://uutjdyyxxgeftffitqay.supabase.co';
-    var SB_KEY = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : 'sb_publishable_7SyMEmDUWFuHaVz9mk8oQA_2VxaILJ8';
+    // Use vars from config.js (loaded via script tag) — no hardcoded fallbacks
+    var SB_URL = (typeof SUPABASE_URL !== 'undefined') ? SUPABASE_URL : '';
+    var SB_KEY = (typeof SUPABASE_ANON_KEY !== 'undefined') ? SUPABASE_ANON_KEY : '';
 
     async function runTests() {
       document.getElementById('results').innerHTML = '';

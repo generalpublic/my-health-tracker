@@ -1,10 +1,18 @@
 /**
- * crypto-store.js — Encrypted localStorage for health data.
+ * crypto-store.js — Obfuscated localStorage for the offline queue.
  *
  * Uses WebCrypto AES-256-GCM to encrypt data before storing in localStorage.
- * Key is derived from the user's auth session (user ID) via PBKDF2.
- * If the user is logged out, the encryption key cannot be re-derived,
- * protecting data at rest on stolen/shared devices.
+ * Key is derived from the user's Supabase user ID (a public UUID) via PBKDF2,
+ * NOT from a user secret. This means:
+ *
+ *   - It IS useful against: casual inspection of localStorage, automated
+ *     scraping tools that expect cleartext JSON.
+ *   - It is NOT protection against: XSS (attacker has the same JS context),
+ *     local forensic access (user ID is in the auth session in the same
+ *     localStorage), or a stolen device where the browser session persists.
+ *
+ * Server-side data is protected by RLS + Supabase auth, not this module.
+ * This module only covers the small offline retry queue in localStorage.
  *
  * Graceful fallback: if WebCrypto is unavailable, stores cleartext.
  */

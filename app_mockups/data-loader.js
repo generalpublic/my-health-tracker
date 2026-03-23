@@ -311,7 +311,7 @@ async function saveSleepNotes() {
   return supabaseMutate('sleep', data, 'user_id,date');
 }
 
-/** Strength Set -> strength_log (plain INSERT, auto-increment ID) */
+/** Strength Set -> strength_log (upsert on set_id for offline replay dedup) */
 async function saveStrengthSet(muscleGroup, exercise, weight, reps, rpe) {
   const date = _todayStr();
   const data = {
@@ -319,13 +319,14 @@ async function saveStrengthSet(muscleGroup, exercise, weight, reps, rpe) {
     day: _dayOfWeek(date),
     muscle_group: muscleGroup,
     exercise: exercise,
+    set_id: crypto.randomUUID(),
     weight_lbs: weight,
     reps: reps,
     rpe: rpe,
     manual_source: 'pwa',
   };
-  // No matchColumns = plain INSERT (strength_log uses auto-increment id)
-  return supabaseMutate('strength_log', data, null);
+  // Upsert on set_id — each set gets a unique ID, but offline replays reuse it
+  return supabaseMutate('strength_log', data, 'user_id,set_id');
 }
 
 /** Session manual fields -> session_log (perceived_effort, post_workout_energy, notes) */
