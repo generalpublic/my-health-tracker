@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS overall_analysis (
     key_insights TEXT,
     recommendations TEXT,
     training_load_status TEXT,
+    data_quality TEXT,
+    quality_flags TEXT,
     manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),

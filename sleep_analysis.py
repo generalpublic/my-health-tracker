@@ -109,27 +109,24 @@ def compute_circadian_profile(sleep_history, min_days=30):
         "median_wake_hr": round(median_wk, 2),
         "sleep_midpoint_hr": round(sleep_midpoint, 2),
         "bedtime_std_min": round(bt_std_min, 1),
-        "optimal_window_center": round(median_bt, 2),
+        "regularity_center": round(median_bt, 2),
+        "optimal_window_center": round(median_bt, 2),  # kept for backward compat
         "n_nights": len(bedtimes),
     }
 
 
 def circadian_bedtime_score(bt_hour, circadian_profile, thresholds=None):
-    """Score tonight's bedtime against the user's personal circadian window.
+    """Score tonight's bedtime on two independent axes: regularity and lateness.
 
-    Replaces the fixed bonus/penalty with a continuous curve centered on the
-    user's empirical bedtime. Deviation is penalized smoothly rather than
-    with a binary threshold.
+    Regularity (60% weight): how close tonight's bedtime is to the user's
+    personal median. Rewards consistency regardless of the absolute time.
 
-    Scoring:
-        Within 15 min of personal median:  +5 pts (full bonus)
-        15-45 min deviation:               +5 to 0 (linear taper)
-        45-90 min deviation:               0 to -5 (mild penalty)
-        90+ min deviation:                 -5 to -10 (strong penalty, capped)
+    Lateness penalty (40% weight): soft penalty for bedtimes past a clinical
+    threshold (default 00:30). A consistently-2AM sleeper scores well on
+    regularity but still gets penalized for lateness. This prevents the
+    system from treating habitual late sleep as fully optimal.
 
-    Also applies a circadian consistency bonus/penalty:
-        Bedtime variability < 30 min SD:  +2 pts
-        Bedtime variability > 60 min SD:  -3 pts
+    Consistency bonus/penalty unchanged: ±2-3 pts based on variability.
 
     Falls back to fixed-target scoring if no circadian profile available.
     """
@@ -147,21 +144,35 @@ def circadian_bedtime_score(bt_hour, circadian_profile, thresholds=None):
         return 0
 
     effective = _to_effective_hour(bt_hour)
+
+    # --- Regularity score (60% of timing): closeness to personal median ---
     median = circadian_profile["optimal_window_center"]
     deviation_min = abs(effective - median) * 60
 
-    # Continuous scoring curve
     if deviation_min <= 15:
-        timing_score = 5.0
+        regularity_score = 5.0
     elif deviation_min <= 45:
-        # Linear taper from +5 to 0
-        timing_score = 5.0 * (1.0 - (deviation_min - 15) / 30.0)
+        regularity_score = 5.0 * (1.0 - (deviation_min - 15) / 30.0)
     elif deviation_min <= 90:
-        # Linear penalty from 0 to -5
-        timing_score = -5.0 * ((deviation_min - 45) / 45.0)
+        regularity_score = -5.0 * ((deviation_min - 45) / 45.0)
     else:
-        # Strong penalty from -5 to -10, capped at -10
-        timing_score = -5.0 - min(5.0, 5.0 * ((deviation_min - 90) / 90.0))
+        regularity_score = -5.0 - min(5.0, 5.0 * ((deviation_min - 90) / 90.0))
+
+    # --- Lateness penalty (40% of timing): soft penalty past clinical threshold ---
+    # Clinical threshold: bedtimes past 00:30 (24.5 in effective hours) start
+    # getting penalized regardless of personal regularity.
+    late_threshold = t.get("circadian_late_threshold", 24.5)  # 00:30 AM
+    late_penalty_cap = t.get("circadian_late_penalty_cap", -8.0)
+
+    if effective <= late_threshold:
+        lateness_score = 0.0  # no penalty for bedtimes before threshold
+    else:
+        # Linear penalty: 0 at threshold, caps at late_penalty_cap at threshold + 2h
+        hours_past = effective - late_threshold
+        lateness_score = max(late_penalty_cap, late_penalty_cap * (hours_past / 2.0))
+
+    # Blend: 60% regularity + 40% lateness
+    timing_score = 0.6 * regularity_score + 0.4 * lateness_score
 
     # Consistency bonus/penalty
     consistency_score = 0.0
@@ -457,7 +468,7 @@ def generate_sleep_analysis(data, thresholds=None, circadian_profile=None):
 
     # Late bedtime + adequate hours but low deep%
     if is_late_bed and total is not None and total >= 7 and eff_deep_pct is not None and eff_deep_pct < 20:
-        insights.append(f"Despite {total:.1f}h in bed, deep sleep was only {eff_deep_pct:.0f}% because the late bedtime ({bedtime_str}) missed the circadian deep sleep window - the body's strongest deep sleep drive is 10PM-2AM regardless of when you fall asleep")
+        insights.append(f"Despite {total:.1f}h in bed, deep sleep was only {eff_deep_pct:.0f}% - possibly because the late bedtime ({bedtime_str}) reduced time in the circadian deep sleep window (the body's strongest deep sleep drive is typically 10PM-2AM)")
 
     # Enough hours but few cycles = restlessness / fragmentation
     if total is not None and total >= 7 and cycles is not None and cycles < 3:
@@ -465,27 +476,27 @@ def generate_sleep_analysis(data, thresholds=None, circadian_profile=None):
             insights.append(f"Slept {total:.1f}h but only completed {cycles:.0f} cycles due to {awakenings:.0f} awakenings - frequent wake-ups keep resetting the 90-min cycle, preventing progression to deep/REM stages")
         elif light_min is not None and total > 0 and (light_min / (total * 60) * 100) > 55:
             light_pct = light_min / (total * 60) * 100
-            insights.append(f"Slept {total:.1f}h but only {cycles:.0f} cycles with unusually high light sleep ({light_pct:.0f}%) - likely restlessness preventing descent into deeper stages; possible causes: caffeine, stress, room temperature, or alcohol")
+            insights.append(f"Slept {total:.1f}h but only {cycles:.0f} cycles with unusually high light sleep ({light_pct:.0f}%) - may indicate restlessness preventing descent into deeper stages; possible causes: caffeine, stress, room temperature, or alcohol")
         else:
-            insights.append(f"Slept {total:.1f}h but only {cycles:.0f} cycles - poor sleep architecture despite adequate time; the body struggled to transition between sleep stages")
+            insights.append(f"Slept {total:.1f}h but only {cycles:.0f} cycles - poor sleep architecture despite adequate time; may reflect difficulty transitioning between sleep stages")
 
     # Short sleep + late bedtime = compounding problem
     if total is not None and total < 6 and is_late_bed:
-        insights.append(f"Late bedtime + short duration is a double hit: missed the deep sleep window AND cut REM-heavy later cycles")
+        insights.append(f"Late bedtime + short duration compounds: likely reduced time in the deep sleep window AND cut REM-heavy later cycles")
 
     # Good deep but low REM (or vice versa) = architectural imbalance
     if eff_deep_pct is not None and eff_rem_pct is not None:
         if eff_deep_pct >= 20 and eff_rem_pct < 15:
             if total is not None and total < 7:
-                insights.append(f"Deep sleep is strong but REM is low - likely woke too early and cut the REM-heavy final cycles (REM concentrates in the last third of sleep)")
+                insights.append(f"Deep sleep is strong but REM is low - may reflect waking too early and cutting the REM-heavy final cycles (REM concentrates in the last third of sleep)")
             else:
                 insights.append(f"Deep sleep is strong but REM is low despite adequate hours - unusual pattern; possible early morning light exposure or alarm disruption during REM")
         elif eff_rem_pct >= 20 and eff_deep_pct < 15:
-            insights.append(f"REM is healthy but deep sleep is critically low - late bedtime or alcohol consumption can suppress N3 slow-wave sleep specifically while leaving REM intact")
+            insights.append(f"REM is healthy but deep sleep is critically low - one possibility is late bedtime or alcohol-related N3 suppression, which can reduce slow-wave sleep while leaving REM intact")
 
     # High awake time but few recorded awakenings = tossing/turning
     if awake_min is not None and awake_min > 30 and awakenings is not None and awakenings <= 2:
-        insights.append(f"{awake_min:.0f}min awake during the night with only {awakenings:.0f} recorded awakenings - likely prolonged restlessness rather than brief wake-ups")
+        insights.append(f"{awake_min:.0f}min awake during the night with only {awakenings:.0f} recorded awakenings - suggests prolonged restlessness rather than brief wake-ups")
 
     # Low sleep efficiency
     if sleep_efficiency is not None and sleep_efficiency < 85:
@@ -493,7 +504,7 @@ def generate_sleep_analysis(data, thresholds=None, circadian_profile=None):
 
     # Low HRV + poor deep = overtraining / stress signal
     if hrv is not None and hrv < 33 and eff_deep_pct is not None and eff_deep_pct < 17:
-        insights.append(f"Low HRV ({hrv:.0f}ms) combined with low deep sleep ({eff_deep_pct:.0f}%) suggests the body is under significant physiological stress - possible overtraining, illness, or accumulated sleep debt")
+        insights.append(f"Low HRV ({hrv:.0f}ms) combined with low deep sleep ({eff_deep_pct:.0f}%) may indicate physiological stress - possible overtraining, illness, or accumulated sleep debt")
 
     # --- Compute independent score and discrepancy ---
     ind_score = compute_independent_score(data, thresholds=thresholds,

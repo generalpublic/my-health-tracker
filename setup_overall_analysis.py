@@ -17,6 +17,8 @@ Layout (Overall Analysis):
   J     Key Insights
   K     Recommendations
   L     Training Load Status
+  M     Data Quality
+  N     Quality Flags
 """
 
 from pathlib import Path
@@ -338,6 +340,8 @@ def setup_overall_analysis(wb):
         9: 400,   # J  Key Insights (max 5 concise bullets)
         10: 350,  # K  Recommendations (max 3 action items)
         11: 380,  # L  Training Load Status (ACWR sentence)
+        12: 120,  # M  Data Quality (short summary)
+        13: 250,  # N  Quality Flags (pipe-separated flags)
     }
     for col_idx, px in width_map.items():
         requests.append({
@@ -353,8 +357,8 @@ def setup_overall_analysis(wb):
             }
         })
 
-    # Text wrapping for text-heavy columns: F, G, I, J, K, L
-    for col_idx in [5, 6, 8, 9, 10, 11]:
+    # Text wrapping for text-heavy columns: F, G, I, J, K, L, N
+    for col_idx in [5, 6, 8, 9, 10, 11, 13]:
         requests.append({
             "repeatCell": {
                 "range": {

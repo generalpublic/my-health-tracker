@@ -13,14 +13,52 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 
+def validate_env():
+    """Pre-flight check: verify all required env vars and the JSON key file.
+
+    Returns (ok: bool, errors: list[str]).  Pure validation, no side effects.
+    """
+    errors = []
+    _project_dir = Path(__file__).parent
+
+    for var in ("SHEET_ID", "GARMIN_EMAIL", "JSON_KEY_FILE"):
+        val = os.getenv(var)
+        if not val:
+            errors.append(f"{var} is not set or empty in .env")
+
+    json_key_name = os.getenv("JSON_KEY_FILE")
+    if json_key_name:
+        json_path = _project_dir / json_key_name
+        if not json_path.exists():
+            errors.append(f"JSON key file not found: {json_path}")
+        else:
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                if "client_email" not in data:
+                    errors.append(
+                        f"{json_key_name} missing 'client_email' -- "
+                        "may not be a valid service account key"
+                    )
+            except (json.JSONDecodeError, OSError) as e:
+                errors.append(f"Cannot read {json_key_name}: {e}")
+
+    return (len(errors) == 0, errors)
+
+
 def get_workbook():
     """Return gspread Spreadsheet object for the configured SHEET_ID."""
+    ok, errors = validate_env()
+    if not ok:
+        raise EnvironmentError(
+            "Environment not configured correctly:\n  " + "\n  ".join(errors)
+        )
+
     import gspread
     from google.oauth2.service_account import Credentials
 
     sheet_id = os.getenv("SHEET_ID")
     _json_key_name = os.getenv("JSON_KEY_FILE")
-    json_key_file = str(Path(__file__).parent / _json_key_name) if _json_key_name else None
+    json_key_file = str(Path(__file__).parent / _json_key_name)
 
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",

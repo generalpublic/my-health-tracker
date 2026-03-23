@@ -415,7 +415,7 @@ def step5_configure_env():
     config["sheet_id"] = sheet_id
 
     # JSON filename (from step 3 or existing .env)
-    json_filename = config.get("json_filename") or existing_env.get("GOOGLE_KEY_FILE", "")
+    json_filename = config.get("json_filename") or existing_env.get("JSON_KEY_FILE", "")
     if not json_filename:
         json_filename = print_prompt("Service account JSON filename (e.g. habit-tracker-key.json): ").strip()
     config["json_filename"] = json_filename
@@ -426,7 +426,7 @@ def step5_configure_env():
         f"\n"
         f"GARMIN_EMAIL={garmin_email}\n"
         f"SHEET_ID={sheet_id}\n"
-        f"GOOGLE_KEY_FILE={json_filename}\n"
+        f"JSON_KEY_FILE={json_filename}\n"
     )
 
     print()
@@ -440,10 +440,37 @@ def step5_configure_env():
     try:
         ENV_FILE.write_text(env_contents, encoding="utf-8")
         print_success(f".env file written to {ENV_FILE}")
-        return True
     except Exception as e:
         print_error(f"Could not write .env file: {e}")
         return False
+
+    # Post-write validation: confirm .env is readable and JSON key file exists
+    verified_env = _read_env()
+    json_key_val = verified_env.get("JSON_KEY_FILE", "")
+    if not json_key_val:
+        print_warning("JSON_KEY_FILE is empty in .env -- scripts will fail until this is set.")
+    else:
+        json_path = PROJECT_DIR / json_key_val
+        if not json_path.exists():
+            print_warning(
+                f"JSON key file not found at: {json_path}\n"
+                f"    Make sure you place the service account JSON file in:\n"
+                f"    {PROJECT_DIR}"
+            )
+        else:
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                if "client_email" not in data:
+                    print_warning(
+                        f"{json_key_val} does not contain 'client_email'. "
+                        "It may not be a valid service account key."
+                    )
+                else:
+                    print_success(f"Verified: {json_key_val} is a valid service account key.")
+            except Exception as e:
+                print_warning(f"Could not read {json_key_val}: {e}")
+
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -796,10 +823,10 @@ def load_existing_config():
         config["garmin_email"] = env["GARMIN_EMAIL"]
     if env.get("SHEET_ID"):
         config["sheet_id"] = env["SHEET_ID"]
-    if env.get("GOOGLE_KEY_FILE"):
-        config["json_filename"] = env["GOOGLE_KEY_FILE"]
+    if env.get("JSON_KEY_FILE"):
+        config["json_filename"] = env["JSON_KEY_FILE"]
         # Try to read client_email from the saved JSON file
-        json_path = PROJECT_DIR / env["GOOGLE_KEY_FILE"]
+        json_path = PROJECT_DIR / env["JSON_KEY_FILE"]
         if json_path.exists():
             try:
                 data = json.loads(json_path.read_text(encoding="utf-8"))

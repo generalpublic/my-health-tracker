@@ -215,6 +215,8 @@ OVERALL_ANALYSIS_HEADERS = [
     "Key Insights",                  # J
     "Recommendations",               # K
     "Training Load Status",          # L
+    "Data Quality",                  # M
+    "Quality Flags",                 # N
 ]
 
 # --- Strength Log tab ---

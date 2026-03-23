@@ -445,6 +445,13 @@ def compose_briefing_notification(date_str, result, sleep_data):
 
     body_parts = []
 
+    # Data quality note when not all components available
+    aq = result.get("analysis_quality", {})
+    if aq.get("basis") in ("partial", "minimal"):
+        missing = aq.get("missing_inputs", [])
+        if missing:
+            body_parts.append(f"[{aq['basis'].title()}: no {', '.join(missing)}]")
+
     expect = _briefing_expect(result.get("cognitive_assessment", ""), sleep_data)
     body_parts.append(expect)
 

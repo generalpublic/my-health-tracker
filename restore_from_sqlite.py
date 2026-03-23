@@ -90,6 +90,7 @@ TAB_SPECS = [
         "cognitive_energy_assessment", "sleep_context",
         "cognition", "cognition_notes",
         "key_insights", "recommendations", "training_load_status",
+        "data_quality", "quality_flags",
     ]),
     ("Strength Log", STRENGTH_LOG_HEADERS, "strength_log", [
         "day", "date", "muscle_group", "exercise",

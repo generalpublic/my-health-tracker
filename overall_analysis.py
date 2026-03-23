@@ -324,6 +324,21 @@ def _sessions_by_date(rows):
     return by_date
 
 
+def _norm_cdf(x):
+    """Standard normal CDF approximation (Abramowitz & Stegun 26.2.17).
+
+    Max error < 7.5e-8. Stdlib-only — no scipy dependency required.
+    """
+    import math
+    if x < 0:
+        return 1.0 - _norm_cdf(-x)
+    p = 0.2316419
+    b1, b2, b3, b4, b5 = 0.319381530, -0.356563782, 1.781477937, -1.821255978, 1.330274429
+    t = 1.0 / (1.0 + p * x)
+    phi = (1.0 / math.sqrt(2 * math.pi)) * math.exp(-0.5 * x * x)
+    return 1.0 - phi * (b1 * t + b2 * t**2 + b3 * t**3 + b4 * t**4 + b5 * t**5)
+
+
 # ---------------------------------------------------------------------------
 # Baseline Computation (z-score methodology)
 # ---------------------------------------------------------------------------
@@ -357,8 +372,9 @@ def _get_values_including_today(by_date, target_date, days_back, field):
 def compute_baselines(by_date_garmin, by_date_sleep, target_date):
     """Compute rolling baselines for key metrics.
 
-    Uses adaptive window: 60-90 days when available, falls back to 30 days
-    for early-stage data. Minimum 7 data points for any baseline.
+    Uses a single 180-day lookback window. Minimum 7 data points for any
+    baseline. The wide window ensures sparse metrics never lose observations
+    to an artificial cutoff.
 
     Also computes HRV trend direction (5-day slope) to distinguish
     overtraining (declining) from detraining (flat-low) patterns.
@@ -368,10 +384,14 @@ def compute_baselines(by_date_garmin, by_date_sleep, target_date):
     """
     baselines = {}
 
+    MAX_LOOKBACK = 180
+    MIN_POINTS = 7
+
     metrics = [
         ("hrv", by_date_garmin, "HRV (overnight avg)"),
         ("rhr", by_date_garmin, "Resting HR"),
         ("sleep_score", by_date_sleep, "Garmin Sleep Score"),
+        ("sleep_analysis_score", by_date_sleep, "Sleep Analysis Score"),
         ("sleep_duration", by_date_sleep, "Total Sleep (hrs)"),
         ("body_battery", by_date_garmin, "Body Battery"),
         ("steps", by_date_garmin, "Steps"),
@@ -379,17 +399,12 @@ def compute_baselines(by_date_garmin, by_date_sleep, target_date):
     ]
 
     for key, source, field in metrics:
-        # Adaptive window: try 90 days first, fall back to 60, then 30
-        window_values = _get_values_in_window(source, target_date, 90, field)
-        if len(window_values) < 30:
-            window_values = _get_values_in_window(source, target_date, 60, field)
-        if len(window_values) < 14:
-            window_values = _get_values_in_window(source, target_date, 30, field)
+        window_values = _get_values_in_window(source, target_date, MAX_LOOKBACK, field)
 
         today_row = source.get(str(target_date), {})
         today_val = _safe_float(today_row.get(field))
 
-        if len(window_values) >= 7:  # need at least 7 days for meaningful baseline
+        if len(window_values) >= MIN_POINTS:
             mean = sum(window_values) / len(window_values)
             variance = sum((v - mean) ** 2 for v in window_values) / (len(window_values) - 1)
             std = variance ** 0.5 if variance > 0 else 1.0
@@ -455,7 +470,8 @@ def compute_baselines(by_date_garmin, by_date_sleep, target_date):
 def analyze_sleep_context(by_date_sleep, by_date_garmin, target_date, baselines):
     """Analyze 5-day sleep trend with recent nights weighted 2x.
 
-    Returns (context_text, sleep_debt_hours, trend_direction, deep_trend, rem_trend).
+    Returns (context_text, sleep_debt_hours, trend_direction, deep_trend, rem_trend,
+            debt_night_count).
     Based on Van Dongen et al. 2003 -- cumulative sleep restriction model.
     """
     # Collect last 5 nights of sleep data
@@ -565,8 +581,20 @@ def analyze_sleep_context(by_date_sleep, by_date_garmin, target_date, baselines)
         else:
             rem_trend = "stable"
 
+    # Count individual nights with sleep debt > threshold (for Van Dongen penalty)
+    debt_threshold = 0.75  # hours below baseline to count as a debt night
+    debt_night_count = 0
+    if baseline_duration is not None:
+        for offset in range(0, 5):
+            d = str(target_date - timedelta(days=offset))
+            row = by_date_sleep.get(d)
+            if row:
+                dur = _safe_float(row.get("Total Sleep (hrs)"))
+                if dur is not None and (baseline_duration - dur) > debt_threshold:
+                    debt_night_count += 1
+
     context_text = " | ".join(parts)
-    return context_text, sleep_debt, trend, deep_trend, rem_trend
+    return context_text, sleep_debt, trend, deep_trend, rem_trend, debt_night_count
 
 
 # ---------------------------------------------------------------------------
@@ -1331,12 +1359,14 @@ def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
     # Evidence-based weights from thresholds.json: HRV > Sleep > RHR > Subjective
     COMPONENT_WEIGHTS = dict(_THRESHOLDS["component_weights"])  # copy so we can modify
 
-    # Apply adaptive weights from user_config.json if available
+    # Adaptive weights disabled until feature-space mismatch is resolved.
+    # Only load if explicitly enabled in user_config.json.
     from utils import load_user_config
-    adaptive_cfg = load_user_config().get("adaptive_weights", {})
-    adaptive_weight_overrides = adaptive_cfg.get("readiness_weights")
-    if adaptive_weight_overrides:
-        COMPONENT_WEIGHTS.update(adaptive_weight_overrides)
+    _user_cfg = load_user_config()
+    if _user_cfg.get("enable_adaptive_weights", False):
+        adaptive_weight_overrides = _user_cfg.get("adaptive_weights", {}).get("readiness_weights")
+        if adaptive_weight_overrides:
+            COMPONENT_WEIGHTS.update(adaptive_weight_overrides)
 
     # Apply profile threshold overrides (takes precedence over adaptive)
     if profile:
@@ -1345,17 +1375,21 @@ def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
         if weight_overrides:
             COMPONENT_WEIGHTS.update(weight_overrides)
 
-    # Extract sleep debt from sleep_context tuple (passed as (text, debt, trend, ...))
+    # Extract sleep context from tuple (text, debt, trend, debt_night_count)
     sleep_debt = None
+    debt_night_count = 0
     if isinstance(sleep_context, tuple) and len(sleep_context) >= 2:
         sleep_debt = sleep_context[1]
+    if isinstance(sleep_context, tuple) and len(sleep_context) >= 4:
+        debt_night_count = sleep_context[3] or 0
 
-    # Van Dongen subjective penalty: after 3+ days of sleep debt > 0.75h,
-    # subjective ratings become unreliable (Van Dongen et al. 2003 showed
-    # subjective sleepiness plateaus while cognitive impairment continues).
-    # Reduce Subjective weight by 50% to prevent false confidence.
+    # Van Dongen subjective penalty: after 3+ nights of sleep debt > 0.75h
+    # in the last 5 nights, subjective ratings become unreliable (Van Dongen
+    # et al. 2003 showed subjective sleepiness plateaus while cognitive
+    # impairment continues). Reduce Subjective weight by 50%.
+    VAN_DONGEN_MIN_DEBT_NIGHTS = 3
     van_dongen_penalty = False
-    if sleep_debt is not None and sleep_debt > 0.75:
+    if debt_night_count >= VAN_DONGEN_MIN_DEBT_NIGHTS:
         COMPONENT_WEIGHTS["Subjective"] = COMPONENT_WEIGHTS.get("Subjective", 0.15) * 0.5
         van_dongen_penalty = True
 
@@ -1373,12 +1407,27 @@ def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
         rhr_score = _z_to_score(-rhr_z)  # invert: low RHR = positive
         components["RHR"] = (rhr_score, f"z={rhr_z:+.1f}")
 
-    # 3. Sleep Quality (z-score -> 1-10 via sigmoid)
-    sleep_score_z = baselines.get("sleep_score", {}).get("z")
+    # 3. Sleep Quality — blend Garmin Sleep Score and Sleep Analysis Score (50/50)
+    # Sleep Analysis Score is architecture-aware and catches cases where Garmin
+    # overweights duration. Blending stabilizes the signal while incorporating
+    # the architecture critique. Fallback order: blended > analysis > garmin > raw.
+    garmin_sleep_z = baselines.get("sleep_score", {}).get("z")
+    analysis_sleep_z = baselines.get("sleep_analysis_score", {}).get("z")
     sleep_score_today = baselines.get("sleep_score", {}).get("today")
-    if sleep_score_z is not None:
-        sleep_component = _z_to_score(sleep_score_z)
-        components["Sleep"] = (sleep_component, f"z={sleep_score_z:+.1f}")
+
+    if garmin_sleep_z is not None and analysis_sleep_z is not None:
+        # Blend: 50% Garmin z-score + 50% Analysis z-score
+        garmin_component = _z_to_score(garmin_sleep_z)
+        analysis_component = _z_to_score(analysis_sleep_z)
+        sleep_component = 0.5 * garmin_component + 0.5 * analysis_component
+        components["Sleep"] = (sleep_component,
+                               f"garmin_z={garmin_sleep_z:+.1f}, analysis_z={analysis_sleep_z:+.1f}")
+    elif analysis_sleep_z is not None:
+        sleep_component = _z_to_score(analysis_sleep_z)
+        components["Sleep"] = (sleep_component, f"analysis_z={analysis_sleep_z:+.1f}")
+    elif garmin_sleep_z is not None:
+        sleep_component = _z_to_score(garmin_sleep_z)
+        components["Sleep"] = (sleep_component, f"garmin_z={garmin_sleep_z:+.1f}")
     elif sleep_score_today is not None:
         sleep_component = max(1, min(10, sleep_score_today / 10))
         components["Sleep"] = (sleep_component, f"raw={sleep_score_today:.0f}")
@@ -1426,21 +1475,111 @@ def compute_readiness(baselines, sleep_context, daily_log_by_date, target_date,
             label = lbl
             break
 
-    # Confidence — based on baseline depth + component availability
-    # Thresholds: n>=90 for High, n>=60 for Medium-High, n>=30 for Medium
+    # Confidence — based on data sufficiency across all objective components
+    # Uses minimum baseline depth across present objective components (HRV, RHR, Sleep)
+    # to prevent high confidence when one key signal has thin data.
+    # Sleep objective n tracks which sleep signal(s) actually contributed to readiness.
     available = len(components)
-    n_hrv = baselines.get("hrv", {}).get("n", 0)
+    objective_ns = []
+    for _obj_key in ("hrv", "rhr"):
+        _obj_bl = baselines.get(_obj_key, {})
+        if _obj_bl.get("z") is not None:
+            objective_ns.append(_obj_bl.get("n", 0))
+    # Sleep: match the same branching used for the readiness score above
+    if garmin_sleep_z is not None and analysis_sleep_z is not None:
+        # Both contributed — weakest link of the pair limits confidence
+        objective_ns.append(min(
+            baselines.get("sleep_score", {}).get("n", 0),
+            baselines.get("sleep_analysis_score", {}).get("n", 0),
+        ))
+    elif analysis_sleep_z is not None:
+        objective_ns.append(baselines.get("sleep_analysis_score", {}).get("n", 0))
+    elif garmin_sleep_z is not None:
+        objective_ns.append(baselines.get("sleep_score", {}).get("n", 0))
+    # Raw fallback (sleep_score_today without z-score) is not z-scored, so no objective n
+    min_objective_n = min(objective_ns) if objective_ns else 0
+
     conf_thresholds = _THRESHOLDS["confidence"]
-    if available >= 4 and n_hrv >= conf_thresholds["high_min_n"]:
+    if available >= 4 and min_objective_n >= conf_thresholds["high_min_n"]:
         confidence = "High"
-    elif available >= 3 and n_hrv >= conf_thresholds["medium_high_min_n"]:
+    elif available >= 3 and min_objective_n >= conf_thresholds["medium_high_min_n"]:
         confidence = "Medium-High"
-    elif available >= 2 and n_hrv >= conf_thresholds["medium_min_n"]:
+    elif available >= 2 and min_objective_n >= conf_thresholds["medium_min_n"]:
         confidence = "Medium"
     else:
         confidence = "Low"
 
     return score, label, components, confidence
+
+
+def _assess_data_quality(baselines, components, by_date_garmin, by_date_sleep,
+                         target_date):
+    """Assess data completeness and quality for the current readiness output.
+
+    Returns (data_quality, analysis_quality) dicts.
+    """
+    ALL_COMPONENTS = {"HRV", "RHR", "Sleep", "Subjective"}
+    present = set(components.keys()) if components else set()
+    missing = ALL_COMPONENTS - present
+
+    degraded = []
+    flags = []
+
+    # Garmin data freshness
+    target_str = str(target_date)
+    garmin_row = by_date_garmin.get(target_str)
+    if not garmin_row:
+        flags.append("No Garmin data for target date")
+
+    # Sleep record completeness
+    sleep_row = by_date_sleep.get(target_str)
+    if sleep_row:
+        deep = sleep_row.get("Deep (min)", "")
+        rem = sleep_row.get("REM (min)", "")
+        if not deep and not rem:
+            degraded.append("Sleep")
+            flags.append("Sleep: missing stage data (deep/REM)")
+
+    # Sleep analysis-only mode
+    if "Sleep" in present and components.get("Sleep"):
+        detail = components["Sleep"][1] if len(components["Sleep"]) > 1 else ""
+        if "analysis_z=" in detail and "garmin_z=" not in detail:
+            flags.append("Sleep: analysis-only (no Garmin score)")
+
+    # Van Dongen penalty detection
+    if "Subjective" in present and components.get("Subjective"):
+        detail = components["Subjective"][1] if len(components["Subjective"]) > 1 else ""
+        if "VAN_DONGEN_PENALTY" in detail:
+            flags.append("Subjective weight reduced (Van Dongen penalty)")
+
+    # Thin baselines
+    for key, label in [("hrv", "HRV"), ("rhr", "RHR"), ("sleep_score", "Sleep Score")]:
+        bl = baselines.get(key, {})
+        n = bl.get("n", 0)
+        if bl.get("z") is not None and n < 14:
+            flags.append(f"{label}: thin baseline (n={n})")
+
+    # Analysis quality basis
+    n_present = len(present)
+    if n_present >= 4:
+        basis = "full"
+    elif n_present >= 2:
+        basis = "partial"
+    else:
+        basis = "minimal"
+
+    data_quality = {
+        "present": sorted(present),
+        "missing": sorted(missing),
+        "degraded": degraded,
+        "flags": flags,
+    }
+    analysis_quality = {
+        "basis": basis,
+        "missing_inputs": sorted(missing),
+        "warnings": flags,
+    }
+    return data_quality, analysis_quality
 
 
 # ---------------------------------------------------------------------------
@@ -1597,6 +1736,372 @@ def _eval_variance_trigger(trigger, data_sources, target_date):
     return False, ""
 
 
+_PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+
+
+# ---------------------------------------------------------------------------
+# Contradiction Resolution Engine
+# ---------------------------------------------------------------------------
+
+def _pearson_r_and_p(xs, ys):
+    """Compute Pearson r and two-tailed p-value for paired lists.
+
+    Returns (r, p, n).  Falls back to (0.0, 1.0, n) on degenerate input.
+    """
+    n = len(xs)
+    if n < 5:
+        return 0.0, 1.0, n
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    sx = sum((x - mx) ** 2 for x in xs)
+    sy = sum((y - my) ** 2 for y in ys)
+    if sx == 0 or sy == 0:
+        return 0.0, 1.0, n
+    sxy = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    r = sxy / (sx * sy) ** 0.5
+    # Two-tailed p-value via t-distribution normal approximation
+    if abs(r) >= 1.0:
+        return r, 0.0, n
+    t_stat = r * math.sqrt((n - 2) / (1 - r * r))
+    z = abs(t_stat)
+    if z > 8:
+        return r, 0.0, n
+    b1, b2, b3, b4, b5 = 0.319381530, -0.356563782, 1.781477937, -1.821255978, 1.330274429
+    t_val = 1.0 / (1.0 + 0.2316419 * z)
+    poly = t_val * (b1 + t_val * (b2 + t_val * (b3 + t_val * (b4 + t_val * b5))))
+    pdf = math.exp(-0.5 * z * z) / math.sqrt(2 * math.pi)
+    p = 2.0 * (1.0 - (1.0 - pdf * poly))
+    return r, max(p, 0.0), n
+
+
+def _check_personal_correlation(validation_pair, conn):
+    """Check personal data correlation for a contradiction group member.
+
+    Uses the explicit validation_pair spec to query SQLite and compute Pearson r.
+
+    Returns dict:
+      {"status": "confirmed"|"refuted"|"inconclusive"|"insufficient_data",
+       "r": float, "n": int, "p": float}
+    """
+    if not validation_pair or not conn:
+        return {"status": "insufficient_data", "r": 0.0, "n": 0, "p": 1.0}
+
+    pred = validation_pair.get("predictor", {})
+    outcome = validation_pair.get("outcome", {})
+    lag_days = validation_pair.get("lag_days", 1)
+    expected_dir = validation_pair.get("expected_direction", "none")
+
+    pred_tab = pred.get("tab", "")
+    pred_field = pred.get("field", "")
+    out_tab = outcome.get("tab", "")
+    out_field = outcome.get("field", "")
+
+    if not all([pred_tab, pred_field, out_tab, out_field]):
+        return {"status": "insufficient_data", "r": 0.0, "n": 0, "p": 1.0}
+
+    # Map tab names to SQLite table names (lowercase, underscored)
+    _tab_to_table = {
+        "garmin": "garmin", "sleep": "sleep", "daily_log": "daily_log",
+        "nutrition": "nutrition", "session_log": "session_log",
+        "overall_analysis": "overall_analysis",
+    }
+    pred_table = _tab_to_table.get(pred_tab, pred_tab)
+    out_table = _tab_to_table.get(out_tab, out_tab)
+
+    # Build query — join predictor day to outcome day+lag
+    try:
+        cursor = conn.cursor()
+        # Get column names from both tables to find best match
+        query = f"""
+            SELECT p."{pred_field}", o."{out_field}"
+            FROM {pred_table} p
+            JOIN {out_table} o ON date(p.date, '+{lag_days} day') = o.date
+            WHERE p."{pred_field}" IS NOT NULL
+              AND o."{out_field}" IS NOT NULL
+              AND p."{pred_field}" != ''
+              AND o."{out_field}" != ''
+            ORDER BY p.date DESC
+            LIMIT 90
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+    except Exception:
+        return {"status": "insufficient_data", "r": 0.0, "n": 0, "p": 1.0}
+
+    # Parse numeric values
+    xs, ys = [], []
+    for pv, ov in rows:
+        try:
+            xs.append(float(pv))
+            ys.append(float(ov))
+        except (ValueError, TypeError):
+            continue
+
+    if len(xs) < 20:
+        return {"status": "insufficient_data", "r": 0.0, "n": len(xs), "p": 1.0}
+
+    r, p, n = _pearson_r_and_p(xs, ys)
+
+    # Determine status based on thresholds and expected direction
+    if abs(r) < 0.15 or p >= 0.10:
+        return {"status": "inconclusive", "r": r, "n": n, "p": p}
+
+    if abs(r) >= 0.20 and n >= 20 and p < 0.05:
+        # Check direction match
+        if expected_dir == "positive" and r > 0:
+            return {"status": "confirmed", "r": r, "n": n, "p": p}
+        elif expected_dir == "negative" and r < 0:
+            return {"status": "confirmed", "r": r, "n": n, "p": p}
+        elif expected_dir == "none":
+            # Entry claims no relationship but we found one
+            return {"status": "refuted", "r": r, "n": n, "p": p}
+        else:
+            # Direction opposes expected
+            return {"status": "refuted", "r": r, "n": n, "p": p}
+
+    return {"status": "inconclusive", "r": r, "n": n, "p": p}
+
+
+def _build_contested_insight(group_entries, personal_result):
+    """Build a merged insight when a contradiction group has no clear winner.
+
+    Returns (priority_int, insight_text) where insight_text is prefixed with
+    [CONTESTED] for downstream detection (stripped before display).
+    """
+    # Sort by evidence tier (strongest first)
+    sorted_entries = sorted(group_entries, key=lambda e: e.get("evidence_tier", 7))
+
+    domain = sorted_entries[0].get("domain", "Health")
+    group_id = sorted_entries[0].get("contradiction_group", "unknown")
+
+    # Build position summaries (max 2 for readability)
+    positions = []
+    for i, entry in enumerate(sorted_entries[:2]):
+        letter = chr(65 + i)  # A, B
+        cit_short = entry.get("citation", "").split(";")[0].strip()[:60]
+        interp_short = entry.get("interpretation", "")[:120]
+        positions.append(f"Position {letter} ({cit_short}): {interp_short}")
+
+    # Personal data summary
+    if personal_result and personal_result.get("n", 0) >= 5:
+        r_val = personal_result.get("r", 0)
+        n_val = personal_result.get("n", 0)
+        status = personal_result.get("status", "inconclusive")
+        personal_text = f"Your data ({n_val} days): r={r_val:+.2f} ({status})"
+    else:
+        personal_text = "Your data: insufficient for comparison"
+
+    # Conservative recommendation
+    cons_rec = sorted_entries[0].get("conservative_recommendation")
+    if not cons_rec:
+        # Fall back to higher-evidence entry's recommendation with caveat
+        best_rec = sorted_entries[0].get("recommendation", "")
+        if best_rec:
+            cons_rec = f"Evidence is mixed -- cautiously: {best_rec[:150]}"
+        else:
+            cons_rec = "Monitor this metric and discuss with your provider if concerned."
+
+    # Priority = max (highest urgency) of all group members
+    max_priority = min(
+        _PRIORITY_ORDER.get(e.get("priority", "Medium"), 3)
+        for e in group_entries
+    )
+
+    text_parts = [
+        f"[CONTESTED] [{domain}] Evidence is mixed ({group_id}). ",
+        ". ".join(positions) + ". ",
+        personal_text + ". ",
+        f"Conservative recommendation: {cons_rec[:200]}",
+    ]
+
+    return (max_priority, "".join(text_parts))
+
+
+def resolve_contradiction_groups(fired_entries, knowledge):
+    """Apply hierarchical resolution to fired entries in the same contradiction_group.
+
+    Args:
+        fired_entries: list of (kb_id, entry, priority_int, context_str) tuples
+        knowledge: full KB dict {id: entry}
+
+    Returns list of resolved tuples:
+        (kb_id, entry, priority_int, context_str, resolution_metadata)
+    where resolution_metadata = {"resolution": str, "annotation": str|None,
+                                  "merged_text": str|None}
+    """
+    # Group by contradiction_group
+    groups = {}  # group_id -> [(kb_id, entry, priority, context)]
+    ungrouped = []
+
+    for kb_id, entry, priority, context in fired_entries:
+        group_id = entry.get("contradiction_group")
+        if group_id:
+            groups.setdefault(group_id, []).append((kb_id, entry, priority, context))
+        else:
+            ungrouped.append((kb_id, entry, priority, context))
+
+    resolved = []
+
+    # Pass through ungrouped entries unchanged
+    for kb_id, entry, priority, context in ungrouped:
+        # Check conflicts_with_hardcoded
+        conflicts = entry.get("conflicts_with_hardcoded") or []
+        if conflicts and any(cid in _hardcoded_kb_ids for cid in conflicts):
+            # This KB entry conflicts with a hardcoded insight that already fired.
+            # Suppress the dynamic entry (hardcoded insights are well-vetted).
+            print(f"  [contradiction] Suppressed {kb_id}: conflicts with hardcoded "
+                  f"{[c for c in conflicts if c in _hardcoded_kb_ids]}")
+            continue
+        resolved.append((kb_id, entry, priority, context,
+                         {"resolution": "sole", "annotation": None, "merged_text": None}))
+
+    # Resolve each contradiction group
+    for group_id, members in groups.items():
+        if len(members) == 1:
+            kb_id, entry, priority, context = members[0]
+            resolved.append((kb_id, entry, priority, context,
+                             {"resolution": "sole", "annotation": None, "merged_text": None}))
+            continue
+
+        # Sort by evidence tier (ascending = strongest first)
+        members.sort(key=lambda m: m[1].get("evidence_tier", 7))
+        strongest = members[0]
+        weakest = members[-1]
+        tier_gap = weakest[1].get("evidence_tier", 7) - strongest[1].get("evidence_tier", 7)
+
+        if tier_gap >= 2:
+            # Clear evidence winner — fire the strongest, suppress the rest
+            kb_id, entry, priority, context = strongest
+            suppressed = [m[0] for m in members[1:]]
+            print(f"  [contradiction] Group '{group_id}': {kb_id} wins (tier {entry.get('evidence_tier')}) "
+                  f"over {suppressed}")
+            resolved.append((kb_id, entry, priority, context,
+                             {"resolution": "evidence_winner", "annotation": None,
+                              "merged_text": None}))
+            continue
+
+        # Close evidence — check personal validation (precomputed)
+        personal = strongest[1].get("personal_validation")
+        if personal and personal.get("status") == "confirmed":
+            kb_id, entry, priority, context = strongest
+            r_val = personal.get("r", 0)
+            n_val = personal.get("n", 0)
+            annotation = f"Confirmed by your data (r={r_val:+.2f}, {n_val} days)"
+            suppressed = [m[0] for m in members[1:]]
+            print(f"  [contradiction] Group '{group_id}': {kb_id} confirmed by personal data "
+                  f"over {suppressed}")
+            resolved.append((kb_id, entry, priority, context,
+                             {"resolution": "personal_confirmed", "annotation": annotation,
+                              "merged_text": None}))
+            continue
+
+        # Check if a weaker entry is personally confirmed
+        for i, (mid, mentry, mpri, mctx) in enumerate(members[1:], 1):
+            mp = mentry.get("personal_validation")
+            if mp and mp.get("status") == "confirmed":
+                r_val = mp.get("r", 0)
+                n_val = mp.get("n", 0)
+                annotation = f"Confirmed by your data (r={r_val:+.2f}, {n_val} days)"
+                suppressed = [m[0] for m in members if m[0] != mid]
+                print(f"  [contradiction] Group '{group_id}': {mid} personally confirmed "
+                      f"despite weaker evidence, over {suppressed}")
+                resolved.append((mid, mentry, mpri, mctx,
+                                 {"resolution": "personal_confirmed", "annotation": annotation,
+                                  "merged_text": None}))
+                break
+        else:
+            # No personal confirmation — emit merged contested insight
+            all_entries = [m[1] for m in members]
+            personal_result = personal or {}
+            priority_int, merged_text = _build_contested_insight(all_entries, personal_result)
+            # Use a synthetic entry for the merged insight
+            print(f"  [contradiction] Group '{group_id}': no winner, emitting mixed-evidence insight")
+            resolved.append((f"__contested_{group_id}", strongest[1], priority_int, "",
+                             {"resolution": "merged_mixed", "annotation": None,
+                              "merged_text": merged_text}))
+
+    return resolved
+
+
+def update_personal_validations(knowledge, conn):
+    """Monthly job: compute personal correlations for all contested KB entries.
+
+    For every entry with a contradiction_group and validation_pair, compute
+    Pearson correlation from SQLite and store results in the
+    kb_personal_validations table (not health_knowledge.json).
+
+    Returns count of entries updated.
+    """
+    if not conn:
+        print("  [validation] No SQLite connection -- skipping personal validations.")
+        return 0
+
+    from sqlite_backup import upsert_kb_validation, load_kb_validations
+
+    # Load existing validations from SQLite for skip-if-recent check
+    existing_validations = load_kb_validations(conn)
+
+    updated = 0
+    today_str = str(date.today())
+
+    for kb_id, entry in knowledge.items():
+        group = entry.get("contradiction_group")
+        vpair = entry.get("validation_pair")
+        if not group or not vpair:
+            continue
+
+        # Skip if validated within last 30 days
+        existing = existing_validations.get(kb_id, {})
+        last_computed = existing.get("last_computed", "")
+        if last_computed:
+            try:
+                days_since = (date.today() - date.fromisoformat(last_computed)).days
+                if days_since < 30:
+                    continue
+            except ValueError:
+                pass
+
+        result = _check_personal_correlation(vpair, conn)
+        val_data = {
+            "status": result["status"],
+            "r": round(result["r"], 4),
+            "n": result["n"],
+            "p": round(result["p"], 6),
+            "last_computed": today_str,
+        }
+
+        # Write to SQLite
+        upsert_kb_validation(
+            conn, kb_id, val_data["status"],
+            val_data["r"], val_data["n"], val_data["p"], today_str
+        )
+
+        # Update in-memory knowledge dict so current run uses fresh data
+        entry["personal_validation"] = val_data
+        updated += 1
+
+    if updated:
+        conn.commit()
+        print(f"  [validation] Updated personal validations for {updated} KB entries (SQLite).")
+
+    return updated
+
+
+def _build_trigger_insight(entry, context, annotation=None):
+    """Build an insight string from a knowledge entry that fired a trigger."""
+    parts = [f"[{entry['domain']}] {context}. "]
+    parts.append(entry["interpretation"][:200])
+    if entry.get("cognitive_impact"):
+        parts.append(f" Cognitive: {entry['cognitive_impact'][:150]}")
+    if entry.get("recommendation"):
+        parts.append(f" Action: {entry['recommendation'][:150]}")
+    conf = entry.get("confidence", "Pending")
+    parts.append(f" [{entry['citation']}: {conf}]")
+    if annotation:
+        parts.append(f" ({annotation})")
+    return "".join(parts)
+
+
 def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_date):
     """Scan all knowledge entries with triggers and generate insights.
 
@@ -1604,10 +2109,14 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
     engine. When /update-intel adds new entries with trigger fields, they
     automatically fire here without any code changes.
 
-    Returns list of insight strings for entries whose triggers matched.
+    Phase 1: Fire all triggers, collect structured data.
+    Phase 2: Resolve contradictions between fired entries.
+    Phase 3: Build insight text from resolved entries.
+
+    Returns list of insight strings sorted by priority (Critical first, Low last).
     """
-    insights = []
-    fired_ids = set()
+    # --- Phase 1: Fire triggers and collect structured results ---
+    fired_entries = []  # (kb_id, entry, priority_int, context_str)
 
     for kb_id, entry in knowledge.items():
         trigger = entry.get("trigger")
@@ -1616,6 +2125,9 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
 
         # Skip entries already covered by hardcoded insights (dedup)
         if kb_id in _hardcoded_kb_ids:
+            continue
+        # Skip superseded entries (replaced by a newer entry via contradiction resolution)
+        if entry.get("superseded_by"):
             continue
 
         trigger_type = trigger.get("type", "simple")
@@ -1636,22 +2148,29 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
                 trigger, data_sources, target_date)
 
         if fired:
-            fired_ids.add(kb_id)
-            # Build insight from knowledge entry
-            parts = [f"[{entry['domain']}] {context}. "]
-            parts.append(entry["interpretation"][:200])
-            if entry.get("cognitive_impact"):
-                parts.append(f" Cognitive: {entry['cognitive_impact'][:150]}")
-            if entry.get("recommendation"):
-                parts.append(f" Action: {entry['recommendation'][:150]}")
-            conf = entry.get("confidence", "Pending")
-            parts.append(f" [{entry['citation']}: {conf}]")
-            insights.append("".join(parts))
+            priority = _PRIORITY_ORDER.get(entry.get("priority", "Medium"), 3)
+            fired_entries.append((kb_id, entry, priority, context))
 
-    if fired_ids:
+    if fired_entries:
+        fired_ids = [fe[0] for fe in fired_entries]
         print(f"  [knowledge] Dynamic triggers fired: {', '.join(sorted(fired_ids))}")
 
-    return insights
+    # --- Phase 2: Resolve contradictions ---
+    resolved = resolve_contradiction_groups(fired_entries, knowledge)
+
+    # --- Phase 3: Build insight text from resolved entries ---
+    insights = []
+    for kb_id, entry, priority, context, meta in resolved:
+        if meta["resolution"] == "merged_mixed":
+            # Merged contested insight — text already built
+            insights.append((priority, meta["merged_text"]))
+        else:
+            text = _build_trigger_insight(entry, context, meta.get("annotation"))
+            insights.append((priority, text))
+
+    # Sort by priority (Critical=0 first), then return strings only
+    insights.sort(key=lambda x: x[0])
+    return [text for _, text in insights]
 
 
 # Registry of kb_ids used by hardcoded insights in the current analysis run.
@@ -3214,6 +3733,7 @@ def _distill_for_phone(raw_insights, max_items=4):
         "sleep_quality": [],  # deep/REM/trends/declining
         "habits": [],       # screen time, bedtime, activity
         "training": [],     # ACWR, steps, training load
+        "contested": [],    # mixed-evidence insights from contradiction resolution
     }
 
     for raw in raw_insights:
@@ -3222,6 +3742,12 @@ def _distill_for_phone(raw_insights, max_items=4):
 
         # DROP noise
         if any(k in upper for k in ("NOTE:", "EXTREME VALUE", "BASELINE ACCURACY")):
+            continue
+
+        # Contested insights from contradiction resolution — lowest priority bucket
+        if text.startswith("[CONTESTED]"):
+            text = text.replace("[CONTESTED] ", "", 1)  # strip marker for display
+            candidates["contested"].append(_phone_condense(text))
             continue
 
         if "STRESS BUDGET" in upper or "STRESS CAPACITY" in upper:
@@ -3307,6 +3833,10 @@ def _distill_for_phone(raw_insights, max_items=4):
     # 5. Training — if room
     if candidates["training"] and len(distilled) < max_items:
         distilled.append(_phone_condense(candidates["training"][0]))
+
+    # 6. Contested (mixed-evidence) — only if room remains
+    if candidates["contested"] and len(distilled) < max_items:
+        distilled.append(candidates["contested"][0])
 
     return distilled[:max_items]
 
@@ -3454,7 +3984,8 @@ def _distill_recommendations(raw_recs, max_items=3):
 # ---------------------------------------------------------------------------
 
 def write_analysis(wb, target_date, score, label, sleep_context, training_status,
-                   insights, recommendations, confidence, cognitive_assessment=""):
+                   insights, recommendations, confidence, cognitive_assessment="",
+                   data_quality_text="", quality_flags_text=""):
     """Upsert one row to the Overall Analysis tab."""
     import gspread
     try:
@@ -3487,16 +4018,18 @@ def write_analysis(wb, target_date, score, label, sleep_context, training_status
         insights_text,                                # J  Key Insights
         recs_text,                                    # K  Recommendations
         training_status,                              # L  Training Load Status
+        data_quality_text,                            # M  Data Quality
+        quality_flags_text,                           # N  Quality Flags
     ]
 
     # Upsert by date
     all_dates = sheet.col_values(2)  # Date is column B
     if date_str in all_dates:
         row_index = all_dates.index(date_str) + 1
-        # Write A-G and J-L separately to preserve manual H-I (Cognition)
+        # Write A-G and J-N separately to preserve manual H-I (Cognition)
         # Use RAW for text (dates, strings) so Sheets doesn't parse them
         sheet.update(range_name=f"A{row_index}:G{row_index}", values=[left_part], value_input_option="RAW")
-        sheet.update(range_name=f"J{row_index}:L{row_index}", values=[right_part], value_input_option="RAW")
+        sheet.update(range_name=f"J{row_index}:N{row_index}", values=[right_part], value_input_option="RAW")
         # Rewrite score as number (RAW stores it as text, gradient needs number)
         if score is not None:
             sheet.update(range_name=f"C{row_index}", values=[[score]], value_input_option="USER_ENTERED")
@@ -3544,6 +4077,8 @@ def write_analysis(wb, target_date, score, label, sleep_context, training_status
             "key_insights": insights_text,
             "recommendations": recs_text,
             "training_load_status": training_status,
+            "data_quality": data_quality_text,
+            "quality_flags": quality_flags_text,
         })
         db.commit()
     except Exception as e:
@@ -3628,6 +4163,17 @@ def run_analysis(wb, target_date, cloud=False):
     accommodations = get_accommodations(profile)
     knowledge = merge_knowledge(knowledge, profile)
 
+    # Hydrate KB with personal validations from SQLite (not JSON)
+    try:
+        from sqlite_backup import get_db as _hydrate_db, load_kb_validations
+        _hconn = _hydrate_db()
+        _validations = load_kb_validations(_hconn)
+        for _kb_id, _val_data in _validations.items():
+            if _kb_id in knowledge:
+                knowledge[_kb_id]["personal_validation"] = _val_data
+    except Exception:
+        pass  # SQLite unavailable — entries retain JSON-embedded data if any
+
     # Read all data
     if cloud:
         data = read_all_data_from_supabase()
@@ -3649,7 +4195,7 @@ def run_analysis(wb, target_date, cloud=False):
     baselines = compute_baselines(by_date_garmin, by_date_sleep, target_date)
 
     # Sleep context
-    sleep_context, sleep_debt, sleep_trend, deep_trend, rem_trend = analyze_sleep_context(
+    sleep_context, sleep_debt, sleep_trend, deep_trend, rem_trend, debt_night_count = analyze_sleep_context(
         by_date_sleep, by_date_garmin, target_date, baselines
     )
 
@@ -3675,11 +4221,14 @@ def run_analysis(wb, target_date, cloud=False):
                              acwr, target_date,
                              by_date_garmin=by_date_garmin, conn=illness_conn)
 
-    # Adaptive weighting — monthly recalibration (1st of month or --recalibrate flag)
-    if target_date.day == 1 or "--recalibrate" in sys.argv:
+    # Adaptive weighting — DISABLED until feature-space mismatch is resolved.
+    # The optimizer trains on raw Garmin metrics but readiness uses z-scored features.
+    # Re-enable via enable_adaptive_weights=true in user_config.json after rewrite.
+    from utils import load_user_config as _load_uc
+    _adaptive_enabled = _load_uc().get("enable_adaptive_weights", False)
+    if _adaptive_enabled and (target_date.day == 1 or "--recalibrate" in sys.argv):
         adaptive_result = compute_adaptive_weights(illness_conn)
         if adaptive_result:
-            # Save to user_config.json for the weight loading path to pick up
             config_path = Path(__file__).parent / "user_config.json"
             config = {}
             if config_path.exists():
@@ -3698,6 +4247,9 @@ def run_analysis(wb, target_date, cloud=False):
                 json.dump(config, f, indent=2)
             print(f"  Adaptive weights saved to user_config.json")
 
+        # Personal validation of contested KB entries (monthly alongside adaptive weights)
+        update_personal_validations(knowledge, illness_conn)
+
     # Notes flags -- today + yesterday (days_back=2). Same-night is the causal
     # window for sugar/alcohol -> sleep. Multi-day patterns are covered by
     # analyze_food_cognition_lag() (30-day correlation).
@@ -3708,9 +4260,21 @@ def run_analysis(wb, target_date, cloud=False):
 
     # Readiness score
     score, label, components, confidence = compute_readiness(
-        baselines, (sleep_context, sleep_debt, sleep_trend),
+        baselines, (sleep_context, sleep_debt, sleep_trend, debt_night_count),
         daily_log_by_date, target_date, profile=profile
     )
+
+    # Assess data quality for transparency
+    data_quality, analysis_quality = _assess_data_quality(
+        baselines, components, by_date_garmin, by_date_sleep, target_date
+    )
+    n_present = len(data_quality["present"])
+    n_total = n_present + len(data_quality["missing"])
+    if data_quality["missing"]:
+        data_quality_text = f"{n_present}/{n_total}, no {', '.join(data_quality['missing'])}"
+    else:
+        data_quality_text = "Full"
+    quality_flags_text = " | ".join(data_quality["flags"]) if data_quality["flags"] else ""
 
     # Extract sleep analysis text and verdict from Sleep tab
     sleep_row = by_date_sleep.get(str(target_date))
@@ -3794,7 +4358,8 @@ def run_analysis(wb, target_date, cloud=False):
     # Write to Sheets (skip in cloud mode)
     if not cloud and wb is not None:
         write_analysis(wb, target_date, score, label, sleep_context, training_status,
-                       insights, recommendations, confidence, cognitive_assessment)
+                       insights, recommendations, confidence, cognitive_assessment,
+                       data_quality_text, quality_flags_text)
 
         # Auto-validation: run weekly (every Sunday) to check prediction accuracy
         if target_date.weekday() == 6:  # Sunday
@@ -3822,6 +4387,10 @@ def run_analysis(wb, target_date, cloud=False):
         "illness_label": illness.get("illness_label", "normal"),
         "bed_variability": sleep_row.get("Bedtime Variability (7d)", "") if sleep_row else "",
         "wake_variability": sleep_row.get("Wake Variability (7d)", "") if sleep_row else "",
+        "data_quality": data_quality,
+        "analysis_quality": analysis_quality,
+        "data_quality_text": data_quality_text,
+        "quality_flags_text": quality_flags_text,
     }
 
 
@@ -3856,14 +4425,16 @@ def run_week_summary(wb, target_date):
 
 
 def run_validation(wb, target_date):
-    """Validate readiness predictions against actual next-day outcomes.
+    """Correlation monitor: readiness scores vs actual next-day outcomes.
 
     Correlates readiness scores with next-day Morning Energy and Day Rating
-    over the past 28 days. Logs results and flags if predictions aren't tracking.
-
-    This is the system's self-calibration check — every wearable company does this.
+    over the past 28 days. Reports Pearson r, approximate p-value, and
+    Fisher z 95% confidence interval. Suppresses strong interpretive language
+    unless evidence meets minimum thresholds (n >= 21, CI lower > 0, p < 0.05).
     """
-    print(f"\n=== VALIDATION CHECK (28 days ending {target_date}) ===\n")
+    import math
+
+    print(f"\n=== CORRELATION MONITOR (28 days ending {target_date}) ===\n")
 
     data = read_all_data(wb)
     daily_log_by_date = _rows_by_date(data.get("daily_log", []))
@@ -3908,11 +4479,12 @@ def run_validation(wb, target_date):
         if rating is not None:
             pairs_rating.append((score, rating))
 
-    def _simple_correlation(pairs):
-        """Compute Pearson r for a list of (x, y) tuples."""
+    def _pearson_with_stats(pairs):
+        """Compute Pearson r, approximate p-value, and Fisher z 95% CI."""
         n = len(pairs)
         if n < 7:
-            return None, n
+            return {"r": None, "n": n, "p": None, "ci_low": None, "ci_high": None}
+
         xs, ys = zip(*pairs)
         mx = sum(xs) / n
         my = sum(ys) / n
@@ -3920,48 +4492,99 @@ def run_validation(wb, target_date):
         sy = sum((y - my) ** 2 for y in ys)
         sxy = sum((x - mx) * (y - my) for x, y in pairs)
         if sx == 0 or sy == 0:
-            return None, n
-        return sxy / (sx * sy) ** 0.5, n
+            return {"r": None, "n": n, "p": None, "ci_low": None, "ci_high": None}
 
-    r_energy, n_energy = _simple_correlation(pairs_energy)
-    r_rating, n_rating = _simple_correlation(pairs_rating)
+        r = sxy / (sx * sy) ** 0.5
+        r = max(-1.0, min(1.0, r))  # clamp for numerical safety
 
-    print(f"  Readiness vs next-day Morning Energy: ", end="")
-    if r_energy is not None:
-        print(f"r={r_energy:+.3f} (n={n_energy})")
-    else:
-        print(f"insufficient data (n={n_energy}, need 7+)")
+        # Approximate two-tailed p-value via t-distribution
+        # t = r * sqrt((n-2) / (1-r²)), df = n-2
+        # For df >= 7, approximate p from t using normal CDF (adequate for monitoring)
+        p = None
+        if abs(r) < 1.0:
+            t_stat = r * math.sqrt((n - 2) / (1 - r * r))
+            # Normal approximation of two-tailed p (conservative for small n)
+            p = 2 * (1 - _norm_cdf(abs(t_stat)))
 
-    print(f"  Readiness vs next-day Day Rating:     ", end="")
-    if r_rating is not None:
-        print(f"r={r_rating:+.3f} (n={n_rating})")
-    else:
-        print(f"insufficient data (n={n_rating}, need 7+)")
+        # Fisher z transform for 95% CI
+        ci_low, ci_high = None, None
+        if n >= 10 and abs(r) < 1.0:
+            z_r = 0.5 * math.log((1 + r) / (1 - r))  # Fisher z
+            se = 1.0 / math.sqrt(n - 3)
+            z_low = z_r - 1.96 * se
+            z_high = z_r + 1.96 * se
+            # Back-transform to r scale
+            ci_low = (math.exp(2 * z_low) - 1) / (math.exp(2 * z_low) + 1)
+            ci_high = (math.exp(2 * z_high) - 1) / (math.exp(2 * z_high) + 1)
 
-    # Interpretation
-    correlations = [r for r in [r_energy, r_rating] if r is not None]
-    if correlations:
-        avg_r = sum(correlations) / len(correlations)
-        print(f"\n  Average predictive correlation: r={avg_r:+.3f}")
-        if avg_r >= 0.5:
-            print("  STRONG — readiness scores are tracking your outcomes well.")
-        elif avg_r >= 0.3:
-            print("  MODERATE — readiness predictions are useful but imperfect.")
-        elif avg_r >= 0.15:
-            print("  WEAK — readiness has some predictive value. Consider recalibrating weights.")
+        return {"r": r, "n": n, "p": p, "ci_low": ci_low, "ci_high": ci_high}
+
+    stats_energy = _pearson_with_stats(pairs_energy)
+    stats_rating = _pearson_with_stats(pairs_rating)
+
+    def _format_result(label, stats):
+        r, n, p = stats["r"], stats["n"], stats["p"]
+        print(f"  {label}: ", end="")
+        if r is None:
+            print(f"insufficient data (n={n}, need 7+)")
+            return
+        parts = [f"r={r:+.3f}", f"n={n}"]
+        if p is not None:
+            parts.append(f"p={p:.3f}")
+        if stats["ci_low"] is not None:
+            parts.append(f"95% CI [{stats['ci_low']:+.3f}, {stats['ci_high']:+.3f}]")
+        print(", ".join(parts))
+
+    _format_result("Readiness vs next-day Morning Energy", stats_energy)
+    _format_result("Readiness vs next-day Day Rating    ", stats_rating)
+
+    # Interpretation — conservative: require n >= 21, CI lower > 0, p < 0.05
+    valid_stats = [s for s in [stats_energy, stats_rating] if s["r"] is not None]
+    if valid_stats:
+        avg_r = sum(s["r"] for s in valid_stats) / len(valid_stats)
+        print(f"\n  Average correlation: r={avg_r:+.3f}")
+
+        # Check if ANY result meets the evidence bar
+        meets_bar = any(
+            s["n"] >= 21 and s["p"] is not None and s["p"] < 0.05
+            and s["ci_low"] is not None and s["ci_low"] > 0
+            for s in valid_stats
+        )
+
+        if meets_bar:
+            if avg_r >= 0.5:
+                print("  Positive trend: readiness shows strong correlation with outcomes.")
+            elif avg_r >= 0.3:
+                print("  Positive trend: readiness shows moderate correlation with outcomes.")
+            elif avg_r >= 0.15:
+                print("  Weak positive trend. Consider whether subjective logging is consistent enough.")
+            else:
+                print("  No meaningful correlation detected despite adequate data.")
+                print("  Consider logging Morning Energy more consistently.")
         else:
-            print("  LOW — readiness scores are not tracking your outcomes.")
-            print("  Consider: (a) logging Morning Energy more consistently,")
-            print("  (b) recalibrating component weights based on your data.")
+            # Below the evidence bar — no strong language
+            n_max = max(s["n"] for s in valid_stats)
+            if n_max < 21:
+                print(f"  Not enough paired observations yet (best n={n_max}, need 21+). "
+                      "Trend direction is suggestive only.")
+            else:
+                print("  Correlation does not reach statistical significance (p >= 0.05 or CI crosses zero).")
+                print("  Trend direction is suggestive only.")
 
     # Save validation log
     log_path = Path(__file__).parent / "reference" / "validation_log.json"
     log_entry = {
         "date": str(target_date),
-        "r_energy": round(r_energy, 4) if r_energy is not None else None,
-        "n_energy": n_energy,
-        "r_rating": round(r_rating, 4) if r_rating is not None else None,
-        "n_rating": n_rating,
+        "r_energy": round(stats_energy["r"], 4) if stats_energy["r"] is not None else None,
+        "n_energy": stats_energy["n"],
+        "p_energy": round(stats_energy["p"], 4) if stats_energy["p"] is not None else None,
+        "ci_energy": [round(stats_energy["ci_low"], 4), round(stats_energy["ci_high"], 4)]
+            if stats_energy["ci_low"] is not None else None,
+        "r_rating": round(stats_rating["r"], 4) if stats_rating["r"] is not None else None,
+        "n_rating": stats_rating["n"],
+        "p_rating": round(stats_rating["p"], 4) if stats_rating["p"] is not None else None,
+        "ci_rating": [round(stats_rating["ci_low"], 4), round(stats_rating["ci_high"], 4)]
+            if stats_rating["ci_low"] is not None else None,
         "window_days": 28,
     }
     try:
@@ -3979,6 +4602,24 @@ def run_validation(wb, target_date):
     except Exception as e:
         print(f"\n  Warning: could not write validation log: {e}")
 
+    # Also run personal validation of contested KB entries
+    try:
+        from sqlite_backup import get_db as _val_get_db
+        val_conn = _val_get_db()
+    except Exception:
+        val_conn = None
+    if val_conn:
+        knowledge = load_health_knowledge()
+        # Hydrate from SQLite before running validation
+        try:
+            from sqlite_backup import load_kb_validations as _val_load
+            for _kid, _vd in _val_load(val_conn).items():
+                if _kid in knowledge:
+                    knowledge[_kid]["personal_validation"] = _vd
+        except Exception:
+            pass
+        update_personal_validations(knowledge, val_conn)
+
     return log_entry
 
 
@@ -3991,7 +4632,41 @@ def main():
                         help="Run prediction validation (28-day check)")
     parser.add_argument("--cloud", action="store_true",
                         help="Use Supabase instead of Google Sheets (for CI/cloud)")
+    parser.add_argument("--migrate-validations", action="store_true",
+                        help="One-time: move personal_validation from JSON to SQLite")
     args = parser.parse_args()
+
+    if args.migrate_validations:
+        kb_path = Path(__file__).parent / "reference" / "health_knowledge.json"
+        if not kb_path.exists():
+            print("health_knowledge.json not found.")
+            return
+        with open(kb_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        from sqlite_backup import get_db, upsert_kb_validation
+        mconn = get_db()
+        migrated = 0
+        for entry in data.get("knowledge", []):
+            pv = entry.get("personal_validation")
+            if pv and isinstance(pv, dict) and pv.get("status"):
+                upsert_kb_validation(
+                    mconn, entry["id"], pv["status"],
+                    pv.get("r", 0), pv.get("n", 0), pv.get("p", 1.0),
+                    pv.get("last_computed", "")
+                )
+                migrated += 1
+        mconn.commit()
+        # Strip personal_validation from JSON
+        stripped = 0
+        for entry in data.get("knowledge", []):
+            if "personal_validation" in entry:
+                del entry["personal_validation"]
+                stripped += 1
+        if stripped:
+            with open(kb_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"Migrated {migrated} validations to SQLite, stripped {stripped} from JSON.")
+        return
 
     today = date.today()
     if args.date:
@@ -4018,6 +4693,8 @@ def main():
                 "sleep_context": result.get("sleep_context"),
                 "key_insights": "\n".join(f"- {i}" for i in result.get("phone_insights", result.get("insights", []))),
                 "recommendations": "\n".join(f"- {r}" for r in result.get("phone_recommendations", result.get("recommendations", []))),
+                "data_quality": result.get("data_quality_text", ""),
+                "quality_flags": result.get("quality_flags_text", ""),
             })
             print("[cloud] Results written to Supabase.")
     else:

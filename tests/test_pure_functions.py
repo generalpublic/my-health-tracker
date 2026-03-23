@@ -1624,8 +1624,8 @@ class TestComputeReadiness(unittest.TestCase):
             "sleep_duration": {"mean": 7.0, "std": 0.5},
         }
 
-    def _sleep_ctx(self, debt=0):
-        return ("context text", debt, "stable", "stable", "stable")
+    def _sleep_ctx(self, debt=0, debt_nights=0):
+        return ("context text", debt, "stable", debt_nights)
 
     def test_baseline_scores_near_5_5(self):
         from datetime import date
@@ -1661,8 +1661,8 @@ class TestComputeReadiness(unittest.TestCase):
         td = date(2026, 3, 15)
         dl = {str(td): {"Morning Energy (1-10)": 9},
               str(td - timedelta(days=1)): {"Day Rating (1-10)": 9}}
-        _, _, comp, _ = self.fn(self._baselines(), self._sleep_ctx(debt=1.0), dl, td)
-        # Van Dongen penalty is stored in the Subjective component detail string
+        _, _, comp, _ = self.fn(self._baselines(), self._sleep_ctx(debt=1.0, debt_nights=3), dl, td)
+        # Van Dongen penalty requires 3+ debt nights (not just high weighted avg)
         subj_detail = comp.get("Subjective", (None, ""))[1]
         self.assertIn("VAN_DONGEN_PENALTY", subj_detail)
 

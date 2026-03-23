@@ -286,6 +286,8 @@ def upsert_overall_analysis(client, date_str, data):
             "key_insights": ("key_insights", _to_text),
             "recommendations": ("recommendations", _to_text),
             "training_load_status": ("training_load_status", _to_text),
+            "data_quality": ("data_quality", _to_text),
+            "quality_flags": ("quality_flags", _to_text),
         }
         for data_key, (col_name, converter) in _field_map.items():
             val = data.get(data_key)

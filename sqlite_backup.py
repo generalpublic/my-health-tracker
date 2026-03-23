@@ -246,6 +246,8 @@ def init_db(conn):
         key_insights TEXT,
         recommendations TEXT,
         training_load_status TEXT,
+        data_quality TEXT,
+        quality_flags TEXT,
         updated_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -274,6 +276,16 @@ def init_db(conn):
         signals TEXT,
         label TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS kb_personal_validations (
+        kb_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        r REAL,
+        n INTEGER,
+        p REAL,
+        last_computed TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+    );
     """)
 
     # Migrate: add new columns to existing tables (safe — ALTER ignores if col exists)
@@ -286,6 +298,12 @@ def init_db(conn):
     for col, ctype in [("spo2_avg", "REAL"), ("spo2_min", "REAL")]:
         try:
             conn.execute(f"ALTER TABLE garmin ADD COLUMN {col} {ctype}")
+        except Exception:
+            pass  # column already exists
+
+    for col, ctype in [("data_quality", "TEXT"), ("quality_flags", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE overall_analysis ADD COLUMN {col} {ctype}")
         except Exception:
             pass  # column already exists
 
@@ -511,8 +529,9 @@ def upsert_overall_analysis(conn, date_str, data):
             date, day, readiness_score, readiness_label, confidence,
             cognitive_energy_assessment, sleep_context,
             cognition, cognition_notes,
-            key_insights, recommendations, training_load_status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            key_insights, recommendations, training_load_status,
+            data_quality, quality_flags
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(date) DO UPDATE SET
             day = excluded.day,
             readiness_score = excluded.readiness_score,
@@ -523,6 +542,8 @@ def upsert_overall_analysis(conn, date_str, data):
             key_insights = excluded.key_insights,
             recommendations = excluded.recommendations,
             training_load_status = excluded.training_load_status,
+            data_quality = excluded.data_quality,
+            quality_flags = excluded.quality_flags,
             updated_at = datetime('now')
     """, (
         date_str,
@@ -537,7 +558,43 @@ def upsert_overall_analysis(conn, date_str, data):
         _to_text(data.get("key_insights")),
         _to_text(data.get("recommendations")),
         _to_text(data.get("training_load_status")),
+        _to_text(data.get("data_quality")),
+        _to_text(data.get("quality_flags")),
     ))
+
+
+def upsert_kb_validation(conn, kb_id, status, r, n, p, last_computed):
+    """Upsert one row into kb_personal_validations."""
+    conn.execute("""
+        INSERT OR REPLACE INTO kb_personal_validations
+            (kb_id, status, r, n, p, last_computed, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    """, (kb_id, status, r, n, p, last_computed))
+
+
+def load_kb_validations(conn):
+    """Load all personal validations from SQLite.
+
+    Returns dict mapping kb_id -> {"status", "r", "n", "p", "last_computed"}.
+    """
+    if conn is None:
+        return {}
+    try:
+        rows = conn.execute(
+            "SELECT kb_id, status, r, n, p, last_computed FROM kb_personal_validations"
+        ).fetchall()
+    except Exception:
+        return {}
+    return {
+        row[0]: {
+            "status": row[1],
+            "r": row[2],
+            "n": row[3],
+            "p": row[4],
+            "last_computed": row[5],
+        }
+        for row in rows
+    }
 
 
 def append_archive(conn, date_str, data):
@@ -809,9 +866,9 @@ def upsert_strength_log_row(conn, row):
 
 
 def upsert_overall_analysis_row(conn, row):
-    """Upsert overall_analysis from a positional row list (12 columns, matching OVERALL_ANALYSIS_HEADERS)."""
-    if len(row) < 12:
-        row = row + [""] * (12 - len(row))
+    """Upsert overall_analysis from a positional row list (14 columns, matching OVERALL_ANALYSIS_HEADERS)."""
+    if len(row) < 14:
+        row = row + [""] * (14 - len(row))
     date_str = _to_text(row[1])
     if not date_str:
         return
@@ -820,8 +877,9 @@ def upsert_overall_analysis_row(conn, row):
             day, date, readiness_score, readiness_label, confidence,
             cognitive_energy_assessment, sleep_context,
             cognition, cognition_notes,
-            key_insights, recommendations, training_load_status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            key_insights, recommendations, training_load_status,
+            data_quality, quality_flags
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         _to_text(row[0]),   # day
         date_str,           # date
@@ -835,6 +893,8 @@ def upsert_overall_analysis_row(conn, row):
         _to_text(row[9]),   # key_insights
         _to_text(row[10]),  # recommendations
         _to_text(row[11]),  # training_load_status
+        _to_text(row[12]),  # data_quality
+        _to_text(row[13]),  # quality_flags
     ))
 
 
