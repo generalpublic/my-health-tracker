@@ -113,47 +113,10 @@ def upsert_garmin(client, date_str, data):
     if client is None:
         return
     try:
-        row = {
-            "date": date_str,
-            "day": _day_from_date(date_str),
-            "sleep_score": _to_num(data.get("sleep_score")),
-            "hrv_overnight_avg": _to_num(data.get("hrv")),
-            "hrv_7day_avg": _to_num(data.get("hrv_7day")),
-            "resting_hr": _to_num(data.get("resting_hr")),
-            "sleep_duration_hrs": _to_num(data.get("sleep_duration")),
-            "body_battery": _to_num(data.get("body_battery")),
-            "steps": _to_num(data.get("steps")),
-            "total_calories_burned": _to_num(data.get("total_calories")),
-            "active_calories_burned": _to_num(data.get("active_calories")),
-            "bmr_calories": _to_num(data.get("bmr_calories")),
-            "avg_stress_level": _to_num(data.get("avg_stress")),
-            "stress_qualifier": _to_text(data.get("stress_qualifier")),
-            "floors_ascended": _to_num(data.get("floors_ascended")),
-            "moderate_intensity_min": _to_num(data.get("moderate_min")),
-            "vigorous_intensity_min": _to_num(data.get("vigorous_min")),
-            "body_battery_at_wake": _to_num(data.get("bb_at_wake")),
-            "body_battery_high": _to_num(data.get("bb_high")),
-            "body_battery_low": _to_num(data.get("bb_low")),
-            "activity_name": _to_text(data.get("activity_name")),
-            "activity_type": _to_text(data.get("activity_type")),
-            "start_time": _to_text(data.get("activity_start")),
-            "distance_mi": _to_num(data.get("activity_distance")),
-            "duration_min": _to_num(data.get("activity_duration")),
-            "avg_hr": _to_num(data.get("activity_avg_hr")),
-            "max_hr": _to_num(data.get("activity_max_hr")),
-            "calories": _to_num(data.get("activity_calories")),
-            "elevation_gain_m": _to_num(data.get("activity_elevation")),
-            "avg_speed_mph": _to_num(data.get("activity_avg_speed")),
-            "aerobic_training_effect": _to_num(data.get("aerobic_te")),
-            "anaerobic_training_effect": _to_num(data.get("anaerobic_te")),
-            "zone_1_min": _to_num(data.get("zone_1")),
-            "zone_2_min": _to_num(data.get("zone_2")),
-            "zone_3_min": _to_num(data.get("zone_3")),
-            "zone_4_min": _to_num(data.get("zone_4")),
-            "zone_5_min": _to_num(data.get("zone_5")),
-            "spo2_avg": _to_num(data.get("spo2_avg")),
-            "spo2_min": _to_num(data.get("spo2_min")),
-        }
+        from datetime import date as _dt
+        from models import from_garmin_api, to_supabase_dict
+        record = from_garmin_api(data, _dt.fromisoformat(str(date_str)))
+        row = to_supabase_dict(record)
         client.table("garmin").upsert(_with_owner(row), on_conflict="user_id,date").execute()
         print(f"[Supabase] garmin upserted for {date_str}")
     except Exception as e:

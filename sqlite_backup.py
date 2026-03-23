@@ -321,6 +321,9 @@ def init_db(conn):
 
 def upsert_garmin(conn, date_str, data):
     """Upsert one row into the garmin table from a Garmin data dict."""
+    from datetime import date as _dt
+    from models import from_garmin_api, to_sqlite_params
+    record = from_garmin_api(data, _dt.fromisoformat(str(date_str)))
     conn.execute("""
         INSERT OR REPLACE INTO garmin (
             date, day, sleep_score, hrv_overnight_avg, hrv_7day_avg, resting_hr,
@@ -334,47 +337,7 @@ def upsert_garmin(conn, date_str, data):
             zone_1_min, zone_2_min, zone_3_min, zone_4_min, zone_5_min,
             spo2_avg, spo2_min
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        date_str,
-        _day_from_date(date_str),
-        _to_num(data.get("sleep_score")),
-        _to_num(data.get("hrv")),
-        _to_num(data.get("hrv_7day")),
-        _to_num(data.get("resting_hr")),
-        _to_num(data.get("sleep_duration")),
-        _to_num(data.get("body_battery")),
-        _to_num(data.get("steps")),
-        _to_num(data.get("total_calories")),
-        _to_num(data.get("active_calories")),
-        _to_num(data.get("bmr_calories")),
-        _to_num(data.get("avg_stress")),
-        _to_text(data.get("stress_qualifier")),
-        _to_num(data.get("floors_ascended")),
-        _to_num(data.get("moderate_min")),
-        _to_num(data.get("vigorous_min")),
-        _to_num(data.get("bb_at_wake")),
-        _to_num(data.get("bb_high")),
-        _to_num(data.get("bb_low")),
-        _to_text(data.get("activity_name")),
-        _to_text(data.get("activity_type")),
-        _to_text(data.get("activity_start")),
-        _to_num(data.get("activity_distance")),
-        _to_num(data.get("activity_duration")),
-        _to_num(data.get("activity_avg_hr")),
-        _to_num(data.get("activity_max_hr")),
-        _to_num(data.get("activity_calories")),
-        _to_num(data.get("activity_elevation")),
-        _to_num(data.get("activity_avg_speed")),
-        _to_num(data.get("aerobic_te")),
-        _to_num(data.get("anaerobic_te")),
-        _to_num(data.get("zone_1")),
-        _to_num(data.get("zone_2")),
-        _to_num(data.get("zone_3")),
-        _to_num(data.get("zone_4")),
-        _to_num(data.get("zone_5")),
-        _to_num(data.get("spo2_avg")),
-        _to_num(data.get("spo2_min")),
-    ))
+    """, to_sqlite_params(record))
 
 
 def upsert_sleep(conn, date_str, data):

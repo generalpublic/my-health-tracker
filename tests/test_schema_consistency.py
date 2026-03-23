@@ -58,9 +58,11 @@ def test_spo2_in_setup_py():
 
 
 def test_spo2_in_supabase_sync():
-    sync = _read(ROOT / "supabase_sync.py")
-    assert "spo2_avg" in sync, "supabase_sync.py must map spo2_avg"
-    assert "spo2_min" in sync, "supabase_sync.py must map spo2_min"
+    # Mapping now lives in models/mappers.py (canonical domain model)
+    from models.garmin import GarminWellnessRecord
+    fields = GarminWellnessRecord.field_names()
+    assert "spo2_avg" in fields, "GarminWellnessRecord must have spo2_avg"
+    assert "spo2_min" in fields, "GarminWellnessRecord must have spo2_min"
 
 
 # -----------------------------------------------------------------------

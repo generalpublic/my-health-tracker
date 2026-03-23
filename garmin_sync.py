@@ -70,7 +70,7 @@ from sheets_formatting import (
     _TEXT_HEAVY_TABS, _SLEEP_NUMERIC_COLS,  # noqa: F401
 )
 from writers import (
-    setup_headers, upsert_row, build_garmin_row,
+    setup_headers, upsert_row,
     write_to_session_log, write_to_sleep_log, write_to_nutrition_log,
     write_to_daily_log,
     get_or_create_archive_sheet, write_to_archive,
@@ -207,9 +207,7 @@ def sync_single_date(wb, sheet, target_date, data):
     try:
         from models import from_garmin_api, to_sheets_row
         record = from_garmin_api(data, target_date)
-        row = build_garmin_row(target_date, data)
-        model_row = to_sheets_row(record)
-        assert row == model_row, f"Model drift: {[i for i,(a,b) in enumerate(zip(row,model_row)) if a!=b]}"
+        row = to_sheets_row(record)
         upsert_row(sheet, date_str, row)
         if _features.get("session_log", True):
             write_to_session_log(wb, target_date, data)
