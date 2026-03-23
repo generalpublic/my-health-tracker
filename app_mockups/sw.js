@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-tracker-v25';
+const CACHE_NAME = 'health-tracker-v27';
 const ASSETS = [
   'today.html',
   'sleep-detail.html',
@@ -8,6 +8,14 @@ const ASSETS = [
   'profile.html',
   'calendar.html',
   'design-system.css',
+  'css/index.css',
+  'css/today.css',
+  'css/activity.css',
+  'css/calendar.css',
+  'css/trends.css',
+  'css/sleep-detail.css',
+  'css/log-entry.css',
+  'css/profile.css',
   'config.js',
   'auth.js',
   'crypto-store.js',
@@ -45,6 +53,12 @@ self.addEventListener('activate', event => {
     )
   );
   self.clients.claim();
+});
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'GET_VERSION') {
+    event.ports[0].postMessage({ cacheName: CACHE_NAME });
+  }
 });
 
 self.addEventListener('fetch', event => {

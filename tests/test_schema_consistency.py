@@ -30,7 +30,8 @@ def test_set_id_in_schema_sql():
 
 def test_set_id_in_setup_py():
     py = _read(SETUP_PY)
-    assert "set_id TEXT NOT NULL" in py, "setup_supabase.py CREATE TABLE must declare set_id as NOT NULL"
+    # setup_supabase.py no longer embeds CREATE TABLE SQL — schema is read from file.
+    # Verify TABLE_CONFIGS still references set_id for sync metadata.
     assert '"set_id"' in py or "'set_id'" in py, "setup_supabase.py TABLE_CONFIGS must include set_id"
 
 
@@ -139,3 +140,36 @@ def test_sw_cache_includes_js_files():
     # The SW should be able to cache external JS files.
     # At minimum, it should not block on missing files (uses allSettled).
     assert "allSettled" in sw or "Promise.all" in sw, "SW install should handle individual cache failures"
+
+
+# -----------------------------------------------------------------------
+# 7. No inline event handlers in deployed pages
+# -----------------------------------------------------------------------
+
+_INLINE_HANDLER_RE = re.compile(r'\bon(?:click|input|change|submit|keydown|keyup|focus|blur)\s*=')
+
+def test_no_inline_event_handlers_in_html():
+    """Deployed HTML must not have inline event handlers (onclick=, oninput=, etc.)."""
+    violations = []
+    for page in _DEPLOYED_PAGES:
+        html = _read(APP_MOCKUPS / page)
+        matches = _INLINE_HANDLER_RE.findall(html)
+        if matches:
+            violations.append(f"{page}: {len(matches)} inline handlers")
+    assert not violations, f"Inline event handlers found:\n" + "\n".join(violations)
+
+
+# -----------------------------------------------------------------------
+# 8. No inline <style> blocks in deployed pages
+# -----------------------------------------------------------------------
+
+def test_no_inline_style_blocks():
+    """Deployed HTML must use external CSS files, not <style> blocks."""
+    violations = []
+    for page in _DEPLOYED_PAGES:
+        html = _read(APP_MOCKUPS / page)
+        style_blocks = re.findall(r'<style\b[^>]*>(.+?)</style>', html, re.DOTALL)
+        for block in style_blocks:
+            if block.strip():
+                violations.append(f"{page}: inline <style> ({len(block.strip())} chars)")
+    assert not violations, f"Inline style blocks found:\n" + "\n".join(violations)

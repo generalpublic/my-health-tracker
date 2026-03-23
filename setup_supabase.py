@@ -1,7 +1,7 @@
 """Setup Supabase tables for Health Tracker.
 
-Creates all tables matching the SQLite schema in sqlite_backup.py,
-sets RLS policies for anonymous access, and optionally seeds data
+Creates all tables using supabase_schema.sql as the single source of truth,
+sets RLS policies for authenticated access, and optionally seeds data
 from the local SQLite database.
 
 Usage:
@@ -9,6 +9,7 @@ Usage:
     python setup_supabase.py --seed     # Create tables + seed from SQLite
 """
 import argparse
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -30,285 +31,37 @@ BATCH_SIZE = 500
 SCHEMA_VERSION = "3.2"
 
 # ---------------------------------------------------------------------------
-# SQL: Table creation (idempotent — CREATE TABLE IF NOT EXISTS)
+# SQL: Table creation — read from supabase_schema.sql (canonical source)
 # ---------------------------------------------------------------------------
 
-CREATE_TABLES_SQL = """
--- garmin: primary daily wellness + activity data from Garmin
-CREATE TABLE IF NOT EXISTS garmin (
-    date TEXT NOT NULL,
-    day TEXT,
-    sleep_score REAL,
-    hrv_overnight_avg REAL,
-    hrv_7day_avg REAL,
-    resting_hr REAL,
-    sleep_duration_hrs REAL,
-    body_battery REAL,
-    steps INTEGER,
-    total_calories_burned REAL,
-    active_calories_burned REAL,
-    bmr_calories REAL,
-    avg_stress_level REAL,
-    stress_qualifier TEXT,
-    floors_ascended INTEGER,
-    moderate_intensity_min REAL,
-    vigorous_intensity_min REAL,
-    body_battery_at_wake REAL,
-    body_battery_high REAL,
-    body_battery_low REAL,
-    activity_name TEXT,
-    activity_type TEXT,
-    start_time TEXT,
-    distance_mi REAL,
-    duration_min REAL,
-    avg_hr REAL,
-    max_hr REAL,
-    calories REAL,
-    elevation_gain_m REAL,
-    avg_speed_mph REAL,
-    aerobic_training_effect REAL,
-    anaerobic_training_effect REAL,
-    zone_1_min REAL,
-    zone_2_min REAL,
-    zone_3_min REAL,
-    zone_4_min REAL,
-    zone_5_min REAL,
-    spo2_avg REAL,
-    spo2_min REAL,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
+_SCHEMA_SQL_FILE = Path(__file__).parent / "supabase_schema.sql"
 
--- sleep: detailed sleep metrics
-CREATE TABLE IF NOT EXISTS sleep (
-    date TEXT NOT NULL,
-    day TEXT,
-    garmin_sleep_score REAL,
-    sleep_analysis_score REAL,
-    total_sleep_hrs REAL,
-    sleep_analysis TEXT,
-    notes TEXT,
-    bedtime TEXT,
-    wake_time TEXT,
-    time_in_bed_hrs REAL,
-    deep_sleep_min REAL,
-    light_sleep_min REAL,
-    rem_min REAL,
-    awake_during_sleep_min REAL,
-    deep_pct REAL,
-    rem_pct REAL,
-    sleep_cycles INTEGER,
-    awakenings INTEGER,
-    avg_hr REAL,
-    avg_respiration REAL,
-    overnight_hrv_ms REAL,
-    body_battery_gained REAL,
-    sleep_feedback TEXT,
-    bedtime_variability_7d REAL,
-    wake_variability_7d REAL,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
 
--- overall_analysis: daily readiness assessment
-CREATE TABLE IF NOT EXISTS overall_analysis (
-    date TEXT NOT NULL,
-    day TEXT,
-    readiness_score REAL,
-    readiness_label TEXT,
-    confidence TEXT,
-    cognitive_energy_assessment TEXT,
-    sleep_context TEXT,
-    cognition REAL,
-    cognition_notes TEXT,
-    key_insights TEXT,
-    recommendations TEXT,
-    training_load_status TEXT,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
+def _load_ddl_from_schema_file():
+    """Read CREATE TABLE / INDEX / constraint DDL from supabase_schema.sql.
 
--- daily_log: daily habit tracking and subjective ratings
-CREATE TABLE IF NOT EXISTS daily_log (
-    date TEXT NOT NULL,
-    day TEXT,
-    morning_energy REAL,
-    wake_at_930 INTEGER,
-    no_morning_screens INTEGER,
-    creatine_hydrate INTEGER,
-    walk_breathing INTEGER,
-    physical_activity INTEGER,
-    no_screens_before_bed INTEGER,
-    bed_at_10pm INTEGER,
-    habits_total INTEGER,
-    midday_energy REAL,
-    midday_focus REAL,
-    midday_mood REAL,
-    midday_body_feel REAL,
-    midday_notes TEXT,
-    evening_energy REAL,
-    evening_focus REAL,
-    evening_mood REAL,
-    perceived_stress REAL,
-    day_rating REAL,
-    evening_notes TEXT,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
+    Extracts only the DDL portion (stops before the RLS policy section,
+    which is generated dynamically by _rls_sql()).
+    """
+    if not _SCHEMA_SQL_FILE.exists():
+        print(f"ERROR: Schema file not found: {_SCHEMA_SQL_FILE}")
+        print("Expected supabase_schema.sql in the project root.")
+        sys.exit(1)
 
--- session_log: workout sessions (multiple per day allowed)
-CREATE TABLE IF NOT EXISTS session_log (
-    date TEXT NOT NULL,
-    activity_name TEXT NOT NULL,
-    day TEXT,
-    session_type TEXT,
-    perceived_effort REAL,
-    post_workout_energy REAL,
-    notes TEXT,
-    duration_min REAL,
-    distance_mi REAL,
-    avg_hr REAL,
-    max_hr REAL,
-    calories REAL,
-    aerobic_te REAL,
-    anaerobic_te REAL,
-    zone_1_min REAL,
-    zone_2_min REAL,
-    zone_3_min REAL,
-    zone_4_min REAL,
-    zone_5_min REAL,
-    zone_ranges TEXT,
-    source TEXT,
-    elevation_m REAL,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date, activity_name)
-);
+    sql = _SCHEMA_SQL_FILE.read_text(encoding="utf-8")
 
--- nutrition: daily meal and macro tracking
-CREATE TABLE IF NOT EXISTS nutrition (
-    date TEXT NOT NULL,
-    day TEXT,
-    total_calories_burned REAL,
-    active_calories_burned REAL,
-    bmr_calories REAL,
-    breakfast TEXT,
-    lunch TEXT,
-    dinner TEXT,
-    snacks TEXT,
-    total_calories_consumed REAL,
-    protein_g REAL,
-    carbs_g REAL,
-    fats_g REAL,
-    water_l REAL,
-    calorie_balance REAL,
-    notes TEXT,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
+    # The RLS section starts with a long ====== comment block containing "RLS Policies"
+    rls_marker = re.search(r'^-- =+\n-- RLS Policies', sql, re.MULTILINE)
+    if rls_marker:
+        sql = sql[:rls_marker.start()]
 
--- strength_log: individual sets for weight training
--- set_id: client-generated UUID per set — allows multiple sets of same exercise
--- per day while deduplicating offline replays.
-CREATE TABLE IF NOT EXISTS strength_log (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    date TEXT NOT NULL,
-    day TEXT,
-    muscle_group TEXT,
-    exercise TEXT,
-    set_id TEXT NOT NULL DEFAULT gen_random_uuid()::text,
-    weight_lbs REAL,
-    reps INTEGER,
-    rpe REAL,
-    notes TEXT,
-    manual_source TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+    return sql.strip()
 
-CREATE INDEX IF NOT EXISTS idx_strength_log_date ON strength_log(date);
-CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, date);
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'strength_log_set_uq'
-    AND conrelid = 'strength_log'::regclass
-  ) THEN
-    ALTER TABLE strength_log
-      ADD CONSTRAINT strength_log_set_uq UNIQUE (user_id, set_id);
-  END IF;
-END $$;
-
--- raw_data_archive: full Garmin export mirror (all text columns)
-CREATE TABLE IF NOT EXISTS raw_data_archive (
-    date TEXT NOT NULL,
-    day TEXT,
-    hrv TEXT, hrv_7day TEXT, resting_hr TEXT, body_battery TEXT, steps TEXT,
-    total_calories TEXT, active_calories TEXT, bmr_calories TEXT,
-    avg_stress TEXT, stress_qualifier TEXT, floors_ascended TEXT,
-    moderate_min TEXT, vigorous_min TEXT,
-    bb_at_wake TEXT, bb_high TEXT, bb_low TEXT,
-    sleep_duration TEXT, sleep_score TEXT, sleep_bedtime TEXT, sleep_wake_time TEXT,
-    sleep_time_in_bed TEXT, sleep_deep_min TEXT, sleep_light_min TEXT, sleep_rem_min TEXT,
-    sleep_awake_min TEXT, sleep_deep_pct TEXT, sleep_rem_pct TEXT, sleep_cycles TEXT,
-    sleep_awakenings TEXT, sleep_avg_hr TEXT, sleep_avg_respiration TEXT,
-    sleep_body_battery_gained TEXT, sleep_feedback TEXT,
-    activity_name TEXT, activity_type TEXT, activity_start TEXT,
-    activity_distance TEXT, activity_duration TEXT, activity_avg_hr TEXT, activity_max_hr TEXT,
-    activity_calories TEXT, activity_elevation TEXT, activity_avg_speed TEXT,
-    aerobic_te TEXT, anaerobic_te TEXT,
-    zone_1 TEXT, zone_2 TEXT, zone_3 TEXT, zone_4 TEXT, zone_5 TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
-
--- _meta: schema versioning (system metadata, no user_id)
-CREATE TABLE IF NOT EXISTS _meta (
-    key TEXT PRIMARY KEY,
-    value TEXT,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- illness_state: illness episode tracking
-CREATE TABLE IF NOT EXISTS illness_state (
-    onset_date TEXT NOT NULL,
-    confirmed_date TEXT,
-    resolved_date TEXT,
-    resolution_method TEXT,
-    peak_score REAL,
-    notes TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, onset_date)
-);
-
--- illness_daily_log: daily illness anomaly scores
-CREATE TABLE IF NOT EXISTS illness_daily_log (
-    date TEXT NOT NULL,
-    illness_state_id REAL,
-    anomaly_score REAL,
-    signals TEXT,
-    label TEXT,
-    user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, date)
-);
-"""
-
+# Legacy constant — kept as a lazy-loaded reference for backward compatibility.
+# All callers now use _load_ddl_from_schema_file() instead.
 # ---------------------------------------------------------------------------
-# SQL: RLS policies (allow anon read/write for personal app)
+# SQL: RLS policies (generated dynamically, not read from schema file)
 # ---------------------------------------------------------------------------
 
 RLS_TABLES = [
@@ -412,7 +165,7 @@ def create_tables(supabase):
     # Supabase requires using the postgrest or management API.
     # The cleanest approach: use supabase.rpc() with a raw SQL function,
     # or use the REST SQL endpoint directly via httpx.
-    full_sql = CREATE_TABLES_SQL + "\n" + _rls_sql()
+    full_sql = _load_ddl_from_schema_file() + "\n" + _rls_sql()
 
     # Use the Supabase management SQL endpoint
     import httpx
@@ -517,10 +270,6 @@ def create_tables(supabase):
     print(full_sql)
     print("-" * 70)
 
-    # Write SQL to file for convenience
-    sql_file = Path(__file__).parent / "supabase_schema.sql"
-    sql_file.write_text(full_sql, encoding="utf-8")
-    print(f"\nSQL also saved to: {sql_file}")
     return False
 
 
@@ -863,7 +612,7 @@ def main():
     args = parser.parse_args()
 
     if args.sql_only:
-        full_sql = CREATE_TABLES_SQL + "\n" + _rls_sql()
+        full_sql = _load_ddl_from_schema_file() + "\n" + _rls_sql()
         print(full_sql)
         return
 

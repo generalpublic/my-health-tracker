@@ -280,13 +280,13 @@ function saveHabitToggle(dateStr, habitKey, value, habitsTotal) {
 
 /** Morning Check-in -> daily_log (morning_energy + habits) */
 async function saveMorningCheckin() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const habits = _collectHabits('morningHabits');
   const habitsTotal = Object.values(habits).filter(v => v === 1).length;
   const data = {
     date,
     day: _dayOfWeek(date),
-    morning_energy: parseInt(document.getElementById('morningEnergyVal').textContent),
+    morning_energy: _cleanNumeric(document.getElementById('morningEnergyVal').textContent, 1, 10),
     ...habits,
     habits_total: habitsTotal,
     manual_source: 'pwa',
@@ -296,16 +296,16 @@ async function saveMorningCheckin() {
 
 /** Midday Check-in -> daily_log (midday fields) */
 async function saveMiddayCheckin() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const textarea = document.querySelector('#middayForm textarea');
   const data = {
     date,
     day: _dayOfWeek(date),
-    midday_energy: parseInt(document.getElementById('midEnergyVal').textContent),
-    midday_focus: parseInt(document.getElementById('midFocusVal').textContent),
-    midday_mood: parseInt(document.getElementById('midMoodVal').textContent),
-    midday_body_feel: parseInt(document.getElementById('midBodyVal').textContent),
-    midday_notes: (textarea && textarea.value) || null,
+    midday_energy: _cleanNumeric(document.getElementById('midEnergyVal').textContent, 1, 10),
+    midday_focus: _cleanNumeric(document.getElementById('midFocusVal').textContent, 1, 10),
+    midday_mood: _cleanNumeric(document.getElementById('midMoodVal').textContent, 1, 10),
+    midday_body_feel: _cleanNumeric(document.getElementById('midBodyVal').textContent, 1, 10),
+    midday_notes: _normalizeEmpty(textarea && textarea.value),
     manual_source: 'pwa',
   };
   return supabaseMutate('daily_log', data, 'user_id,date');
@@ -313,21 +313,21 @@ async function saveMiddayCheckin() {
 
 /** Evening Review -> daily_log (evening fields + habits + day_rating + stress) */
 async function saveEveningReview() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const habits = _collectHabits('eveningHabits');
   const habitsTotal = Object.values(habits).filter(v => v === 1).length;
   const textarea = document.querySelector('#eveningForm textarea');
   const data = {
     date,
     day: _dayOfWeek(date),
-    evening_energy: parseInt(document.getElementById('eveEnergyVal').textContent),
-    evening_focus: parseInt(document.getElementById('eveFocusVal').textContent),
-    evening_mood: parseInt(document.getElementById('eveMoodVal').textContent),
-    perceived_stress: parseInt(document.getElementById('eveStressVal').textContent),
-    day_rating: parseInt(document.getElementById('eveDayRating').textContent),
+    evening_energy: _cleanNumeric(document.getElementById('eveEnergyVal').textContent, 1, 10),
+    evening_focus: _cleanNumeric(document.getElementById('eveFocusVal').textContent, 1, 10),
+    evening_mood: _cleanNumeric(document.getElementById('eveMoodVal').textContent, 1, 10),
+    perceived_stress: _cleanNumeric(document.getElementById('eveStressVal').textContent, 1, 10),
+    day_rating: _cleanNumeric(document.getElementById('eveDayRating').textContent, 1, 10),
     ...habits,
     habits_total: habitsTotal,
-    evening_notes: (textarea && textarea.value) || null,
+    evening_notes: _normalizeEmpty(textarea && textarea.value),
     manual_source: 'pwa',
   };
   return supabaseMutate('daily_log', data, 'user_id,date');
@@ -335,10 +335,10 @@ async function saveEveningReview() {
 
 /** Nutrition -> nutrition (meals + macros) */
 async function saveNutrition() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const mealTextareas = document.querySelectorAll('#nutritionForm .meal-card textarea');
   const macroInputs = document.querySelectorAll('#nutritionForm .macro-input');
-  const calories = parseFloat(macroInputs[0]?.value) || 0;
+  const calories = _cleanNumeric(macroInputs[0]?.value, 0, 20000) || 0;
   const burned = _num(SAMPLE_DATA.today?.nutrition?.total_calories_burned);
   // Last textarea in nutritionForm (not inside a meal-card) is the notes field
   const notesTextarea = document.querySelector('#nutritionForm > textarea, #nutritionForm .text-input:last-of-type');
@@ -346,17 +346,17 @@ async function saveNutrition() {
   const data = {
     date,
     day: _dayOfWeek(date),
-    breakfast: mealTextareas[0]?.value || null,
-    lunch: mealTextareas[1]?.value || null,
-    dinner: mealTextareas[2]?.value || null,
-    snacks: mealTextareas[3]?.value || null,
+    breakfast: _normalizeEmpty(mealTextareas[0]?.value),
+    lunch: _normalizeEmpty(mealTextareas[1]?.value),
+    dinner: _normalizeEmpty(mealTextareas[2]?.value),
+    snacks: _normalizeEmpty(mealTextareas[3]?.value),
     total_calories_consumed: calories,
-    protein_g: parseFloat(macroInputs[1]?.value) || null,
-    carbs_g: parseFloat(macroInputs[2]?.value) || null,
-    fats_g: parseFloat(macroInputs[3]?.value) || null,
-    water_l: parseFloat(macroInputs[4]?.value) || null,
+    protein_g: _cleanNumeric(macroInputs[1]?.value, 0, 1000),
+    carbs_g: _cleanNumeric(macroInputs[2]?.value, 0, 2000),
+    fats_g: _cleanNumeric(macroInputs[3]?.value, 0, 1000),
+    water_l: _cleanNumeric(macroInputs[4]?.value, 0, 20),
     calorie_balance: calories > 0 ? calories - burned : null,
-    notes: notes || null,
+    notes: _normalizeEmpty(notes),
     manual_source: 'pwa',
   };
   return supabaseMutate('nutrition', data, 'user_id,date');
@@ -364,13 +364,14 @@ async function saveNutrition() {
 
 /** Cognition -> overall_analysis (cognition + cognition_notes only) */
 async function saveCognition() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const textarea = document.querySelector('#cognitionForm textarea');
+  const raw = typeof cognitionScore !== 'undefined' ? cognitionScore : document.getElementById('cognitionVal').textContent;
   const data = {
     date,
     day: _dayOfWeek(date),
-    cognition: typeof cognitionScore !== 'undefined' ? cognitionScore : parseInt(document.getElementById('cognitionVal').textContent),
-    cognition_notes: (textarea && textarea.value) || null,
+    cognition: _cleanNumeric(raw, 1, 10),
+    cognition_notes: _normalizeEmpty(textarea && textarea.value),
     manual_source: 'pwa',
   };
   return supabaseMutate('overall_analysis', data, 'user_id,date');
@@ -378,11 +379,11 @@ async function saveCognition() {
 
 /** Sleep Notes -> sleep (notes column only) */
 async function saveSleepNotes() {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const textarea = document.querySelector('#sleep_notesForm textarea');
   const data = {
     date,
-    notes: (textarea && textarea.value) || null,
+    notes: _normalizeEmpty(textarea && textarea.value),
     manual_source: 'pwa',
   };
   return supabaseMutate('sleep', data, 'user_id,date');
@@ -390,16 +391,16 @@ async function saveSleepNotes() {
 
 /** Strength Set -> strength_log (upsert on set_id for offline replay dedup) */
 async function saveStrengthSet(muscleGroup, exercise, weight, reps, rpe) {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const data = {
     date,
     day: _dayOfWeek(date),
-    muscle_group: muscleGroup,
-    exercise: exercise,
+    muscle_group: _normalizeEmpty(muscleGroup),
+    exercise: _normalizeEmpty(exercise),
     set_id: crypto.randomUUID(),
-    weight_lbs: weight,
-    reps: reps,
-    rpe: rpe,
+    weight_lbs: _cleanNumeric(weight, 0, 2000),
+    reps: _cleanNumeric(reps, 0, 500),
+    rpe: _cleanNumeric(rpe, 1, 10),
     manual_source: 'pwa',
   };
   // Upsert on set_id — each set gets a unique ID, but offline replays reuse it
@@ -408,14 +409,14 @@ async function saveStrengthSet(muscleGroup, exercise, weight, reps, rpe) {
 
 /** Session manual fields -> session_log (perceived_effort, post_workout_energy, notes) */
 async function saveSessionManualFields(activityName, perceivedEffort, postWorkoutEnergy, notes) {
-  const date = _todayStr();
+  const date = _validateDate(_todayStr()) || _todayStr();
   const data = {
     date,
-    activity_name: activityName,
+    activity_name: _normalizeEmpty(activityName),
     day: _dayOfWeek(date),
-    perceived_effort: perceivedEffort || null,
-    post_workout_energy: postWorkoutEnergy || null,
-    notes: notes || null,
+    perceived_effort: _cleanNumeric(perceivedEffort, 1, 10),
+    post_workout_energy: _cleanNumeric(postWorkoutEnergy, 1, 10),
+    notes: _normalizeEmpty(notes),
     manual_source: 'pwa',
   };
   return supabaseMutate('session_log', data, 'user_id,date,activity_name');
@@ -503,6 +504,37 @@ function _num(val, fallback = 0) {
   if (val === null || val === undefined || val === '') return fallback;
   const n = Number(val);
   return isNaN(n) ? fallback : n;
+}
+
+// --- Input validation helpers ---
+
+/** Validate YYYY-MM-DD date string. Returns valid string or null. */
+function _validateDate(str) {
+  if (!str || typeof str !== 'string') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
+  const d = new Date(str + 'T12:00:00');
+  if (isNaN(d.getTime())) return null;
+  // Verify round-trip (catches 2026-02-31 → Mar 3 etc.)
+  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+  const rt = y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  return rt === str ? str : null;
+}
+
+/** Parse + clamp a numeric value to [min, max]. Returns null if NaN. */
+function _cleanNumeric(val, min, max) {
+  if (val === null || val === undefined || val === '') return null;
+  const n = parseFloat(val);
+  if (isNaN(n)) return null;
+  if (min !== undefined && n < min) return min;
+  if (max !== undefined && n > max) return max;
+  return n;
+}
+
+/** Normalize empty-ish values to null. */
+function _normalizeEmpty(val) {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'string' && val.trim() === '') return null;
+  return val;
 }
 
 // ============================================
@@ -1416,7 +1448,8 @@ async function initData() {
       }
     }
 
-    // loaded
+    // Record successful load time for diagnostics
+    try { localStorage.setItem('ht_last_data_load', new Date().toISOString()); } catch (_) {}
   } catch (err) {
     console.error('[data-loader] Critical failure:', err);
     SAMPLE_DATA._error = err.message;

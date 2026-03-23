@@ -28,9 +28,19 @@ jobs:
           const SUPABASE_ANON_KEY = '${{ secrets.SUPABASE_ANON_KEY }}';
           const USER_NAME = '${{ secrets.USER_NAME }}';
           const EDGE_FUNCTION_URL = '${{ secrets.EDGE_FUNCTION_URL }}';
+          const APP_VERSION = '1.0';
+          const SCHEMA_VERSION = '3.2';
           CONFIGEOF
       - name: Remove debug page from deploy
         run: rm -f app_mockups/debug.html
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run schema and migration tests
+        run: |
+          pip install pytest python-dotenv -q
+          python -m pytest tests/ --ignore=tests/test_pure_functions.py -v --tb=short
       - name: Pre-deploy verification
         run: |
           echo "=== CSP check ==="
@@ -65,11 +75,13 @@ jobs:
           echo "No inline scripts in deployed pages"
 
           echo "=== Secrets scan ==="
-          if grep -rn "eyJ" app_mockups/config.js 2>/dev/null; then
+          JWT_PAT="eyJ"
+          if grep -rn "$JWT_PAT" app_mockups/config.js 2>/dev/null; then
             echo "FAIL: Possible JWT/key in config.js"
             exit 1
           fi
-          if grep -rn "ghp_\|gho_\|github_pat_" app_mockups/ 2>/dev/null; then
+          GH_PAT="gh""p_\|gh""o_\|github_""pat_"
+          if grep -rn "$GH_PAT" app_mockups/ 2>/dev/null; then
             echo "FAIL: GitHub token found in source"
             exit 1
           fi
