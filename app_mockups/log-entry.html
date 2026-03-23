@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co; img-src 'self' data: blob:; frame-ancestors 'none'; form-action 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -615,6 +616,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="auth.js"></script>
+  <script src="crypto-store.js"></script>
   <script src="data-loader.js"></script>
   <script>
     // --- Global functions for onclick handlers ---
@@ -680,7 +682,7 @@
         }
       } catch (err) {
         console.error(`[save] ${formType} failed:`, err);
-        toast.innerHTML = '&#10007; Save failed — ' + err.message;
+        toast.innerHTML = '&#10007; Save failed — ' + escapeHtml(err.message);
         toast.style.background = '#F87171';
       }
 

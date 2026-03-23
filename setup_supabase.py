@@ -32,7 +32,7 @@ BATCH_SIZE = 500
 CREATE_TABLES_SQL = """
 -- garmin: primary daily wellness + activity data from Garmin
 CREATE TABLE IF NOT EXISTS garmin (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     sleep_score REAL,
     hrv_overnight_avg REAL,
@@ -72,12 +72,13 @@ CREATE TABLE IF NOT EXISTS garmin (
     spo2_avg REAL,
     spo2_min REAL,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- sleep: detailed sleep metrics
 CREATE TABLE IF NOT EXISTS sleep (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     garmin_sleep_score REAL,
     sleep_analysis_score REAL,
@@ -102,13 +103,15 @@ CREATE TABLE IF NOT EXISTS sleep (
     sleep_feedback TEXT,
     bedtime_variability_7d REAL,
     wake_variability_7d REAL,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- overall_analysis: daily readiness assessment
 CREATE TABLE IF NOT EXISTS overall_analysis (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     readiness_score REAL,
     readiness_label TEXT,
@@ -120,13 +123,15 @@ CREATE TABLE IF NOT EXISTS overall_analysis (
     key_insights TEXT,
     recommendations TEXT,
     training_load_status TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- daily_log: daily habit tracking and subjective ratings
 CREATE TABLE IF NOT EXISTS daily_log (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     morning_energy REAL,
     wake_at_930 INTEGER,
@@ -148,8 +153,10 @@ CREATE TABLE IF NOT EXISTS daily_log (
     perceived_stress REAL,
     day_rating REAL,
     evening_notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- session_log: workout sessions (multiple per day allowed)
@@ -176,14 +183,15 @@ CREATE TABLE IF NOT EXISTS session_log (
     zone_ranges TEXT,
     source TEXT,
     elevation_m REAL,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (date, activity_name)
+    PRIMARY KEY (user_id, date, activity_name)
 );
 
 -- nutrition: daily meal and macro tracking
 CREATE TABLE IF NOT EXISTS nutrition (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     total_calories_burned REAL,
     active_calories_burned REAL,
@@ -199,8 +207,10 @@ CREATE TABLE IF NOT EXISTS nutrition (
     water_l REAL,
     calorie_balance REAL,
     notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- strength_log: individual sets for weight training
@@ -214,6 +224,7 @@ CREATE TABLE IF NOT EXISTS strength_log (
     reps INTEGER,
     rpe REAL,
     notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -221,9 +232,20 @@ CREATE TABLE IF NOT EXISTS strength_log (
 CREATE INDEX IF NOT EXISTS idx_strength_log_date ON strength_log(date);
 CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, date);
 
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'strength_log_owner_uq'
+    AND conrelid = 'strength_log'::regclass
+  ) THEN
+    ALTER TABLE strength_log
+      ADD CONSTRAINT strength_log_owner_uq UNIQUE (user_id, date, exercise);
+  END IF;
+END $$;
+
 -- raw_data_archive: full Garmin export mirror (all text columns)
 CREATE TABLE IF NOT EXISTS raw_data_archive (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     hrv TEXT, hrv_7day TEXT, resting_hr TEXT, body_battery TEXT, steps TEXT,
     total_calories TEXT, active_calories TEXT, bmr_calories TEXT,
@@ -241,7 +263,8 @@ CREATE TABLE IF NOT EXISTS raw_data_archive (
     aerobic_te TEXT, anaerobic_te TEXT,
     zone_1 TEXT, zone_2 TEXT, zone_3 TEXT, zone_4 TEXT, zone_5 TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- _meta: schema versioning (system metadata, no user_id)
@@ -253,25 +276,27 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- illness_state: illness episode tracking
 CREATE TABLE IF NOT EXISTS illness_state (
-    onset_date TEXT PRIMARY KEY,
+    onset_date TEXT NOT NULL,
     confirmed_date TEXT,
     resolved_date TEXT,
     resolution_method TEXT,
     peak_score REAL,
     notes TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, onset_date)
 );
 
 -- illness_daily_log: daily illness anomaly scores
 CREATE TABLE IF NOT EXISTS illness_daily_log (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     illness_state_id REAL,
     anomaly_score REAL,
     signals TEXT,
     label TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 """
 
@@ -518,7 +543,7 @@ def _split_sql_statements(sql):
 # Column definitions for each table (used for SQLite reads and Supabase upserts)
 TABLE_CONFIGS = {
     "garmin": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day", "sleep_score", "hrv_overnight_avg", "hrv_7day_avg",
             "resting_hr", "sleep_duration_hrs", "body_battery", "steps",
@@ -534,7 +559,7 @@ TABLE_CONFIGS = {
         ],
     },
     "sleep": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day", "garmin_sleep_score", "sleep_analysis_score",
             "total_sleep_hrs", "sleep_analysis", "notes", "bedtime", "wake_time",
@@ -542,58 +567,58 @@ TABLE_CONFIGS = {
             "awake_during_sleep_min", "deep_pct", "rem_pct", "sleep_cycles",
             "awakenings", "avg_hr", "avg_respiration", "overnight_hrv_ms",
             "body_battery_gained", "sleep_feedback",
-            "bedtime_variability_7d", "wake_variability_7d", "updated_at",
+            "bedtime_variability_7d", "wake_variability_7d", "manual_source", "updated_at",
         ],
     },
     "overall_analysis": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day", "readiness_score", "readiness_label", "confidence",
             "cognitive_energy_assessment", "sleep_context", "cognition",
             "cognition_notes", "key_insights", "recommendations",
-            "training_load_status", "updated_at",
+            "training_load_status", "manual_source", "updated_at",
         ],
     },
     "daily_log": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day", "morning_energy", "wake_at_930", "no_morning_screens",
             "creatine_hydrate", "walk_breathing", "physical_activity",
             "no_screens_before_bed", "bed_at_10pm", "habits_total",
             "midday_energy", "midday_focus", "midday_mood", "midday_body_feel",
             "midday_notes", "evening_energy", "evening_focus", "evening_mood",
-            "perceived_stress", "day_rating", "evening_notes", "updated_at",
+            "perceived_stress", "day_rating", "evening_notes", "manual_source", "updated_at",
         ],
     },
     "session_log": {
-        "pk": ["date", "activity_name"],
+        "pk": ["user_id", "date", "activity_name"],
         "columns": [
             "date", "activity_name", "day", "session_type", "perceived_effort",
             "post_workout_energy", "notes", "duration_min", "distance_mi",
             "avg_hr", "max_hr", "calories", "aerobic_te", "anaerobic_te",
             "zone_1_min", "zone_2_min", "zone_3_min", "zone_4_min", "zone_5_min",
-            "zone_ranges", "source", "elevation_m", "updated_at",
+            "zone_ranges", "source", "elevation_m", "manual_source", "updated_at",
         ],
     },
     "nutrition": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day", "total_calories_burned", "active_calories_burned",
             "bmr_calories", "breakfast", "lunch", "dinner", "snacks",
             "total_calories_consumed", "protein_g", "carbs_g", "fats_g",
-            "water_l", "calorie_balance", "notes", "updated_at",
+            "water_l", "calorie_balance", "notes", "manual_source", "updated_at",
         ],
     },
     "strength_log": {
         "pk": None,  # Auto-increment ID, no natural upsert key
         "columns": [
             "date", "day", "muscle_group", "exercise", "weight_lbs",
-            "reps", "rpe", "notes", "updated_at",
+            "reps", "rpe", "notes", "manual_source", "updated_at",
         ],
         "sqlite_select_extra": "id",  # Read ID from SQLite for dedup
     },
     "raw_data_archive": {
-        "pk": ["date"],
+        "pk": ["user_id", "date"],
         "columns": [
             "date", "day",
             "hrv", "hrv_7day", "resting_hr", "body_battery", "steps",
@@ -764,8 +789,8 @@ def seed_from_sqlite(supabase):
                     batch = records[i:i + BATCH_SIZE]
                     supabase.table(table_name).insert(batch).execute()
             elif pk:
-                # Upsert using owner-scoped UNIQUE constraint
-                conflict_cols = "user_id," + ",".join(pk)
+                # Upsert using composite PK (user_id already in pk list)
+                conflict_cols = ",".join(pk)
                 for i in range(0, len(records), BATCH_SIZE):
                     batch = records[i:i + BATCH_SIZE]
                     supabase.table(table_name).upsert(

@@ -1,7 +1,23 @@
+-- =============================================================================
+-- Health Tracker — Supabase Schema (v3)
+--
+-- Multi-tenant: all data tables use (user_id, date) composite primary keys.
+-- RLS policies scope all access to auth.uid().
+--
+-- Column-level encryption decision (2026-03-23):
+--   NOT IMPLEMENTED. Supabase provides AES-256 disk-level encryption at rest.
+--   Column-level pgcrypto would break WHERE/ORDER BY/aggregates on encrypted
+--   columns and add key management complexity. RLS already gates per-user access.
+--   Revisit only if multi-user with HIPAA/regulatory requirements.
+--
+-- Client-side encryption:
+--   localStorage data is encrypted via AES-256-GCM (crypto-store.js).
+--   Key derived from user auth session — protects data on stolen/shared devices.
+-- =============================================================================
 
 -- garmin: primary daily wellness + activity data from Garmin
 CREATE TABLE IF NOT EXISTS garmin (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     sleep_score REAL,
     hrv_overnight_avg REAL,
@@ -39,12 +55,13 @@ CREATE TABLE IF NOT EXISTS garmin (
     zone_4_min REAL,
     zone_5_min REAL,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- sleep: detailed sleep metrics
 CREATE TABLE IF NOT EXISTS sleep (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     garmin_sleep_score REAL,
     sleep_analysis_score REAL,
@@ -69,13 +86,15 @@ CREATE TABLE IF NOT EXISTS sleep (
     sleep_feedback TEXT,
     bedtime_variability_7d REAL,
     wake_variability_7d REAL,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- overall_analysis: daily readiness assessment
 CREATE TABLE IF NOT EXISTS overall_analysis (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     readiness_score REAL,
     readiness_label TEXT,
@@ -87,13 +106,15 @@ CREATE TABLE IF NOT EXISTS overall_analysis (
     key_insights TEXT,
     recommendations TEXT,
     training_load_status TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- daily_log: daily habit tracking and subjective ratings
 CREATE TABLE IF NOT EXISTS daily_log (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     morning_energy REAL,
     wake_at_930 INTEGER,
@@ -115,8 +136,10 @@ CREATE TABLE IF NOT EXISTS daily_log (
     perceived_stress REAL,
     day_rating REAL,
     evening_notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- session_log: workout sessions (multiple per day allowed)
@@ -143,14 +166,15 @@ CREATE TABLE IF NOT EXISTS session_log (
     zone_ranges TEXT,
     source TEXT,
     elevation_m REAL,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (date, activity_name)
+    PRIMARY KEY (user_id, date, activity_name)
 );
 
 -- nutrition: daily meal and macro tracking
 CREATE TABLE IF NOT EXISTS nutrition (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     total_calories_burned REAL,
     active_calories_burned REAL,
@@ -166,8 +190,10 @@ CREATE TABLE IF NOT EXISTS nutrition (
     water_l REAL,
     calorie_balance REAL,
     notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- strength_log: individual sets for weight training
@@ -181,6 +207,7 @@ CREATE TABLE IF NOT EXISTS strength_log (
     reps INTEGER,
     rpe REAL,
     notes TEXT,
+    manual_source TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -188,9 +215,20 @@ CREATE TABLE IF NOT EXISTS strength_log (
 CREATE INDEX IF NOT EXISTS idx_strength_log_date ON strength_log(date);
 CREATE INDEX IF NOT EXISTS idx_strength_log_user_date ON strength_log(user_id, date);
 
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'strength_log_owner_uq'
+    AND conrelid = 'strength_log'::regclass
+  ) THEN
+    ALTER TABLE strength_log
+      ADD CONSTRAINT strength_log_owner_uq UNIQUE (user_id, date, exercise);
+  END IF;
+END $$;
+
 -- raw_data_archive: full Garmin export mirror (all text columns)
 CREATE TABLE IF NOT EXISTS raw_data_archive (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     day TEXT,
     hrv TEXT, hrv_7day TEXT, resting_hr TEXT, body_battery TEXT, steps TEXT,
     total_calories TEXT, active_calories TEXT, bmr_calories TEXT,
@@ -208,7 +246,8 @@ CREATE TABLE IF NOT EXISTS raw_data_archive (
     aerobic_te TEXT, anaerobic_te TEXT,
     zone_1 TEXT, zone_2 TEXT, zone_3 TEXT, zone_4 TEXT, zone_5 TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
 
 -- _meta: schema versioning (system metadata, no user_id)
@@ -220,86 +259,28 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- illness_state: illness episode tracking
 CREATE TABLE IF NOT EXISTS illness_state (
-    onset_date TEXT PRIMARY KEY,
+    onset_date TEXT NOT NULL,
     confirmed_date TEXT,
     resolved_date TEXT,
     resolution_method TEXT,
     peak_score REAL,
     notes TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, onset_date)
 );
 
 -- illness_daily_log: daily illness anomaly scores
 CREATE TABLE IF NOT EXISTS illness_daily_log (
-    date TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
     illness_state_id REAL,
     anomaly_score REAL,
     signals TEXT,
     label TEXT,
     user_id UUID NOT NULL DEFAULT auth.uid(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
 );
-
--- ==========================================================================
--- Owner-scoped UNIQUE constraints for upsert targets
--- (Existing PKs are kept. These constraints give PostgREST the composite
--- key it needs for ON CONFLICT (user_id, date) without PK surgery.)
--- ==========================================================================
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'garmin_owner_uq' AND conrelid = 'garmin'::regclass) THEN
-    ALTER TABLE garmin ADD CONSTRAINT garmin_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sleep_owner_uq' AND conrelid = 'sleep'::regclass) THEN
-    ALTER TABLE sleep ADD CONSTRAINT sleep_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'overall_analysis_owner_uq' AND conrelid = 'overall_analysis'::regclass) THEN
-    ALTER TABLE overall_analysis ADD CONSTRAINT overall_analysis_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'daily_log_owner_uq' AND conrelid = 'daily_log'::regclass) THEN
-    ALTER TABLE daily_log ADD CONSTRAINT daily_log_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'session_log_owner_uq' AND conrelid = 'session_log'::regclass) THEN
-    ALTER TABLE session_log ADD CONSTRAINT session_log_owner_uq UNIQUE (user_id, date, activity_name);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'nutrition_owner_uq' AND conrelid = 'nutrition'::regclass) THEN
-    ALTER TABLE nutrition ADD CONSTRAINT nutrition_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'raw_data_archive_owner_uq' AND conrelid = 'raw_data_archive'::regclass) THEN
-    ALTER TABLE raw_data_archive ADD CONSTRAINT raw_data_archive_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'illness_state_owner_uq' AND conrelid = 'illness_state'::regclass) THEN
-    ALTER TABLE illness_state ADD CONSTRAINT illness_state_owner_uq UNIQUE (user_id, onset_date);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'illness_daily_log_owner_uq' AND conrelid = 'illness_daily_log'::regclass) THEN
-    ALTER TABLE illness_daily_log ADD CONSTRAINT illness_daily_log_owner_uq UNIQUE (user_id, date);
-  END IF;
-END $$;
 
 -- ==========================================================================
 -- RLS Policies: per-table least privilege, scoped to auth.uid()

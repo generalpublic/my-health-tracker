@@ -106,7 +106,7 @@ async function supabaseMutate(table, data, matchColumns = null) {
   } catch (err) {
     console.error(`[data-loader] ${table} write failed:`, err.message);
     // Queue for offline retry
-    _enqueueOffline(table, data, matchColumns);
+    await _enqueueOffline(table, data, matchColumns);
     return null;
   }
 }
@@ -115,11 +115,11 @@ async function supabaseMutate(table, data, matchColumns = null) {
 // Offline Queue — retries failed writes when back online
 // ============================================
 
-function _enqueueOffline(table, data, matchColumns) {
+async function _enqueueOffline(table, data, matchColumns) {
   try {
-    const queue = JSON.parse(localStorage.getItem('ht_offline_queue') || '[]');
+    const queue = await CryptoStore.getItem('ht_offline_queue', []);
     queue.push({ table, data, matchColumns, ts: Date.now() });
-    localStorage.setItem('ht_offline_queue', JSON.stringify(queue));
+    await CryptoStore.setItem('ht_offline_queue', queue);
     console.log(`[data-loader] Queued offline write for ${table}`);
   } catch {}
 }
@@ -127,7 +127,7 @@ function _enqueueOffline(table, data, matchColumns) {
 async function flushOfflineQueue() {
   if (!isAuthenticated()) return;
   try {
-    const queue = JSON.parse(localStorage.getItem('ht_offline_queue') || '[]');
+    const queue = await CryptoStore.getItem('ht_offline_queue', []);
     if (queue.length === 0) return;
     console.log(`[data-loader] Flushing ${queue.length} offline writes`);
     const remaining = [];
@@ -139,9 +139,9 @@ async function flushOfflineQueue() {
       }
     }
     if (remaining.length > 0) {
-      localStorage.setItem('ht_offline_queue', JSON.stringify(remaining));
+      await CryptoStore.setItem('ht_offline_queue', remaining);
     } else {
-      localStorage.removeItem('ht_offline_queue');
+      CryptoStore.removeItem('ht_offline_queue');
     }
   } catch {}
 }
@@ -437,6 +437,221 @@ function _num(val, fallback = 0) {
  */
 async function fetchDateData(dateStr) {
   return fetchToday(dateStr);
+}
+
+// ============================================
+// RPC-based fetch (2 round-trips instead of 14)
+// Falls back to per-table queries if RPCs not deployed
+// ============================================
+
+async function _fetchViaRpc() {
+  const today = _todayStr();
+  const startDate = _daysAgoStr(90);
+
+  const [todayRpc, histRpc] = await Promise.allSettled([
+    htSupabase.rpc('get_dashboard_today', { target_date: today }),
+    htSupabase.rpc('get_dashboard_history', { start_date: startDate, recent_sessions_limit: 5 }),
+  ]);
+
+  if (todayRpc.status === 'rejected' || todayRpc.value?.error) throw new Error('RPC not available');
+  if (histRpc.status === 'rejected' || histRpc.value?.error) throw new Error('RPC not available');
+
+  const todayData = _parseTodayRpc(todayRpc.value.data, today);
+  const { history, sessions_history } = _parseHistoryRpc(histRpc.value.data);
+
+  // Fallback: if today is empty, try yesterday (same logic as fetchToday)
+  if (_isDataEmpty(todayData)) {
+    const yesterday = _daysAgoStr(1);
+    const { data: ydayData, error: ydayErr } = await htSupabase.rpc('get_dashboard_today', { target_date: yesterday });
+    if (!ydayErr && ydayData) {
+      const ydayParsed = _parseTodayRpc(ydayData, yesterday);
+      if (!_isDataEmpty(ydayParsed)) {
+        ydayParsed._fallbackDate = today;
+        return { today: ydayParsed, history, sessions_history };
+      }
+    }
+  }
+
+  return { today: todayData, history, sessions_history };
+}
+
+function _parseTodayRpc(rpc, dateStr) {
+  const day = _dayOfWeek(dateStr);
+  const g = rpc.garmin || {};
+  const sl = rpc.sleep || {};
+  const oa = rpc.overall_analysis || {};
+  const dl = rpc.daily_log || {};
+  const nut = rpc.nutrition || {};
+  const sessionRows = rpc.session_log || [];
+  const strengthRows = rpc.strength_log || [];
+  const illnessRows = rpc.illness_state ? [rpc.illness_state] : [];
+
+  const _polishText = t => t.replace(/ -- /g, '. ').replace(/^TODAY:\s*/i, '').replace(/^(.)/, (_, c) => c.toUpperCase());
+  let keyInsights = _parseBulletText(oa.key_insights).map(_polishText);
+  let recommendations = _parseBulletText(oa.recommendations).map(_polishText);
+
+  const readinessScore = _num(oa.readiness_score);
+  const readinessLabel = oa.readiness_label || _readinessLabel(readinessScore);
+  const confidence = oa.confidence || 'Medium';
+  const cogAssessment = oa.cognitive_energy_assessment || '';
+  const sleepContext = oa.sleep_context || '';
+  const expectBlock = _parseExpectBlock(cogAssessment);
+  const sleepAnalysis = sl.sleep_analysis || '';
+  const sleepFeedback = sl.sleep_feedback || _sleepFeedbackFromScore(_num(sl.sleep_analysis_score));
+  const flags = keyInsights.length > 0 ? keyInsights : [];
+  const doItems = recommendations.length > 0 ? recommendations : [];
+  const sleepContextItems = _buildSleepContextItems(sl);
+  const sleepLine = `${sleepFeedback} | ${_num(sl.total_sleep_hrs)}h | Deep ${_num(sl.deep_pct)}% | REM ${_num(sl.rem_pct)}% | HRV ${_num(sl.overnight_hrv_ms)}ms | Bed ${sl.bedtime || '--'}`;
+
+  const sessions = sessionRows.map(s => ({
+    activity_name: s.activity_name || '',
+    activity_type: (s.session_type || s.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+    duration_min: _num(s.duration_min), distance_mi: _num(s.distance_mi),
+    avg_hr: _num(s.avg_hr), max_hr: _num(s.max_hr), calories: _num(s.calories),
+    aerobic_te: _num(s.aerobic_te), anaerobic_te: _num(s.anaerobic_te),
+    zone_1_min: _num(s.zone_1_min), zone_2_min: _num(s.zone_2_min),
+    zone_3_min: _num(s.zone_3_min), zone_4_min: _num(s.zone_4_min),
+    zone_5_min: _num(s.zone_5_min),
+    perceived_effort: _num(s.perceived_effort),
+    post_workout_energy: _num(s.post_workout_energy), notes: s.notes || '',
+  }));
+
+  const strength = strengthRows.map(s => ({
+    muscle_group: s.muscle_group || '', exercise: s.exercise || '',
+    weight: _num(s.weight_lbs), reps: _num(s.reps), rpe: _num(s.rpe), notes: s.notes || '',
+  }));
+
+  return {
+    date: dateStr, day: day,
+    readiness: {
+      score: readinessScore, label: readinessLabel, confidence: confidence,
+      cognitive_assessment: cogAssessment, sleep_context: sleepContext,
+      key_insights: keyInsights, recommendations: recommendations,
+      training_load: oa.training_load_status || '',
+      cognition: _num(oa.cognition), cognition_notes: oa.cognition_notes || '',
+    },
+    sleep: {
+      garmin_score: _num(g.sleep_score), analysis_score: _num(sl.sleep_analysis_score),
+      total_sleep_hrs: _num(sl.total_sleep_hrs), bedtime: sl.bedtime || '', wake_time: sl.wake_time || '',
+      time_in_bed_hrs: _num(sl.time_in_bed_hrs),
+      deep_min: _num(sl.deep_sleep_min), light_min: _num(sl.light_sleep_min),
+      rem_min: _num(sl.rem_min), awake_min: _num(sl.awake_during_sleep_min),
+      deep_pct: _num(sl.deep_pct), rem_pct: _num(sl.rem_pct),
+      sleep_cycles: _num(sl.sleep_cycles), awakenings: _num(sl.awakenings),
+      avg_hr: _num(sl.avg_hr), avg_respiration: _num(sl.avg_respiration),
+      overnight_hrv: _num(sl.overnight_hrv_ms), body_battery_gained: _num(sl.body_battery_gained),
+      bedtime_var_7d: _num(sl.bedtime_variability_7d), wake_var_7d: _num(sl.wake_variability_7d),
+      notes: sl.notes || '', sleep_feedback: sleepFeedback, analysis_text: sleepAnalysis,
+    },
+    garmin: {
+      hrv_overnight: _num(sl.overnight_hrv_ms || g.hrv_overnight_avg),
+      hrv_7day_avg: _num(g.hrv_7day_avg), resting_hr: _num(g.resting_hr),
+      body_battery: _num(g.body_battery), body_battery_wake: _num(g.body_battery_at_wake),
+      body_battery_high: _num(g.body_battery_high), body_battery_low: _num(g.body_battery_low),
+      steps: _num(g.steps), floors: _num(g.floors_ascended),
+      total_calories: _num(g.total_calories_burned), active_calories: _num(g.active_calories_burned),
+      bmr_calories: _num(g.bmr_calories), avg_stress: _num(g.avg_stress_level),
+      stress_qualifier: g.stress_qualifier || '',
+      moderate_intensity_min: _num(g.moderate_intensity_min),
+      vigorous_intensity_min: _num(g.vigorous_intensity_min),
+    },
+    daily_log: {
+      morning_energy: _num(dl.morning_energy),
+      habits: {
+        wake_930: !!dl.wake_at_930, no_morning_screens: !!dl.no_morning_screens,
+        creatine_hydrate: !!dl.creatine_hydrate, walk_breathing: !!dl.walk_breathing,
+        physical_activity: !!dl.physical_activity, no_screens_bed: !!dl.no_screens_before_bed,
+        bed_10pm: !!dl.bed_at_10pm,
+      },
+      habits_total: _num(dl.habits_total),
+      midday: { energy: _num(dl.midday_energy), focus: _num(dl.midday_focus), mood: _num(dl.midday_mood), body_feel: _num(dl.midday_body_feel), notes: dl.midday_notes || '' },
+      evening: { energy: _num(dl.evening_energy), focus: _num(dl.evening_focus), mood: _num(dl.evening_mood) },
+      perceived_stress: _num(dl.perceived_stress), day_rating: _num(dl.day_rating),
+      evening_notes: dl.evening_notes || '',
+    },
+    sessions: sessions, strength: strength,
+    nutrition: {
+      total_calories_burned: _num(nut.total_calories_burned || g.total_calories_burned),
+      active_calories: _num(nut.active_calories_burned || g.active_calories_burned),
+      bmr_calories: _num(nut.bmr_calories || g.bmr_calories),
+      breakfast: nut.breakfast || '', lunch: nut.lunch || '', dinner: nut.dinner || '',
+      snacks: nut.snacks || '', total_calories_consumed: _num(nut.total_calories_consumed),
+      protein_g: _num(nut.protein_g), carbs_g: _num(nut.carbs_g), fats_g: _num(nut.fats_g),
+      water_l: _num(nut.water_l), calorie_balance: _num(nut.calorie_balance), notes: nut.notes || '',
+    },
+    illness: (() => {
+      const ill = illnessRows[0];
+      if (!ill) return { label: 'normal' };
+      const dailyLabel = (oa.key_insights || '').includes('illness episode active') ? 'illness_ongoing'
+        : (oa.key_insights || '').includes('possible illness') ? 'possible_illness' : 'normal';
+      return { label: dailyLabel !== 'normal' ? dailyLabel : 'illness_ongoing', onset_date: ill.onset_date, confirmed: !!ill.confirmed_date, peak_score: ill.peak_score };
+    })(),
+    briefing: {
+      expect: expectBlock, sleep_line: sleepLine, sleep_debt: '0h',
+      sleep_context_items: sleepContextItems, sleep_context: sleepContext,
+      flags: flags, do_items: doItems,
+    },
+    data_status: {
+      has_garmin: !!g.date, has_analysis: readinessScore > 0,
+      analysis_pending: !!g.date && readinessScore === 0,
+      stale_steps: _num(g.steps) > 0 && _num(g.steps) < 500,
+      last_sync: g.updated_at || g.date || null,
+    },
+  };
+}
+
+function _parseHistoryRpc(rpc) {
+  const garminRows = rpc.garmin || [];
+  const sleepRows = rpc.sleep || [];
+  const analysisRows = rpc.overall_analysis || [];
+  const dailyLogRows = rpc.daily_log || [];
+  const sessionRows = rpc.session_log || [];
+  const recentSessions = rpc.recent_sessions || [];
+
+  // Index by date for merging
+  const garminMap = {}; garminRows.forEach(r => { garminMap[r.date] = r; });
+  const sleepMap = {}; sleepRows.forEach(r => { sleepMap[r.date] = r; });
+  const analysisMap = {}; analysisRows.forEach(r => { analysisMap[r.date] = r; });
+  const dailyLogMap = {}; dailyLogRows.forEach(r => { dailyLogMap[r.date] = r; });
+  const sessionMap = {};
+  sessionRows.forEach(r => {
+    if (!sessionMap[r.date]) sessionMap[r.date] = [];
+    sessionMap[r.date].push({
+      activity_name: r.activity_name || '',
+      type: (r.session_type || r.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+      duration_min: _num(r.duration_min), distance_mi: _num(r.distance_mi),
+      calories: _num(r.calories), avg_hr: _num(r.avg_hr), max_hr: _num(r.max_hr),
+    });
+  });
+
+  const allDates = new Set();
+  [garminRows, sleepRows, analysisRows, dailyLogRows, sessionRows].forEach(rows => {
+    rows.forEach(r => allDates.add(r.date));
+  });
+
+  const history = Array.from(allDates).sort().map(date => {
+    const g = garminMap[date] || {};
+    const s = sleepMap[date] || {};
+    const a = analysisMap[date] || {};
+    const dl = dailyLogMap[date] || {};
+    return {
+      date, readiness: _num(a.readiness_score), sleep_score: _num(s.sleep_analysis_score),
+      total_sleep: _num(s.total_sleep_hrs), hrv: _num(s.overnight_hrv_ms || g.hrv_overnight_avg),
+      rhr: _num(g.resting_hr), body_battery: _num(g.body_battery), steps: _num(g.steps),
+      stress: _num(g.avg_stress_level), habits: _num(dl.habits_total),
+      day_rating: _num(dl.day_rating), morning_energy: _num(dl.morning_energy),
+      cognition: _num(a.cognition), sessions: sessionMap[date] || [],
+    };
+  });
+
+  const sessions_history = recentSessions.map(s => ({
+    date: s.date, activity_name: s.activity_name || '',
+    type: (s.session_type || s.activity_name || '').toLowerCase().replace(/\s+/g, '_'),
+    duration: _num(s.duration_min), distance: _num(s.distance_mi),
+    calories: _num(s.calories), avg_hr: _num(s.avg_hr),
+  }));
+
+  return { history, sessions_history };
 }
 
 async function fetchToday(overrideDate, _depth = 0) {
@@ -1046,43 +1261,71 @@ async function initData() {
   // Require auth — shows login modal on first visit, silent restore after
   await checkAuth();
 
+  // Initialize encrypted localStorage (derives key from user session)
+  try {
+    const { data: { session } } = await htSupabase.auth.getSession();
+    if (session?.user?.id) {
+      await CryptoStore.init(session.user.id);
+    }
+  } catch (e) {
+    console.warn('[data-loader] CryptoStore init failed:', e.message);
+  }
+
   // Flush any offline-queued writes if already authenticated
   await flushOfflineQueue();
 
   try {
-    const results = await Promise.allSettled([
-      fetchToday(),
-      fetchHistory(90),
-      fetchSessions(365),
-    ]);
-
-    const [todayResult, historyResult, sessionsResult] = results;
-
-    if (todayResult.status === 'fulfilled') {
-      SAMPLE_DATA.today = todayResult.value;
-    } else {
-      console.error('[data-loader] fetchToday failed:', todayResult.reason);
-      SAMPLE_DATA.today = _buildFallbackToday();
-    }
-
-    if (historyResult.status === 'fulfilled') {
-      SAMPLE_DATA.history = historyResult.value;
-    } else {
-      console.error('[data-loader] fetchHistory failed:', historyResult.reason);
-    }
-
-    if (sessionsResult.status === 'fulfilled') {
-      SAMPLE_DATA.sessions_history = sessionsResult.value;
-    } else {
-      console.error('[data-loader] fetchSessions failed:', sessionsResult.reason);
-    }
-
-    SAMPLE_DATA._loaded = true;
-    const anyFailed = results.some(r => r.status === 'rejected');
-    if (anyFailed) {
-      SAMPLE_DATA._error = 'Some queries failed — check console';
-    } else {
+    // Try RPC-based fetch first (2 round-trips instead of 14)
+    let usedRpc = false;
+    try {
+      const rpcResult = await _fetchViaRpc();
+      SAMPLE_DATA.today = rpcResult.today;
+      SAMPLE_DATA.history = rpcResult.history;
+      SAMPLE_DATA.sessions_history = rpcResult.sessions_history;
+      SAMPLE_DATA._loaded = true;
       SAMPLE_DATA._error = null;
+      usedRpc = true;
+      console.log('[data-loader] Loaded via RPC (2 queries)');
+    } catch (rpcErr) {
+      console.log('[data-loader] RPC not available, falling back to per-table queries:', rpcErr.message);
+    }
+
+    // Fallback: per-table queries (14 round-trips)
+    if (!usedRpc) {
+      const results = await Promise.allSettled([
+        fetchToday(),
+        fetchHistory(90),
+        fetchSessions(365),
+      ]);
+
+      const [todayResult, historyResult, sessionsResult] = results;
+
+      if (todayResult.status === 'fulfilled') {
+        SAMPLE_DATA.today = todayResult.value;
+      } else {
+        console.error('[data-loader] fetchToday failed:', todayResult.reason);
+        SAMPLE_DATA.today = _buildFallbackToday();
+      }
+
+      if (historyResult.status === 'fulfilled') {
+        SAMPLE_DATA.history = historyResult.value;
+      } else {
+        console.error('[data-loader] fetchHistory failed:', historyResult.reason);
+      }
+
+      if (sessionsResult.status === 'fulfilled') {
+        SAMPLE_DATA.sessions_history = sessionsResult.value;
+      } else {
+        console.error('[data-loader] fetchSessions failed:', sessionsResult.reason);
+      }
+
+      SAMPLE_DATA._loaded = true;
+      const anyFailed = results.some(r => r.status === 'rejected');
+      if (anyFailed) {
+        SAMPLE_DATA._error = 'Some queries failed — check console';
+      } else {
+        SAMPLE_DATA._error = null;
+      }
     }
 
     // loaded
@@ -1167,6 +1410,49 @@ function getStatusColor(value, metric) {
     l = 46 + p * 4;
   }
   return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+// Text color matching dashboard/Sheets color grading (same HSL curves as dashboard getColor)
+function getStatusTextColor(value, metric) {
+  const t = SAMPLE_DATA.thresholds[metric];
+  if (!t) return '#6B7280';
+
+  let ratio;
+  if (t.type === 'higher_better') {
+    if (value <= t.red) ratio = 0;
+    else if (value >= t.green) ratio = 1;
+    else if (value <= t.yellow) ratio = (value - t.red) / (t.yellow - t.red) * 0.5;
+    else ratio = 0.5 + (value - t.yellow) / (t.green - t.yellow) * 0.5;
+  } else {
+    if (value >= t.red) ratio = 0;
+    else if (value <= t.green) ratio = 1;
+    else if (value >= t.yellow) ratio = (t.red - value) / (t.red - t.yellow) * 0.5;
+    else ratio = 0.5 + (t.yellow - value) / (t.yellow - t.green) * 0.5;
+  }
+
+  ratio = Math.max(0, Math.min(1, ratio));
+
+  // Match dashboard getColor() HSL curves exactly
+  let h, s, l;
+  if (ratio <= 0.5) {
+    const p = ratio / 0.5;
+    h = 0 + p * 45;       // red (0) -> yellow (45)
+    s = 65 + p * 5;       // 65% -> 70%
+    l = 38 + p * 8;       // 38% -> 46%
+  } else {
+    const p = (ratio - 0.5) / 0.5;
+    h = 45 + p * 95;      // yellow (45) -> green (140)
+    s = 70 - p * 15;      // 70% -> 55%
+    l = 46 - p * 8;       // 46% -> 38%
+  }
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+// Determine if a color is light (for text contrast on colored backgrounds)
+function isLightColor(hslStr) {
+  const match = hslStr.match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
+  if (!match) return true;
+  return parseFloat(match[3]) > 55;
 }
 
 // Simple status class (green/yellow/red)
