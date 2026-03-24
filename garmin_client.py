@@ -212,11 +212,13 @@ def get_garmin_data(today, yesterday):
             "Set GARMIN_EMAIL in .env and password via: "
             "python -c \"import keyring; keyring.set_password('garmin_connect', 'EMAIL', 'PASSWORD')\""
         )
+    tokenstore_path = str(Path(__file__).parent / ".garth")
     client = Garmin(GARMIN_EMAIL, garmin_password)
     try:
-        client.login()
+        client.login(tokenstore=tokenstore_path)
     except Exception as e:
         raise RuntimeError(f"Garmin Connect login failed: {e}") from e
+    client.garth.dump(tokenstore_path)
     print("Connected successfully.")
 
     t = today.isoformat()

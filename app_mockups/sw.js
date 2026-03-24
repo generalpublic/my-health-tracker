@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-tracker-v30';
+const CACHE_NAME = 'health-tracker-v31';
 const ASSETS = [
   'today.html',
   'sleep-detail.html',
@@ -32,7 +32,14 @@ const ASSETS = [
   'js/profile.js',
   'js/pull-to-refresh.js',
   'icon.svg',
-  'manifest.json'
+  'manifest.json',
+  'icons/weekly reports.png',
+  'icons/calendar view.png',
+  'icons/export data.png',
+  'icons/notifications.png',
+  'icons/habits.png',
+  'icons/goals.png',
+  'icons/garmin sync.png'
 ];
 
 self.addEventListener('install', event => {

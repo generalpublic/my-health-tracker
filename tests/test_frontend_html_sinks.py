@@ -38,8 +38,8 @@ ALLOWLIST = {
     # --- data-loader.js (static setup error, no data interpolation) ---
     "data-loader.js:28",  # "Setup Required" fallback
 
-    # --- debug.html (dev-only page, uses textContent now) ---
-    "debug.html:57",  # clearing results div
+    # --- debug.html (dev-only, removed pre-deploy by deploy.yml) ---
+    "debug.html:57",  # clearing results div — safe (no data interpolation)
 
     # --- log-entry.js ---
     "js/log-entry.js:84",   # habit toggles (SVG icons from predefined array)
@@ -189,10 +189,9 @@ def test_allowlist_entries_still_exist():
         allowed_path = parts[0]
         allowed_line = int(parts[1])
 
-        # Check if the file exists
+        # Skip files that don't exist (e.g. debug.html removed pre-deploy)
         fpath = os.path.join(PWA_DIR, allowed_path)
         if not os.path.exists(fpath):
-            stale.append(f"  {entry}  (file not found)")
             continue
 
         # Check if any sink is near this allowlist line

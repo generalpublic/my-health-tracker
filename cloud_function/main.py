@@ -149,8 +149,9 @@ def _fetch_garmin_data(date_str):
     if not email or not password:
         raise RuntimeError("GARMIN_EMAIL and GARMIN_PASSWORD must be set")
 
+    tokenstore = os.environ.get("GARMINTOKENS")
     client = Garmin(email, password)
-    client.login()
+    client.login(tokenstore=tokenstore)
 
     from datetime import date
     target = date.fromisoformat(date_str)
