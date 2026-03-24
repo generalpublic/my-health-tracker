@@ -1736,6 +1736,83 @@ def _eval_variance_trigger(trigger, data_sources, target_date):
     return False, ""
 
 
+def _eval_trend_trigger(trigger, data_sources, target_date):
+    """Evaluate a trend trigger — fires when metric declines/improves for N days.
+
+    trigger schema:
+      {"type": "trend", "tab": str, "field": str,
+       "direction": "declining"|"improving", "min_days": int (default 3)}
+    """
+    tab_data = data_sources.get(trigger["tab"], {})
+    field = trigger["field"]
+    min_days = trigger.get("min_days", 3)
+    direction = trigger.get("direction", "declining")
+    lookback = min_days + 2  # extra buffer for missing days
+
+    values = []
+    for offset in range(0, lookback):
+        d = str(target_date - timedelta(days=offset))
+        row = tab_data.get(d, {})
+        v = _safe_float(row.get(field))
+        if v is not None:
+            values.append(v)
+        if len(values) >= min_days + 1:
+            break
+
+    if len(values) < min_days:
+        return False, ""
+
+    # Check consecutive direction (values[0] = today, values[1] = yesterday, ...)
+    consecutive = 0
+    for i in range(len(values) - 1):
+        if direction == "declining" and values[i] < values[i + 1]:
+            consecutive += 1
+        elif direction == "improving" and values[i] > values[i + 1]:
+            consecutive += 1
+        else:
+            break
+
+    if consecutive >= min_days - 1:
+        return True, (f"{field} {direction} for {consecutive + 1} consecutive days "
+                      f"({values[-1]:.1f} -> {values[0]:.1f})")
+    return False, ""
+
+
+def _eval_streak_trigger(trigger, data_sources, target_date):
+    """Evaluate a streak trigger — fires when metric stays above/below threshold for N days.
+
+    trigger schema:
+      {"type": "streak", "tab": str, "field": str,
+       "op": "<"|">"|"<="|">=", "value": number, "min_days": int (default 3)}
+    """
+    tab_data = data_sources.get(trigger["tab"], {})
+    field = trigger["field"]
+    min_days = trigger.get("min_days", 3)
+    op = trigger["op"]
+    threshold = trigger["value"]
+
+    def _compare(val, op_, thresh):
+        if op_ == "<": return val < thresh
+        if op_ == ">": return val > thresh
+        if op_ == "<=": return val <= thresh
+        if op_ == ">=": return val >= thresh
+        return False
+
+    consecutive = 0
+    for offset in range(0, min_days + 2):
+        d = str(target_date - timedelta(days=offset))
+        row = tab_data.get(d, {})
+        v = _safe_float(row.get(field))
+        if v is not None and _compare(v, op, threshold):
+            consecutive += 1
+        else:
+            break
+
+    if consecutive >= min_days:
+        return True, f"{field} {op} {threshold} for {consecutive} consecutive days"
+    return False, ""
+
+
 _PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
@@ -2146,6 +2223,12 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
         elif trigger_type == "variance":
             fired, context = _eval_variance_trigger(
                 trigger, data_sources, target_date)
+        elif trigger_type == "trend":
+            fired, context = _eval_trend_trigger(
+                trigger, data_sources, target_date)
+        elif trigger_type == "streak":
+            fired, context = _eval_streak_trigger(
+                trigger, data_sources, target_date)
 
         if fired:
             priority = _PRIORITY_ORDER.get(entry.get("priority", "Medium"), 3)
@@ -2168,14 +2251,216 @@ def scan_knowledge_triggers(knowledge, data_sources, sessions_by_date, target_da
             text = _build_trigger_insight(entry, context, meta.get("annotation"))
             insights.append((priority, text))
 
-    # Sort by priority (Critical=0 first), then return strings only
+    # Sort by priority (Critical=0 first), cap at 3, return strings only
     insights.sort(key=lambda x: x[0])
-    return [text for _, text in insights]
+    MAX_TRIGGERED_INSIGHTS = 3
+    return [text for _, text in insights[:MAX_TRIGGERED_INSIGHTS]]
 
 
 # Registry of kb_ids used by hardcoded insights in the current analysis run.
 # Populated by _kb_insight(), consumed by scan_knowledge_triggers() to avoid duplicates.
 _hardcoded_kb_ids = set()
+
+
+# ---------------------------------------------------------------------------
+# Behavioral Correlation Integration (Phase 2)
+# ---------------------------------------------------------------------------
+
+def load_significant_correlations(conn=None, min_abs_r=0.15, min_n=30):
+    """Load significant behavior-outcome correlations from SQLite.
+
+    Returns: dict keyed by behavior name -> list of {outcome, r, n, lag, label}.
+    Only includes correlations where significant=1 AND |r| >= min_abs_r AND n >= min_n.
+    """
+    import sqlite3
+    close_conn = False
+    if conn is None:
+        db_path = Path(__file__).parent / "health_tracker.db"
+        if not db_path.exists():
+            return {}
+        conn = sqlite3.connect(str(db_path))
+        close_conn = True
+
+    try:
+        cursor = conn.execute(
+            "SELECT behavior, outcome, lag, r, n, label "
+            "FROM behavioral_correlations "
+            "WHERE significant = 1 AND ABS(r) >= ? AND n >= ? "
+            "ORDER BY ABS(r) DESC",
+            (min_abs_r, min_n)
+        )
+        result = {}
+        for behavior, outcome, lag, r, n, label in cursor.fetchall():
+            result.setdefault(behavior, []).append({
+                "outcome": outcome, "r": r, "n": n, "lag": lag, "label": label,
+            })
+        return result
+    except Exception:
+        return {}
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def _personal_validation(correlations, behavior_key, outcome_keyword=None):
+    """Check if user's data confirms or contradicts a health claim.
+
+    Args:
+        correlations: dict from load_significant_correlations()
+        behavior_key: behavior name to look up (e.g., "stress_level", "workout_avg_hr")
+        outcome_keyword: optional keyword to match in outcome name (e.g., "HRV", "Sleep")
+
+    Returns: annotation string ("Your data confirms: ...") or empty string.
+    """
+    if not correlations:
+        return ""
+    entries = correlations.get(behavior_key, [])
+    if not entries:
+        return ""
+    # Filter by outcome keyword if provided
+    if outcome_keyword:
+        entries = [e for e in entries if outcome_keyword.lower() in e["outcome"].lower()]
+    if not entries:
+        return ""
+    # Use strongest correlation
+    best = max(entries, key=lambda e: abs(e["r"]))
+    r = best["r"]
+    n = best["n"]
+    direction = "suppression" if r < 0 else "increase"
+    if abs(r) >= 0.25:
+        return (f"Your data confirms: {best['label']} correlates with {best['outcome']} "
+                f"{direction} (r={r:+.2f}, n={n})")
+    elif abs(r) < 0.10 and n >= 40:
+        return (f"Note: this pattern is weak in your data "
+                f"({best['label']} -> {best['outcome']}: r={r:+.2f}, n={n})")
+    return ""
+
+
+def _get_active_correlations(correlations, note_flags, baselines, sessions_by_date,
+                             target_date, covered_behaviors=None):
+    """Find significant correlations that fired today but weren't mentioned in insights.
+
+    Returns: list of max 2 formatted insight strings, sorted by |r| descending.
+    """
+    if not correlations:
+        return []
+    if covered_behaviors is None:
+        covered_behaviors = set()
+
+    target_str = str(target_date)
+    yesterday_str = str(target_date - timedelta(days=1))
+
+    # Map behavior keys to detection: did this behavior happen today/yesterday?
+    active_behaviors = {}
+
+    # Check note flags
+    for flag in (note_flags or []):
+        flag_date, flag_type = flag[0], flag[1]
+        if flag_date in (target_str, yesterday_str):
+            # Map flag types to correlation behavior keys
+            if flag_type == "alcohol":
+                active_behaviors["alcohol"] = True
+            elif flag_type == "late_caffeine":
+                active_behaviors["late_caffeine"] = True
+            elif flag_type == "sugar":
+                active_behaviors["sugar"] = True
+            elif flag_type == "late_meal":
+                active_behaviors["late_meal"] = True
+
+    # Check if workout happened yesterday
+    if sessions_by_date:
+        if sessions_by_date.get(yesterday_str):
+            active_behaviors["had_workout"] = True
+            active_behaviors["Had Workout"] = True
+
+    # Check stress level
+    stress_data = baselines.get("stress", {})
+    if stress_data.get("z") is not None and stress_data["z"] > 1.0:
+        active_behaviors["stress_level"] = True
+        active_behaviors["high_stress_day"] = True
+        active_behaviors["High Stress Day (>40)"] = True
+
+    # Find correlations for active behaviors not already covered by insights
+    candidates = []
+    for behavior_key, entries in correlations.items():
+        # Check if this behavior is active
+        bk_lower = behavior_key.lower().replace(" ", "_").replace("(", "").replace(")", "")
+        is_active = (behavior_key in active_behaviors or
+                     bk_lower in active_behaviors or
+                     any(bk_lower.startswith(ab.lower()) for ab in active_behaviors))
+        if not is_active:
+            continue
+        # Skip if already covered by hardcoded insights
+        if behavior_key in covered_behaviors or bk_lower in covered_behaviors:
+            continue
+        for entry in entries:
+            candidates.append(entry | {"behavior_key": behavior_key})
+
+    # Sort by |r| and take top 2
+    candidates.sort(key=lambda e: abs(e["r"]), reverse=True)
+    results = []
+    for c in candidates[:2]:
+        direction = "lower" if c["r"] < 0 else "higher"
+        results.append(
+            f"YOUR DATA: {c['label']} is associated with {direction} "
+            f"{c['outcome']} the next day (r={c['r']:+.2f}, n={c['n']})"
+        )
+    return results
+
+
+def _connect_causal_chain(insights, baselines, sleep_debt, acwr, note_flags):
+    """Identify when multiple insights share a causal chain and prepend a summary.
+
+    Returns the modified insights list with a chain summary prepended if detected.
+    """
+    if len(insights) < 2:
+        return insights
+
+    # Detect chain patterns by scanning insight text for keywords
+    texts_lower = " ".join(insights).lower()
+
+    chains_detected = []
+
+    # Recovery deficit: sleep debt + HRV suppressed
+    has_sleep_debt = sleep_debt is not None and sleep_debt > 0.75
+    hrv_z = baselines.get("hrv", {}).get("z")
+    has_hrv_low = hrv_z is not None and hrv_z < -1.0
+    stress_z = baselines.get("stress", {}).get("z")
+    has_stress = stress_z is not None and stress_z > 1.0
+
+    if has_sleep_debt and has_hrv_low:
+        components = [f"sleep debt {sleep_debt:.1f}h", f"HRV suppressed (z={hrv_z:+.1f})"]
+        if has_stress:
+            components.append("elevated stress")
+        chains_detected.append(("Recovery deficit building", components))
+
+    # Training overreach: ACWR spike + HRV suppressed
+    if acwr is not None and acwr > 1.3 and has_hrv_low:
+        components = [f"ACWR {acwr:.2f}", f"HRV suppressed (z={hrv_z:+.1f})"]
+        chains_detected.append(("Training overload", components))
+
+    # Behavioral cascade: alcohol/caffeine + poor sleep metrics
+    has_behavior = any(f[1] in ("alcohol", "late_caffeine", "late_meal")
+                       for f in (note_flags or []))
+    has_poor_sleep = "sleep debt" in texts_lower or "deep" in texts_lower
+    if has_behavior and has_poor_sleep and has_hrv_low:
+        behaviors = [f[1] for f in (note_flags or [])
+                     if f[1] in ("alcohol", "late_caffeine", "late_meal")]
+        chains_detected.append(("Behavioral impact",
+                                [", ".join(set(behaviors)), "poor sleep metrics", "HRV dip"]))
+
+    # Good alignment: HRV above baseline + no negatives
+    if hrv_z is not None and hrv_z > 1.0 and not has_sleep_debt and not has_stress:
+        chains_detected.append(("Strong alignment",
+                                ["HRV above baseline", "no sleep debt", "low stress"]))
+
+    if not chains_detected:
+        return insights
+
+    # Prepend the highest-priority chain as a summary
+    chain_name, components = chains_detected[0]
+    summary = f"{chain_name}: {' + '.join(components)}."
+    return [summary] + insights
 
 
 def _kb_insight(knowledge, kb_id, data_prefix, fallback):
@@ -2489,24 +2774,42 @@ def generate_if_then_rules(baselines, by_date_sleep, daily_log_by_date,
 # Domain keyword -> condition-context suffix mapping
 # Keys are substrings to match in insight text; values are (tracking_domain, suffix)
 _REFRAME_RULES = [
+    # HRV / autonomic
     (["hrv", "autonomic", "heart rate variability"],
      "hrv",
      "With your neurological profile, HRV suppression may reflect neuroinflammatory activity. Monitor for cognitive symptoms today."),
-    (["deep sleep"],
+    # Deep sleep -> memory pipeline
+    (["deep sleep", "slow-wave", "glymphatic"],
      "deep_sleep",
      "Reduced deep sleep directly impacts your primary concern: memory consolidation."),
+    # REM -> emotional/procedural memory
     (["rem"],
      "rem_sleep",
      "REM below baseline affects emotional regulation and procedural memory processing."),
-    (["stress level", "stress budget"],
+    # Sleep debt -> executive function
+    (["sleep debt", "cumulative debt", "below-baseline sleep"],
+     "sleep",
+     "Sleep deficit amplifies executive dysfunction -- expect harder task-switching today."),
+    # Stress
+    (["stress level", "stress budget", "stress elevated"],
      "stress",
      "With your stress-sensitive profile, protect remaining recovery time."),
-    (["zone 4", "zone 5", "high-intensity", "training load"],
+    # Body battery / recovery
+    (["body battery", "recovery deficit", "recovery incomplete"],
+     "recovery",
+     "With CIRS, recovery from this deficit takes longer than baseline. Prioritize rest."),
+    # Training
+    (["zone 4", "zone 5", "high-intensity", "training load", "acwr"],
      "training",
      "Given your cardiac profile, sustained high-intensity carries elevated risk."),
-    (["cognitive", "executive function", "attention"],
+    # Cognition / executive function
+    (["cognitive", "executive function", "attention", "working memory", "brain fog"],
      "cognition",
      "Executive function factors compounding. Expect increased difficulty with planning and working memory today."),
+    # Energy
+    (["energy", "fatigue", "low energy"],
+     "energy",
+     "Energy deficits compound with your neuroimmune profile. Front-load demanding tasks."),
 ]
 
 
@@ -2547,11 +2850,14 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                       by_date_sleep, sessions_by_date, target_date,
                       knowledge=None, sleep_analysis_text=None,
                       deep_trend=None, rem_trend=None, profile=None,
-                      nutrition_by_date=None, oa_by_date=None):
+                      nutrition_by_date=None, oa_by_date=None,
+                      correlations=None):
     """Generate priority-ordered insight text based on all computed data.
 
     Uses health_knowledge.json entries for scientifically-grounded cognitive/energy
     framing when available, with hardcoded fallbacks for backward compatibility.
+    When correlations are provided, adds personal data validation annotations
+    and "Your Data Shows" standalone insights.
 
     Returns list of insight strings, ordered by severity/relevance.
     """
@@ -2559,7 +2865,10 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
         knowledge = {}
     if nutrition_by_date is None:
         nutrition_by_date = {}
+    if correlations is None:
+        correlations = {}
     insights = []
+    _covered_behaviors = set()  # track which behaviors were mentioned in insights
 
     # --- Outlier warnings (data quality flags) ---
     METRIC_DISPLAY = {"hrv": "HRV", "rhr": "Resting HR", "sleep_score": "Sleep Score",
@@ -2757,15 +3066,23 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
         ),
     }
 
+    # Map flag types to correlation behavior keys for personal validation
+    _flag_to_corr = {
+        "alcohol": ("alcohol", "Sleep Score"),
+        "late_caffeine": ("late_caffeine", "Sleep"),
+        "late_meal": ("late_meal", "Sleep"),
+        "sugar/refined_carbs": ("sugar", "Sleep"),
+    }
+
     for flag_date, flag_type, matched in note_flags:
         days_ago = (target_date - date.fromisoformat(flag_date)).days
         time_ref = "yesterday" if days_ago == 1 else f"{days_ago} days ago" if days_ago > 0 else "today"
 
         kb_id = flag_kb_map.get(flag_type)
         if flag_type == "alcohol":
-            prefix = f"Alcohol noted {time_ref} ({', '.join(matched)}). "
+            prefix = f"Alcohol noted {time_ref} ({matched}). "
         elif flag_type == "sugar/refined_carbs":
-            prefix = f"High sugar/refined carbs noted {time_ref} ({', '.join(matched)}). "
+            prefix = f"High sugar/refined carbs noted {time_ref} ({matched}). "
         elif flag_type == "late_meal":
             prefix = f"Late meal noted {time_ref}. "
         elif flag_type == "late_caffeine":
@@ -2775,9 +3092,18 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
 
         fallback_text = prefix + flag_fallbacks.get(flag_type, "")
         if kb_id:
-            insights.append(_kb_insight(knowledge, kb_id, prefix, fallback_text))
+            insight_text = _kb_insight(knowledge, kb_id, prefix, fallback_text)
         else:
-            insights.append(fallback_text)
+            insight_text = fallback_text
+
+        # Personal validation: check if user's data confirms this behavior's impact
+        corr_key = _flag_to_corr.get(flag_type)
+        if corr_key and correlations:
+            validation = _personal_validation(correlations, corr_key[0], corr_key[1])
+            if validation:
+                insight_text += f" {validation}."
+        insights.append(insight_text)
+        _covered_behaviors.add(flag_type)
 
     # --- Deep sleep and REM assessment (new: cognitive-relevant sleep architecture) ---
     today_sleep = by_date_sleep.get(str(target_date), {})
@@ -3038,7 +3364,7 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
     # --- Stress ---
     stress_data = baselines.get("stress", {})
     if stress_data.get("z") is not None and stress_data["z"] > 1.0:
-        insights.append(_kb_insight(
+        stress_insight = _kb_insight(
             knowledge, "stress_elevated",
             f"Garmin stress level elevated (z={stress_data['z']:+.1f}, today: "
             f"{stress_data['today']:.0f} vs avg: {stress_data['mean']:.0f}). ",
@@ -3046,31 +3372,24 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
             f"{stress_data['today']:.0f} vs avg: {stress_data['mean']:.0f}). "
             f"Sustained high stress activates the sympathetic nervous system, "
             f"suppressing HRV and impairing sleep quality."
-        ))
+        )
+        # Personal validation: stress -> body battery / HRV
+        stress_val = _personal_validation(correlations, "stress_level", "Body Battery")
+        if not stress_val:
+            stress_val = _personal_validation(correlations, "stress_level", "HRV")
+        if stress_val:
+            stress_insight += f" {stress_val}."
+        insights.append(stress_insight)
+        _covered_behaviors.add("stress_level")
 
     # --- Profile-aware insights (Steps 3-5, 6, 11) ---
     if profile:
         # Step 3: Reframe existing insights with condition context
         insights = _reframe_insights_with_profile(insights, profile)
 
-        # Step 4: Sleep architecture -> memory pipeline
-        memory_conditions = get_relevant_conditions(profile, "deep_sleep")
-        if memory_conditions:
-            today_sleep = by_date_sleep.get(str(target_date), {})
-            deep_min = _safe_float(today_sleep.get("Deep Sleep (min)"))
-            rem_min = _safe_float(today_sleep.get("REM (min)"))
-            if deep_min is not None and deep_min < 50:
-                insights.append(
-                    f"Deep sleep {deep_min:.0f}min (below 50min threshold). "
-                    f"Your primary concern is memory consolidation, which requires "
-                    f"sustained deep sleep. Tonight: prioritize earlier bedtime."
-                )
-            if rem_min is not None and rem_min < 60:
-                insights.append(
-                    f"REM {rem_min:.0f}min: emotional regulation and procedural "
-                    f"memory processing reduced. This directly impacts your cognitive "
-                    f"recovery pipeline."
-                )
+        # Step 4: (Migrated to _REFRAME_RULES — deep_sleep and rem_sleep rules
+        # now enrich the main-body insights contextually instead of adding
+        # duplicate standalone bullets.)
 
         # Step 5: ARVC exercise guardrails
         cardiac_conditions = get_relevant_conditions(profile, "training")
@@ -3166,6 +3485,17 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
                 f"normal biological noise. Focus on 7-day trends, not daily scores."
             )
 
+    # --- Your Data Shows (correlation-backed standalone insights) ---
+    if correlations:
+        active_corr = _get_active_correlations(
+            correlations, note_flags, baselines, sessions_by_date,
+            target_date, _covered_behaviors)
+        insights.extend(active_corr)
+
+    # --- Causal chain connection (narrative synthesis) ---
+    insights = _connect_causal_chain(insights, baselines, sleep_debt, acwr,
+                                     note_flags)
+
     return insights
 
 
@@ -3175,91 +3505,41 @@ def generate_insights(baselines, sleep_debt, sleep_trend, acwr, acwr_status,
 
 def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
                              baselines, target_date, knowledge=None,
-                             profile=None, sessions_by_date=None):
+                             profile=None, sessions_by_date=None,
+                             correlations=None):
     """Generate actionable recommendations based on readiness state.
 
-    Uses knowledge base for scientifically-grounded cognitive/energy framing.
+    Uses a factor-driven rule system: each rule fires independently when its
+    conditions are met, regardless of label. Rules are priority-ordered and
+    profile-filtered at the end.
+
     Returns list of recommendation strings.
     """
     if knowledge is None:
         knowledge = {}
-    recs = []
+    if correlations is None:
+        correlations = {}
+
     day_name = target_date.strftime("%A")
+    hrv_z = baselines.get("hrv", {}).get("z")
+    stress_z = baselines.get("stress", {}).get("z")
 
-    if label in ("Poor", "Low"):
-        recs.append(
-            f"Today ({day_name}): prioritize rest and recovery. Light walking or NSDR "
-            f"(non-sleep deep rest) only. Avoid high-intensity training. "
-            f"Cognitive capacity is likely reduced; defer important decisions if possible."
-        )
-        recs.append(
-            "Plan to be off screens by 8 PM and in bed by 9-9:30 PM tonight to "
-            "begin recovering sleep debt."
-        )
-        if sleep_debt and sleep_debt > 1.0:
-            k = knowledge.get("sleep_debt_major")
-            if k:
-                recs.append(
-                    f"You have {sleep_debt:.1f}h of accumulated sleep debt. "
-                    f"{k['recommendation']} [{k['citation']}]"
-                )
-            else:
-                recs.append(
-                    f"You have {sleep_debt:.1f}h of accumulated sleep debt. "
-                    f"Aim for 8.5-9h sleep tonight. Full recovery from sustained restriction "
-                    f"can take 2-3 weeks of consistent sleep (Van Dongen et al. 2003)."
-                )
-    elif label == "Fair":
-        recs.append(
-            f"Today ({day_name}): moderate activity is fine, but avoid maximal efforts. "
-            f"Monitor how you feel mid-workout. If perceived effort exceeds expected, "
-            f"scale back. Cognitive endurance may be reduced; plan demanding mental work "
-            f"for your peak hours."
-        )
-        if sleep_debt and sleep_debt > 0.5:
-            recs.append(
-                "Prioritize an earlier bedtime tonight. Even 30 minutes earlier helps "
-                "accumulate recovery and restore cognitive function."
-            )
-    elif label in ("Good", "Optimal"):
-        k = knowledge.get("hrv_above_baseline")
-        cognitive_note = k["cognitive_impact"] if k else (
-            "Good day for complex cognitive work, learning, or skill acquisition."
-        )
-        recs.append(
-            f"Today ({day_name}): you're well-recovered. This is a good day for high-intensity "
-            f"training, skill work, or challenging cognitive tasks. {cognitive_note}"
-        )
-        if acwr is not None and acwr < ACWR_LOW:
-            recs.append(
-                "Your training load is below your recent capacity. Consider increasing "
-                "intensity or volume if goals support it."
-            )
+    # Collect (priority, rec_text) tuples — lower priority number = more important
+    candidates = []
 
-    # Diet-specific recommendations
-    alcohol_flags = [f for f in note_flags if f[1] == "alcohol" and f[0] == str(target_date)]
-    if alcohol_flags:
-        k = knowledge.get("alcohol_sleep_disruption")
+    # --- Rule 1: Sleep debt recovery (any label) ---
+    if sleep_debt and sleep_debt > 1.0:
+        k = knowledge.get("sleep_debt_major")
         if k:
-            recs.append(f"If drinking tonight: {k['recommendation']}")
+            candidates.append((1, f"Sleep debt {sleep_debt:.1f}h. {k['recommendation']} [{k['citation']}]"))
         else:
-            recs.append(
-                "If drinking tonight: stop 3-4 hours before bed to minimize REM suppression. "
-                "Hydrate before sleep (alcohol is a diuretic and dehydration further fragments sleep)."
-            )
+            candidates.append((1,
+                f"Sleep debt {sleep_debt:.1f}h. Aim for 8.5-9h tonight. "
+                f"Full recovery from sustained restriction can take 2-3 weeks (Van Dongen 2003)."))
+    elif sleep_debt and sleep_debt > 0.5:
+        candidates.append((3, "Prioritize an earlier bedtime tonight. Even 30 min earlier helps restore cognitive function."))
 
-    # Training load warnings
-    if acwr is not None and acwr > ACWR_HIGH:
-        k = knowledge.get("training_load_spike")
-        if k:
-            recs.append(k["recommendation"])
-        else:
-            recs.append(
-                "Training load is elevated this week. Consider replacing one planned session "
-                "with active recovery (Zone 1-2 cardio, mobility work, or yoga)."
-            )
-
-    # High-intensity recovery guidance (zone-aware)
+    # --- Rule 2: Post-intensity recovery (yesterday's session was hard) ---
     if sessions_by_date:
         yesterday = str(target_date - timedelta(days=1))
         for s in sessions_by_date.get(yesterday, []):
@@ -3273,51 +3553,102 @@ def generate_recommendations(score, label, sleep_debt, acwr, note_flags,
                     detail.append(f"Anaerobic TE {anaerobic_te:.1f}")
                 if z4 + z5 > 0:
                     detail.append(f"{z4 + z5:.0f}min Zone 4-5")
-                recs.append(
+                candidates.append((2,
                     f"Yesterday's {activity} was high-intensity ({', '.join(detail)}). "
-                    f"Allow 48-72h before next high-intensity session. "
-                    f"Today is ideal for Zone 2 aerobic work or complete rest."
-                )
+                    f"Allow 48-72h before next high-intensity. Zone 2 or rest today."))
                 break
 
-        # Low post-workout energy recovery
+        # Low post-workout energy
         for s in sessions_by_date.get(yesterday, []):
             pwe = _safe_float(s.get("Post-Workout Energy (1-10)"))
             if pwe is not None and pwe < 4:
-                recs.append(
-                    "Yesterday's post-workout energy was low. Consider Zone 1-2 only "
-                    "or active recovery today to support nervous system recovery."
-                )
+                candidates.append((2,
+                    "Yesterday's post-workout energy was low. Zone 1-2 only or active recovery today."))
                 break
 
-    # Recovery time multiplier — conditions that require extended recovery (e.g., CIRS)
+    # --- Rule 3: HRV suppressed (any label) ---
+    if hrv_z is not None and hrv_z < -1.0:
+        k = knowledge.get("nsdr_recovery")
+        if k:
+            candidates.append((2,
+                f"HRV suppressed (z={hrv_z:+.1f}). {k['recommendation']} [{k['citation']}]"))
+        else:
+            candidates.append((2,
+                f"HRV suppressed (z={hrv_z:+.1f}). Consider 10-20 min NSDR/yoga nidra, "
+                f"extend sleep by 30-60 min, avoid alcohol/caffeine today."))
+
+    # --- Rule 4: Training load spike ---
+    if acwr is not None and acwr > ACWR_HIGH:
+        k = knowledge.get("training_load_spike")
+        candidates.append((2, k["recommendation"] if k else
+            "Training load elevated this week. Replace one session with active recovery (Zone 1-2, mobility, yoga)."))
+
+    # --- Rule 5: Stress elevated ---
+    if stress_z is not None and stress_z > 1.0:
+        candidates.append((3,
+            f"Stress elevated (z={stress_z:+.1f}). Protect recovery: limit stimulants, "
+            f"add a 10-min breathing exercise or walk."))
+
+    # --- Rule 6: Alcohol today ---
+    alcohol_flags = [f for f in (note_flags or []) if f[1] == "alcohol" and f[0] == str(target_date)]
+    if alcohol_flags:
+        k = knowledge.get("alcohol_sleep_disruption")
+        candidates.append((3, f"If drinking tonight: {k['recommendation']}" if k else
+            "If drinking tonight: stop 3-4h before bed to minimize REM suppression. Hydrate before sleep."))
+
+    # --- Rule 7: Training opportunity (Good/Optimal + ACWR not elevated) ---
+    if label in ("Good", "Optimal"):
+        if acwr is None or acwr <= ACWR_HIGH:
+            k = knowledge.get("hrv_above_baseline")
+            cog = k["cognitive_impact"] if k else "Good day for complex cognitive work or skill acquisition."
+            candidates.append((4,
+                f"Well-recovered today. Good day for high-intensity training or challenging cognitive tasks. {cog}"))
+        if acwr is not None and acwr < ACWR_LOW:
+            candidates.append((5,
+                "Training load below recent capacity. Consider increasing intensity or volume if goals support it."))
+
+    # --- Rule 8: Correlation-backed recommendations ---
+    if correlations:
+        for behavior_key, entries in correlations.items():
+            # Only recommend if behavior was present yesterday
+            yesterday_str = str(target_date - timedelta(days=1))
+            behavior_active = any(
+                f[1] == behavior_key and f[0] == yesterday_str
+                for f in (note_flags or []))
+            if not behavior_active:
+                continue
+            for entry in entries:
+                if abs(entry["r"]) >= 0.30 and entry["n"] >= 50:
+                    direction = "lower" if entry["r"] < 0 else "higher"
+                    candidates.append((3,
+                        f"Your data: {entry['label']} yesterday is associated with {direction} "
+                        f"{entry['outcome']} today (r={entry['r']:+.2f}, n={entry['n']}). "
+                        f"Plan accordingly."))
+                    break  # One per behavior
+
+    # --- Rule 9: Label-based framing (fallback context) ---
+    if label in ("Poor", "Low") and not any(p <= 2 for p, _ in candidates):
+        candidates.append((1,
+            f"Today ({day_name}): prioritize rest and recovery. Light walking or NSDR only. "
+            f"Cognitive capacity likely reduced; defer important decisions if possible."))
+    elif label == "Fair" and not any(p <= 3 for p, _ in candidates):
+        candidates.append((4,
+            f"Today ({day_name}): moderate activity fine, avoid maximal efforts. "
+            f"Plan demanding mental work for peak hours."))
+
+    # --- Recovery time multiplier (profile-aware) ---
     if profile:
         from profile_loader import get_accommodations
         accom = get_accommodations(profile)
         recovery_mult = accom.get("analysis_adjustments", {}).get("recovery_time_multiplier")
-        if recovery_mult and recovery_mult > 1.0:
-            if label in ("Poor", "Low", "Fair"):
-                recs.append(
-                    f"Your health profile indicates recovery takes ~{recovery_mult:.0f}x longer "
-                    f"than baseline. Allow extra rest days between intense sessions and don't "
-                    f"push through persistent fatigue."
-                )
+        if recovery_mult and recovery_mult > 1.0 and label in ("Poor", "Low", "Fair"):
+            candidates.append((2,
+                f"Your health profile: recovery takes ~{recovery_mult:.0f}x longer than baseline. "
+                f"Allow extra rest days and don't push through persistent fatigue."))
 
-    # HRV-specific
-    hrv_z = baselines.get("hrv", {}).get("z")
-    if hrv_z is not None and hrv_z < -1.0:
-        k = knowledge.get("nsdr_recovery")
-        if k:
-            recs.append(
-                f"HRV is significantly suppressed. {k['recommendation']} "
-                f"{k['cognitive_impact']} [{k['citation']}]"
-            )
-        else:
-            recs.append(
-                "HRV is significantly suppressed. Consider: 10-20 min NSDR/yoga nidra "
-                "(shown to restore dopamine and reduce cortisol, Huberman), extend sleep "
-                "by 30-60 min, and avoid alcohol/caffeine today."
-            )
+    # Sort by priority, extract text
+    candidates.sort(key=lambda x: x[0])
+    recs = [text for _, text in candidates]
 
     # --- Profile-aware filtering (3 layers) ---
     if profile:
@@ -4174,6 +4505,9 @@ def run_analysis(wb, target_date, cloud=False):
     except Exception:
         pass  # SQLite unavailable — entries retain JSON-embedded data if any
 
+    # Load behavioral correlations for personal validation annotations
+    correlations = load_significant_correlations()
+
     # Read all data
     if cloud:
         data = read_all_data_from_supabase()
@@ -4290,7 +4624,8 @@ def run_analysis(wb, target_date, cloud=False):
         by_date_sleep, sessions_by_date_map, target_date,
         knowledge=knowledge, sleep_analysis_text=sleep_analysis_text,
         deep_trend=deep_trend, rem_trend=rem_trend, profile=profile,
-        nutrition_by_date=nutrition_by_date, oa_by_date=oa_by_date
+        nutrition_by_date=nutrition_by_date, oa_by_date=oa_by_date,
+        correlations=correlations
     )
 
     # Dynamic knowledge triggers — auto-fires insights for any knowledge entry
@@ -4312,7 +4647,8 @@ def run_analysis(wb, target_date, cloud=False):
     recommendations = generate_recommendations(
         score, label, sleep_debt, acwr, note_flags, baselines, target_date,
         knowledge=knowledge, profile=profile,
-        sessions_by_date=sessions_by_date_map
+        sessions_by_date=sessions_by_date_map,
+        correlations=correlations
     )
 
     # Inject illness detection results into insights + recommendations
@@ -4623,6 +4959,509 @@ def run_validation(wb, target_date):
     return log_entry
 
 
+# ---------------------------------------------------------------------------
+# Historical Reanalysis
+# ---------------------------------------------------------------------------
+
+def run_reanalysis(wb, start_date=None, skip_confirm=False):
+    """Rerun analysis on all historical dates using current methodology.
+
+    Reads all data once, computes analysis for each date in chronological order
+    (oldest first so baselines build correctly), then batch-writes results.
+    Preserves manual columns H (Cognition) and I (Cognition Notes) on OA tab,
+    and column G (Notes) on Sleep tab.
+    """
+    import gspread
+    import time as _time
+    from sleep_analysis import generate_sleep_analysis, load_circadian_profile
+    from utils import get_scoring_thresholds as _get_scoring_thresholds
+
+    print("\n=== HISTORICAL REANALYSIS ===\n")
+
+    # ------------------------------------------------------------------
+    # Phase A: Bulk read (all data in ~8 API calls)
+    # ------------------------------------------------------------------
+    print("Phase A: Reading all data...")
+    data = read_all_data(wb)
+    by_date_garmin = _rows_by_date(data["garmin"])
+    by_date_sleep = _rows_by_date(data["sleep"])
+    daily_log_by_date = _rows_by_date(data["daily_log"])
+    nutrition_by_date = _rows_by_date(data["nutrition"])
+    sessions_by_date_map = _sessions_by_date(data["session_log"])
+
+    # Read Overall Analysis tab — extract dates and preserve manual columns H-I
+    oa_rows = _read_tab_as_dicts(wb, "Overall Analysis")
+    manual_data = {}  # {date_str: (cognition_val, cognition_notes)}
+    oa_dates = set()
+    for row in oa_rows:
+        d = row.get("Date", "")
+        if d and d.startswith("20"):
+            oa_dates.add(d)
+            h_val = row.get("Cognition (1-10)", "")
+            i_val = row.get("Cognition Notes", "")
+            manual_data[d] = (h_val, i_val)
+
+    # Read Sleep tab — build row index for targeted column updates
+    sleep_sheet = wb.worksheet("Sleep")
+    sleep_all = sleep_sheet.get_all_values()
+    sleep_headers = sleep_all[0] if sleep_all else []
+    sleep_row_index = {}  # {date_str: row_number (1-based)}
+    sleep_dates = set()
+    date_col_idx = sleep_headers.index("Date") if "Date" in sleep_headers else 1
+    for i, row in enumerate(sleep_all[1:], start=2):
+        if len(row) > date_col_idx:
+            d = row[date_col_idx]
+            if d and d.startswith("20"):
+                sleep_row_index[d] = i
+                sleep_dates.add(d)
+
+    # Load knowledge base, profile, thresholds once
+    knowledge = load_health_knowledge()
+    profile = load_profile()
+    knowledge = merge_knowledge(knowledge, profile)
+    scoring_t = _get_scoring_thresholds()
+    circ = load_circadian_profile()
+
+    # Hydrate KB with personal validations from SQLite
+    try:
+        from sqlite_backup import get_db as _hydrate_db, load_kb_validations
+        _hconn = _hydrate_db()
+        _validations = load_kb_validations(_hconn)
+        for _kb_id, _val_data in _validations.items():
+            if _kb_id in knowledge:
+                knowledge[_kb_id]["personal_validation"] = _val_data
+    except Exception:
+        pass
+
+    # Load behavioral correlations for personal validation annotations
+    correlations = load_significant_correlations()
+
+    # Determine all dates to process (union of OA and Sleep dates)
+    all_dates = sorted(oa_dates | sleep_dates)
+    if start_date:
+        all_dates = [d for d in all_dates if d >= str(start_date)]
+
+    if not all_dates:
+        print("No dates found to reanalyze.")
+        return
+
+    print(f"  Found {len(all_dates)} dates ({all_dates[0]} to {all_dates[-1]})")
+    if start_date:
+        print(f"  Filtered from {start_date}")
+
+    # Confirmation prompt
+    if not skip_confirm:
+        print(f"\nThis will reanalyze {len(all_dates)} dates and rebuild illness episode history.")
+        print("Manual columns (Cognition H-I, Sleep Notes G) will be preserved.")
+        try:
+            response = input("Proceed? [y/N] ").strip().lower()
+            if response != "y":
+                print("Aborted.")
+                return
+        except EOFError:
+            print("Non-interactive mode — use --yes to skip confirmation.")
+            return
+
+    # ------------------------------------------------------------------
+    # Phase B: Compute all results in memory (0 API calls)
+    # ------------------------------------------------------------------
+    print("\nPhase B: Computing analysis for all dates...")
+
+    # Clear and rebuild illness state for clean chronological replay
+    try:
+        from sqlite_backup import get_db
+        db = get_db()
+        db.execute("DELETE FROM illness_state")
+        db.execute("DELETE FROM illness_daily_log")
+        db.commit()
+        print("  Cleared illness episode history for rebuild.")
+    except Exception as e:
+        print(f"  Warning: could not clear illness tables: {e}")
+        db = None
+
+    # Progressive oa_by_date — starts empty, filled as we compute
+    oa_by_date = {}
+    oa_results = []     # [{date, day, score, label, ...}, ...]
+    sleep_results = {}  # {date_str: (score, analysis_text, descriptor)}
+
+    for i, date_str in enumerate(all_dates):
+        target_date = date.fromisoformat(date_str)
+
+        # Clear dedup registry per date
+        _hardcoded_kb_ids.clear()
+
+        # Compute baselines (180-day backward lookback)
+        baselines = compute_baselines(by_date_garmin, by_date_sleep, target_date)
+
+        # Sleep context
+        sleep_context, sleep_debt, sleep_trend, deep_trend, rem_trend, debt_night_count = analyze_sleep_context(
+            by_date_sleep, by_date_garmin, target_date, baselines
+        )
+
+        # Training load
+        acwr, training_status, acute_load, chronic_load = compute_acwr(
+            sessions_by_date_map, target_date
+        )
+
+        # Illness detection (replays episode creation chronologically)
+        illness = detect_illness(baselines, by_date_sleep, daily_log_by_date,
+                                 acwr, target_date,
+                                 by_date_garmin=by_date_garmin, conn=db)
+
+        # Notes flags
+        note_flags = parse_notes_for_flags(daily_log_by_date, nutrition_by_date,
+                                           target_date, days_back=2,
+                                           sessions_by_date=sessions_by_date_map,
+                                           sleep_by_date=by_date_sleep)
+
+        # Readiness score
+        score, label, components, confidence = compute_readiness(
+            baselines, (sleep_context, sleep_debt, sleep_trend, debt_night_count),
+            daily_log_by_date, target_date, profile=profile
+        )
+
+        # Data quality
+        data_quality, analysis_quality = _assess_data_quality(
+            baselines, components, by_date_garmin, by_date_sleep, target_date
+        )
+        n_present = len(data_quality["present"])
+        n_total = n_present + len(data_quality["missing"])
+        if data_quality["missing"]:
+            data_quality_text = f"{n_present}/{n_total}, no {', '.join(data_quality['missing'])}"
+        else:
+            data_quality_text = "Full"
+        quality_flags_text = " | ".join(data_quality["flags"]) if data_quality["flags"] else ""
+
+        # Sleep analysis text for insights
+        sleep_row = by_date_sleep.get(date_str)
+        sleep_analysis_text = sleep_row.get("Sleep Analysis", "") if sleep_row else ""
+
+        # Insights (with progressive oa_by_date for orthosomnia safeguard)
+        insights = generate_insights(
+            baselines, sleep_debt, sleep_trend, acwr, training_status,
+            note_flags, daily_log_by_date, by_date_garmin,
+            by_date_sleep, sessions_by_date_map, target_date,
+            knowledge=knowledge, sleep_analysis_text=sleep_analysis_text,
+            deep_trend=deep_trend, rem_trend=rem_trend, profile=profile,
+            nutrition_by_date=nutrition_by_date, oa_by_date=oa_by_date,
+            correlations=correlations
+        )
+
+        # Knowledge triggers
+        data_sources = {
+            "garmin": by_date_garmin, "sleep": by_date_sleep,
+            "daily_log": daily_log_by_date, "nutrition": nutrition_by_date,
+        }
+        kb_triggered = scan_knowledge_triggers(
+            knowledge, data_sources, sessions_by_date_map, target_date
+        )
+        insights.extend(kb_triggered)
+
+        # Recommendations
+        recommendations = generate_recommendations(
+            score, label, sleep_debt, acwr, note_flags, baselines, target_date,
+            knowledge=knowledge, profile=profile,
+            sessions_by_date=sessions_by_date_map,
+            correlations=correlations
+        )
+
+        # Inject illness results
+        illness_label = illness["illness_label"]
+        if illness_label != "normal":
+            signal_summary = "; ".join(s.split("[")[0].strip() for s in illness["signals"][:3])
+            if illness_label in ("illness_ongoing", "recovering"):
+                illness_insight = (f"illness episode active ({illness_label.replace('_', ' ')}): "
+                                   f"low readiness scores are expected during recovery")
+            else:
+                illness_insight = (f"possible illness indicator: "
+                                   f"{illness_label.replace('_', ' ')} "
+                                   f"(score {illness['illness_score']:.0f}/14): {signal_summary}")
+            insights.insert(0, illness_insight)
+            if illness["recommendation"]:
+                recommendations.insert(0, illness["recommendation"])
+
+        # Cognitive assessment
+        cognitive_assessment = assess_cognitive_state(
+            baselines, sleep_debt, note_flags, by_date_sleep,
+            sessions_by_date_map, target_date, knowledge=knowledge,
+            profile=profile
+        )
+
+        # Distill for spreadsheet
+        short_insights = [_polish_text(t) for t in _distill_insights(insights)]
+        short_recs = [_polish_text(r) for r in _distill_recommendations(recommendations)]
+        insights_text = "\n".join(f"- {t}" for t in short_insights) if short_insights else "No notable findings."
+        recs_text = "\n".join(f"- {r}" for r in short_recs) if short_recs else "Maintain current routine."
+
+        # Store OA result
+        day_str = date_to_day(date_str)
+        oa_results.append({
+            "date": date_str,
+            "day": day_str,
+            "score": score,
+            "label": label,
+            "confidence": confidence,
+            "cognitive_assessment": cognitive_assessment,
+            "sleep_context": sleep_context,
+            "insights_text": insights_text,
+            "recs_text": recs_text,
+            "training_status": training_status,
+            "data_quality_text": data_quality_text,
+            "quality_flags_text": quality_flags_text,
+        })
+
+        # Update progressive oa_by_date for next iteration's orthosomnia check
+        oa_by_date[date_str] = {
+            "Readiness Score (1-10)": score,
+            "Readiness Label": label,
+            "Date": date_str,
+        }
+
+        # Regenerate sleep analysis if sleep data exists for this date
+        if sleep_row and date_str in sleep_row_index:
+            # Build data dict from sleep row for generate_sleep_analysis
+            sleep_data = {}
+            for key, header in [
+                ("sleep_duration", "Total Sleep (hrs)"),
+                ("sleep_score", "Garmin Sleep Score"),
+                ("sleep_deep_pct", "Deep %"),
+                ("sleep_rem_pct", "REM %"),
+                ("hrv", "Overnight HRV (ms)"),
+                ("sleep_avg_respiration", "Avg Respiration"),
+                ("sleep_awakenings", "Awakenings"),
+                ("sleep_cycles", "Sleep Cycles"),
+                ("sleep_body_battery_gained", "Body Battery Gained"),
+                ("sleep_deep_min", "Deep Sleep (min)"),
+                ("sleep_rem_min", "REM (min)"),
+                ("sleep_light_min", "Light Sleep (min)"),
+                ("sleep_awake_min", "Awake During Sleep (min)"),
+                ("sleep_time_in_bed", "Time in Bed (hrs)"),
+                ("sleep_bedtime", "Bedtime"),
+            ]:
+                sleep_data[key] = sleep_row.get(header, "")
+            # Build sleep_context dict for enriched sleep analysis
+            sa_context = {
+                "sleep_debt": sleep_debt,
+                "deep_trend": deep_trend,
+                "rem_trend": rem_trend,
+                "debt_night_count": debt_night_count,
+            }
+            new_score, new_analysis, new_descriptor = generate_sleep_analysis(
+                sleep_data, thresholds=scoring_t, circadian_profile=circ,
+                knowledge=knowledge, profile=profile,
+                sleep_context=sa_context, behavior_flags=note_flags
+            )
+            sleep_results[date_str] = (new_score, new_analysis, new_descriptor)
+
+        # Progress reporting
+        if (i + 1) % 25 == 0 or (i + 1) == len(all_dates):
+            print(f"  Computed {i + 1}/{len(all_dates)} dates...")
+
+    if db:
+        db.commit()  # commit illness episode rebuilds
+
+    # ------------------------------------------------------------------
+    # Phase C: Batch write to Sheets
+    # ------------------------------------------------------------------
+    print(f"\nPhase C: Writing {len(oa_results)} dates to Sheets...")
+
+    # --- C1: Overall Analysis tab ---
+    _write_analysis_batch(wb, oa_results, manual_data)
+
+    # --- C2: Sleep tab (columns D, F, Y only) ---
+    if sleep_results:
+        _write_sleep_batch(sleep_sheet, sleep_row_index, sleep_results)
+
+    # --- C3: SQLite bulk upsert ---
+    print("  Syncing to SQLite...")
+    try:
+        from sqlite_backup import get_db, upsert_overall_analysis
+        db = get_db()
+        for r in oa_results:
+            upsert_overall_analysis(db, r["date"], {
+                "readiness_score": r["score"],
+                "readiness_label": r["label"],
+                "confidence": r["confidence"],
+                "cognitive_energy_assessment": r["cognitive_assessment"],
+                "sleep_context": r["sleep_context"],
+                "key_insights": r["insights_text"],
+                "recommendations": r["recs_text"],
+                "training_load_status": r["training_status"],
+                "data_quality": r["data_quality_text"],
+                "quality_flags": r["quality_flags_text"],
+            })
+        db.commit()
+        print(f"  SQLite: upserted {len(oa_results)} rows.")
+    except Exception as e:
+        print(f"  SQLite sync error: {e}")
+
+    # ------------------------------------------------------------------
+    # Phase D: Finalize
+    # ------------------------------------------------------------------
+    print("\nPhase D: Finalizing (sort, banding, formatting)...")
+
+    oa_sheet = wb.worksheet("Overall Analysis")
+
+    # Sort by date descending
+    _sort_analysis_tab(oa_sheet)
+
+    # Weekly banding
+    try:
+        from setup_overall_analysis import apply_weekly_banding
+        apply_weekly_banding(wb, oa_sheet)
+    except Exception as e:
+        print(f"  Warning: banding failed: {e}")
+
+    # Verify + repair conditional formatting
+    try:
+        from verify_formatting import verify_tab_formatting, repair_tab_formatting
+        passed, _ = verify_tab_formatting(wb, "Overall Analysis")
+        if not passed:
+            repair_tab_formatting(wb, "Overall Analysis")
+            print("  Repaired OA formatting.")
+        else:
+            print("  OA formatting: PASS")
+    except Exception as e:
+        print(f"  Warning: formatting verify failed: {e}")
+
+    # Auto-resize rows
+    try:
+        from sheets_formatting import auto_resize_rows
+        auto_resize_rows(wb, "Overall Analysis")
+    except Exception:
+        pass
+
+    # Export dashboard
+    try:
+        from dashboard.export_dashboard_data import export as export_dashboard
+        export_dashboard()
+        print("  Dashboard exported.")
+    except Exception as e:
+        print(f"  Warning: dashboard export failed: {e}")
+
+    print(f"\n=== Reanalysis complete: {len(oa_results)} OA dates, "
+          f"{len(sleep_results)} sleep dates updated ===")
+
+
+def _write_analysis_batch(wb, results, manual_data):
+    """Batch-write all reanalysis results to the Overall Analysis tab.
+
+    Writes the full grid with RAW mode, then fixes numeric columns C and H
+    with USER_ENTERED so gradient formatting renders correctly.
+    """
+    import gspread
+
+    sheet = wb.worksheet("Overall Analysis")
+
+    # Build complete row set sorted by date descending
+    rows = []
+    for r in results:
+        h_val, i_val = manual_data.get(r["date"], ("", ""))
+        row = [
+            r["day"],                  # A  Day
+            r["date"],                 # B  Date
+            r["score"] if r["score"] is not None else "",  # C  Readiness Score
+            r["label"],                # D  Readiness Label
+            r["confidence"],           # E  Confidence
+            r["cognitive_assessment"], # F  Cognitive/Energy Assessment
+            r["sleep_context"],        # G  Sleep Context
+            h_val,                     # H  Cognition (manual — preserved)
+            i_val,                     # I  Cognition Notes (manual — preserved)
+            r["insights_text"],        # J  Key Insights
+            r["recs_text"],            # K  Recommendations
+            r["training_status"],      # L  Training Load Status
+            r["data_quality_text"],    # M  Data Quality
+            r["quality_flags_text"],   # N  Quality Flags
+        ]
+        rows.append(row)
+
+    # Sort descending by date (column B = index 1)
+    rows.sort(key=lambda r: r[1], reverse=True)
+
+    # Build grid with header
+    header = list(OVERALL_ANALYSIS_HEADERS)
+    all_data = [header] + rows
+    last_row = len(all_data)
+
+    # Single batch write with RAW (preserves date/time strings)
+    print(f"  Writing {len(rows)} rows to Overall Analysis (RAW)...")
+    sheet.update(range_name=f"A1:N{last_row}", values=all_data,
+                 value_input_option="RAW")
+
+    # Fix column C (Readiness Score) to numeric for gradient formatting
+    score_cells = []
+    for i, row in enumerate(rows, start=2):  # row 2 onward (1-indexed, skip header)
+        val = row[2]  # Column C
+        if val != "" and val is not None:
+            try:
+                score_cells.append(gspread.Cell(row=i, col=3, value=float(val)))
+            except (ValueError, TypeError):
+                pass
+    if score_cells:
+        sheet.update_cells(score_cells, value_input_option="USER_ENTERED")
+        print(f"  Fixed {len(score_cells)} score cells to numeric.")
+
+    # Fix column H (Cognition) to numeric for gradient formatting
+    cog_cells = []
+    for i, row in enumerate(rows, start=2):
+        val = row[7]  # Column H
+        if val != "" and val is not None:
+            try:
+                cog_cells.append(gspread.Cell(row=i, col=8, value=float(val)))
+            except (ValueError, TypeError):
+                pass
+    if cog_cells:
+        sheet.update_cells(cog_cells, value_input_option="USER_ENTERED")
+        print(f"  Fixed {len(cog_cells)} cognition cells to numeric.")
+
+    # Clear any leftover rows below the new data
+    try:
+        total_rows = sheet.row_count
+        if total_rows > last_row:
+            clear_range = f"A{last_row + 1}:N{total_rows}"
+            sheet.batch_clear([clear_range])
+    except Exception:
+        pass
+
+
+def _write_sleep_batch(sleep_sheet, sleep_row_index, sleep_results):
+    """Batch-write regenerated sleep analysis to Sleep tab columns D, F, Y only.
+
+    Performs surgical column updates — never touches other columns including
+    G (Notes), raw Garmin data, or variability columns.
+    """
+    import gspread
+
+    # Build cell lists for each column
+    d_cells = []  # Column D (Sleep Analysis Score) — numeric, USER_ENTERED
+    f_cells = []  # Column F (Sleep Analysis text) — RAW
+    y_cells = []  # Column Y (Sleep Descriptor) — RAW
+
+    for date_str, (score, analysis_text, descriptor) in sleep_results.items():
+        row_num = sleep_row_index.get(date_str)
+        if not row_num:
+            continue
+
+        if score is not None:
+            d_cells.append(gspread.Cell(row=row_num, col=4, value=float(score)))
+
+        f_cells.append(gspread.Cell(row=row_num, col=6, value=analysis_text or ""))
+        y_cells.append(gspread.Cell(row=row_num, col=25, value=descriptor or ""))
+
+    # Write each column batch
+    if d_cells:
+        sleep_sheet.update_cells(d_cells, value_input_option="USER_ENTERED")
+        print(f"  Sleep col D (score): updated {len(d_cells)} cells.")
+
+    if f_cells:
+        sleep_sheet.update_cells(f_cells, value_input_option="RAW")
+        print(f"  Sleep col F (analysis): updated {len(f_cells)} cells.")
+
+    if y_cells:
+        sleep_sheet.update_cells(y_cells, value_input_option="RAW")
+        print(f"  Sleep col Y (descriptor): updated {len(y_cells)} cells.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Overall health analysis engine.")
     parser.add_argument("--date", help="Analyze specific date (YYYY-MM-DD)")
@@ -4630,6 +5469,12 @@ def main():
     parser.add_argument("--week", action="store_true", help="7-day summary")
     parser.add_argument("--validate", action="store_true",
                         help="Run prediction validation (28-day check)")
+    parser.add_argument("--reanalyze", action="store_true",
+                        help="Rerun analysis on all historical dates with current methodology")
+    parser.add_argument("--reanalyze-from", metavar="YYYY-MM-DD",
+                        help="Reanalyze from this date forward (default: all)")
+    parser.add_argument("--yes", action="store_true",
+                        help="Skip confirmation prompt for --reanalyze")
     parser.add_argument("--cloud", action="store_true",
                         help="Use Supabase instead of Google Sheets (for CI/cloud)")
     parser.add_argument("--migrate-validations", action="store_true",
@@ -4702,7 +5547,10 @@ def main():
             print("[cloud] Results written to Supabase.")
     else:
         wb = get_workbook()
-        if args.validate:
+        if args.reanalyze:
+            start = date.fromisoformat(args.reanalyze_from) if args.reanalyze_from else None
+            run_reanalysis(wb, start_date=start, skip_confirm=args.yes)
+        elif args.validate:
             run_validation(wb, target_date)
         elif args.week:
             run_week_summary(wb, target_date)
