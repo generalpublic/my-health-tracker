@@ -610,6 +610,7 @@
   background: var(--bg);
   z-index: 10;
   position: relative;
+  padding-top: 48px;
 }
 
 .cal-top-bar {
