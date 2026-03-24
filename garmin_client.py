@@ -216,10 +216,15 @@ def get_garmin_data(today, yesterday):
     client = Garmin(GARMIN_EMAIL, garmin_password)
     try:
         client.login(tokenstore=tokenstore_path)
-    except Exception as e:
-        raise RuntimeError(f"Garmin Connect login failed: {e}") from e
+        print("Connected successfully (cached tokens).")
+    except Exception:
+        # Token cache missing or expired — fall back to credential auth
+        try:
+            client.login()
+            print("Connected successfully (fresh login).")
+        except Exception as e:
+            raise RuntimeError(f"Garmin Connect login failed: {e}") from e
     client.garth.dump(tokenstore_path)
-    print("Connected successfully.")
 
     t = today.isoformat()
     y = yesterday.isoformat()
