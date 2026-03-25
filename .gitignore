@@ -16,8 +16,9 @@ dashboard/dashboard_data.json
 profiles/
 Priv*/
 
-# Garmin OAuth token cache
+# Garmin OAuth token cache + rate limit circuit breaker
 .garth/
+.garmin_rate_limited
 
 # Config files with secrets (both app trees)
 app_mockups/config.js

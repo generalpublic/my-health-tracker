@@ -12,10 +12,9 @@ name: Garmin Sync
 
 on:
   schedule:
-    # 12:30 AM ET (05:30 UTC) — prep-day: sync yesterday's finalized data
+    # 12:30 AM ET (05:30 UTC) — sync yesterday's finalized data
+    # (11:30 AM removed — local PC handles sleep notify with full context)
     - cron: '30 5 * * *'
-    # 11:30 AM ET (16:30 UTC) — sleep analysis: morning health briefing
-    - cron: '30 16 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -32,6 +31,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    if: false  # PAUSED: Garmin 429 rate limit recovery — re-enable after token cache seeded
     timeout-minutes: 10
 
     env:

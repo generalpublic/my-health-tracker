@@ -10,12 +10,43 @@ from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
 import os
+import time
 
 from utils import _safe_float  # noqa: F401 — used by callers
 
 load_dotenv(Path(__file__).parent / ".env")
 
 GARMIN_EMAIL = os.getenv("GARMIN_EMAIL")
+
+# --- Circuit breaker: prevent retry storms after Garmin 429 ---
+RATE_LIMIT_LOCKFILE = Path(__file__).parent / ".garmin_rate_limited"
+RATE_LIMIT_COOLDOWN = 7200  # 2 hours
+
+
+def _check_rate_limit_circuit():
+    """Fail fast if recently rate-limited. Prevents retry storms."""
+    if RATE_LIMIT_LOCKFILE.exists():
+        try:
+            last_blocked = float(RATE_LIMIT_LOCKFILE.read_text().strip())
+        except (ValueError, OSError):
+            RATE_LIMIT_LOCKFILE.unlink(missing_ok=True)
+            return
+        elapsed = time.time() - last_blocked
+        if elapsed < RATE_LIMIT_COOLDOWN:
+            remaining = int((RATE_LIMIT_COOLDOWN - elapsed) / 60)
+            raise RuntimeError(
+                f"Garmin login blocked (circuit breaker). "
+                f"Rate-limited {int(elapsed / 60)} min ago. "
+                f"Wait ~{remaining} more min. "
+                f"Delete .garmin_rate_limited to force retry."
+            )
+        else:
+            RATE_LIMIT_LOCKFILE.unlink(missing_ok=True)
+
+
+def _set_rate_limit_circuit():
+    """Record a 429 hit — blocks further attempts for RATE_LIMIT_COOLDOWN."""
+    RATE_LIMIT_LOCKFILE.write_text(str(time.time()))
 
 # --- Data key constants ---
 
@@ -203,6 +234,8 @@ def get_garmin_data(today, yesterday):
     Authenticates, then fetches HRV, sleep, daily stats, body battery, and activities.
     Returns a flat dict with all metrics.
     """
+    _check_rate_limit_circuit()  # Fail fast if recently rate-limited
+
     print("Connecting to Garmin Connect...")
     import keyring
     garmin_password = keyring.get_password("garmin_connect", GARMIN_EMAIL)
@@ -223,6 +256,13 @@ def get_garmin_data(today, yesterday):
             client.login()
             print("Connected successfully (fresh login).")
         except Exception as e:
+            if "429" in str(e):
+                _set_rate_limit_circuit()
+                raise RuntimeError(
+                    "Garmin SSO rate limit (429). Circuit breaker engaged for 2 hours. "
+                    "All sync attempts will fail fast until cooldown expires. "
+                    "Do NOT retry manually — each attempt resets the cooldown."
+                ) from e
             raise RuntimeError(f"Garmin Connect login failed: {e}") from e
     client.garth.dump(tokenstore_path)
 

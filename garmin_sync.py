@@ -60,6 +60,8 @@ def _fetch_via_adapter(target_date, yesterday=None):
     adapter.authenticate()
     return adapter.fetch_data(target_date, yesterday)
 from sleep_analysis import generate_sleep_analysis, compute_independent_score, _parse_bedtime_hour, load_circadian_profile  # noqa: F401
+from overall_analysis import load_health_knowledge
+from profile_loader import load_profile as _load_profile
 from utils import get_scoring_thresholds as _get_scoring_thresholds
 from notifications import send_pushover_notification, compose_briefing_notification
 from sheets_formatting import (
@@ -159,7 +161,11 @@ def sync_single_date(wb, sheet, target_date, data):
         try:
             scoring_t = _get_scoring_thresholds()
             circ = load_circadian_profile()
-            score, analysis_text, descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
+            knowledge = load_health_knowledge()
+            profile = _load_profile()
+            score, analysis_text, descriptor = generate_sleep_analysis(
+                data, thresholds=scoring_t, circadian_profile=circ,
+                knowledge=knowledge, profile=profile)
             if score is not None:
                 data["sleep_analysis_score"] = score
             if analysis_text:
@@ -274,7 +280,11 @@ def sleep_notify_mode():
     write_to_sleep_log(wb, today, data)
     scoring_t = _get_scoring_thresholds()
     circ = load_circadian_profile()
-    ind_score, analysis, _descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
+    knowledge = load_health_knowledge()
+    profile = _load_profile()
+    ind_score, analysis, _descriptor = generate_sleep_analysis(
+        data, thresholds=scoring_t, circadian_profile=circ,
+        knowledge=knowledge, profile=profile)
 
     # Inject analysis score into data dict before database writes
     data["sleep_analysis_score"] = ind_score
@@ -422,7 +432,11 @@ def migrate_sleep_analysis_col():
         data = {k: _old_cell(k) for k in METRIC_HEADER_MAP}
         scoring_t = _get_scoring_thresholds()
         circ = load_circadian_profile()
-        ind_score, analysis, _descriptor = generate_sleep_analysis(data, thresholds=scoring_t, circadian_profile=circ)
+        knowledge = load_health_knowledge()
+        profile = _load_profile()
+        ind_score, analysis, _descriptor = generate_sleep_analysis(
+            data, thresholds=scoring_t, circadian_profile=circ,
+            knowledge=knowledge, profile=profile)
 
         notes = ""
         if notes_idx is not None and notes_idx < len(old_row):
@@ -846,39 +860,84 @@ def prep_day(target_date=None):
 
     Runs at 12:05 AM via Task Scheduler. Two phases:
       Phase 1: Full sync of the previous day's complete data (all tabs + analysis)
-      Phase 2: Create empty Nutrition + Daily Log skeleton rows for manual entry
+               Non-fatal — if Garmin is down, Phase 2 still runs.
+      Phase 2: Create empty skeleton rows for manual entry (ALWAYS runs).
+               Writes to Sheets + Supabase so both web UI and spreadsheet are ready.
     """
     if target_date is None:
         target_date = date.today()
 
-    # Phase 1: Sync yesterday's finalized data
+    # Phase 1: Try to sync yesterday — non-fatal if Garmin is down
     yesterday = target_date - timedelta(days=1)
+    phase1_ok = True
     print(f"\n=== Phase 1: Syncing finalized data for {yesterday} ===")
-    _run_full_sync(yesterday, do_backfill=True)
+    try:
+        _run_full_sync(yesterday, do_backfill=True)
+    except Exception as e:
+        phase1_ok = False
+        print(f"  Phase 1 failed (Garmin may be unavailable): {e}")
+        print("  Continuing to Phase 2 — manual entry rows will still be created.")
 
-    # Phase 2: Create empty rows for today
+    # Phase 2: ALWAYS create skeleton rows for today (never gated by Phase 1)
     print(f"\n=== Phase 2: Prepping empty rows for {target_date} ===")
     from reformat_style import apply_weekly_banding_to_tab
     from utils import load_user_config
     _cfg = load_user_config()
     _features = _cfg.get("features", {})
     wb = get_workbook()
+
+    # --- Sheets skeleton rows ---
     if _features.get("nutrition", True):
         write_to_nutrition_log(wb, target_date, {})  # Empty data -> no calorie values, just skeleton
         sort_sheet_by_date_desc(wb, "Nutrition")
     if _features.get("daily_log", True):
         write_to_daily_log(wb, target_date)
         sort_sheet_by_date_desc(wb, "Daily Log")
+    # Overall Analysis skeleton (empty row with Day + Date, manual Cognition cols ready)
+    try:
+        oa_sheet = wb.worksheet("Overall Analysis")
+        oa_dates = oa_sheet.col_values(2)  # Date column B
+        date_str = str(target_date)
+        if date_str not in oa_dates:
+            from overall_analysis import date_to_day
+            day_str = date_to_day(date_str)
+            # A=Day, B=Date, C-G=empty auto, H-I=empty manual, J-N=empty auto
+            oa_row = [day_str, date_str] + [""] * 12
+            oa_sheet.append_row(oa_row, value_input_option="RAW")
+            print(f"  Overall Analysis: skeleton row created for {date_str}")
+    except Exception as e:
+        print(f"  Overall Analysis skeleton failed (non-fatal): {e}")
+
+    # --- Banding ---
     if _features.get("nutrition", True):
         apply_weekly_banding_to_tab(wb, "Nutrition")
     if _features.get("daily_log", True):
         apply_weekly_banding_to_tab(wb, "Daily Log")
+    try:
+        apply_weekly_banding_to_tab(wb, "Overall Analysis")
+    except Exception:
+        pass
+
+    # --- Supabase skeleton rows (so PWA has entries immediately) ---
+    try:
+        supa = _init_supabase()
+        if supa is not None:
+            date_str = str(target_date)
+            _supa_upsert_nutrition(supa, date_str, {})
+            _supa_upsert_daily_log(supa, date_str, {})
+            _supa_upsert_overall_analysis(supa, date_str, {})
+            print(f"  Supabase skeleton rows created for {date_str}")
+    except Exception as e:
+        print(f"  Supabase skeleton write failed (non-fatal): {e}")
+
     active = []
     if _features.get("nutrition", True):
         active.append("Nutrition")
     if _features.get("daily_log", True):
         active.append("Daily Log")
-    print(f"Done — {yesterday} synced, {' + '.join(active) or 'no tabs'} rows ready for {target_date}.")
+    active.append("Overall Analysis")
+    status = f"{yesterday} synced" if phase1_ok else f"{yesterday} sync SKIPPED (Garmin unavailable)"
+    print(f"Done — {status}, {' + '.join(active)} rows ready for {target_date}.")
 
 
 def cleanup_nutrition(cutoff_date_str):
