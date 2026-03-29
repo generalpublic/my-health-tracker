@@ -234,7 +234,23 @@ def get_garmin_data(today, yesterday):
     Authenticates, then fetches HRV, sleep, daily stats, body battery, and activities.
     Returns a flat dict with all metrics.
     """
-    _check_rate_limit_circuit()  # Fail fast if recently rate-limited
+    # Check circuit breaker — if garth is rate-limited, skip straight to browser fallback
+    try:
+        _check_rate_limit_circuit()
+    except RuntimeError:
+        print("  Garth rate-limited. Trying browser-based fetch...")
+        try:
+            from garmin_browser_fetch import fetch_via_chrome, parse_browser_data
+            raw = fetch_via_chrome(yesterday.isoformat())
+            data = parse_browser_data(raw, yesterday)
+            print("  Browser fetch successful!")
+            return data
+        except Exception as browser_err:
+            raise RuntimeError(
+                f"Garth is rate-limited and browser fetch failed: {browser_err}\n"
+                f"Ensure Chrome is running with --remote-debugging-port=9222 "
+                f"and logged into Garmin Connect."
+            ) from browser_err
 
     print("Connecting to Garmin Connect...")
     import keyring
@@ -256,14 +272,26 @@ def get_garmin_data(today, yesterday):
             client.login()
             print("Connected successfully (fresh login).")
         except Exception as e:
-            if "429" in str(e):
-                _set_rate_limit_circuit()
+            # Garth auth failed — try browser-based fetch as fallback
+            print(f"  Garth auth failed: {e}")
+            print("  Attempting browser-based fetch via Chrome DevTools...")
+            try:
+                from garmin_browser_fetch import fetch_via_chrome, parse_browser_data
+                raw = fetch_via_chrome(yesterday.isoformat())
+                data = parse_browser_data(raw, yesterday)
+                print("  Browser fetch successful!")
+                return data
+            except Exception as browser_err:
+                print(f"  Browser fetch also failed: {browser_err}")
+                if "429" in str(e):
+                    _set_rate_limit_circuit()
                 raise RuntimeError(
-                    "Garmin SSO rate limit (429). Circuit breaker engaged for 2 hours. "
-                    "All sync attempts will fail fast until cooldown expires. "
-                    "Do NOT retry manually — each attempt resets the cooldown."
+                    f"All Garmin auth methods failed.\n"
+                    f"  Garth: {e}\n"
+                    f"  Browser: {browser_err}\n"
+                    f"Ensure Chrome is running with --remote-debugging-port=9222 "
+                    f"and logged into Garmin Connect."
                 ) from e
-            raise RuntimeError(f"Garmin Connect login failed: {e}") from e
     client.garth.dump(tokenstore_path)
 
     t = today.isoformat()

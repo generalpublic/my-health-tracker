@@ -154,6 +154,9 @@ def _retry_pending_syncs(wb, sheet):
 
 def sync_single_date(wb, sheet, target_date, data):
     """Write one date's data to all tabs. SQLite first, then Sheets with retry queue."""
+    global _supa_client
+    if _supa_client is None:
+        _supa_client = _init_supabase()
     date_str = str(target_date)
 
     # Pre-compute sleep analysis score + text so all stores get it
@@ -601,6 +604,15 @@ def _run_full_sync(target_date, do_backfill=True):
         verify_and_repair(wb)
     except Exception as e:
         print(f"\n  Formatting verification skipped (non-fatal): {e}")
+
+    # Update PWA sync timestamp so the phone app knows data is fresh
+    if _supa_client is not None:
+        try:
+            from datetime import timezone
+            now = datetime.now(timezone.utc).isoformat()
+            _supa_client.table("_meta").upsert({"key": "last_pwa_sync", "value": now}).execute()
+        except Exception as e:
+            print(f"\n  PWA sync timestamp update skipped: {e}")
 
     # Auto-calibration check: run after 14+ days if never calibrated
     try:
