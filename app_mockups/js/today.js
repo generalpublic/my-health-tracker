@@ -284,6 +284,12 @@
 
         const briefing = D.briefing || {};
         const expect = briefing.expect || { level: '', effects: [] };
+        const expectBlock = document.getElementById('expectBlock');
+        if (!expect.level && (!expect.effects || expect.effects.length === 0)) {
+          expectBlock.style.display = 'none';
+        } else {
+          expectBlock.style.display = '';
+        }
         document.getElementById('expectLevel').textContent = expect.level || '';
         const effects = expect.effects || [];
         const effectsHtml = effects.map(e => {
@@ -416,6 +422,7 @@
           stroke="url(#bbGrad)" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" style="--gauge-circumference:${circ}" />`;
+      document.getElementById('bbValue').textContent = bb || 0;
       document.getElementById('bbValue').style.color = bbColor;
 
       document.getElementById('rhrValue').textContent = g.resting_hr;
