@@ -63,6 +63,39 @@ def send_pushover_notification(date_str, ind_score, analysis):
         print(f"  Pushover: could not send notification: {e}")
 
 
+def send_sync_alert(title, details, priority=0):
+    """Send a pipeline failure alert via Pushover.
+
+    Called when sync encounters errors — keeps user informed without
+    requiring them to check log files.
+    """
+    user_key = os.getenv("PUSHOVER_USER_KEY")
+    api_token = os.getenv("PUSHOVER_API_TOKEN")
+    if not user_key or not api_token:
+        print(f"  [ALERT] {title}: {details} (Pushover not configured)")
+        return
+
+    try:
+        resp = requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data={
+                "token": api_token,
+                "user": user_key,
+                "title": f"Health Tracker: {title}",
+                "message": details[:1024],  # Pushover limit
+                "priority": priority,
+                "sound": "intermission",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            print(f"  Pushover alert sent: {title}")
+        else:
+            print(f"  Pushover alert failed ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        print(f"  Pushover alert could not send: {e}")
+
+
 def _load_top_behavioral_findings(max_findings=2):
     """Load top significant behavioral correlations from SQLite for notification."""
     try:

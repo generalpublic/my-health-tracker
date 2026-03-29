@@ -107,44 +107,112 @@ _supa_client = None
 
 # --- Pending Sync Queue (retry logic for failed Sheets writes) ---
 
-def _queue_pending_sync(date_str):
-    """Add a date to the pending Sheets sync queue."""
-    pending = []
+def _queue_pending_sync(date_str, store="sheets"):
+    """Add a date+store to the unified pending sync queue.
+
+    Args:
+        date_str: Date that failed (YYYY-MM-DD)
+        store: Which store failed. One of: sheets, supabase_garmin,
+               supabase_sleep, supabase_nutrition, supabase_analysis, sqlite
+    """
+    pending = {}
     if PENDING_SYNC_PATH.exists():
         try:
-            pending = json.loads(PENDING_SYNC_PATH.read_text())
+            raw = json.loads(PENDING_SYNC_PATH.read_text())
+            # Migrate old format: list of date strings → new dict format
+            if isinstance(raw, list):
+                pending = {d: {"stores": ["sheets"], "attempts": 0} for d in raw}
+            else:
+                pending = raw
         except (json.JSONDecodeError, OSError):
-            pending = []
-    if date_str not in pending:
-        pending.append(date_str)
-        PENDING_SYNC_PATH.write_text(json.dumps(sorted(set(pending))))
+            pending = {}
+    entry = pending.setdefault(date_str, {"stores": [], "attempts": 0})
+    if store not in entry["stores"]:
+        entry["stores"].append(store)
+    entry["last_attempt"] = datetime.now().isoformat()
+    PENDING_SYNC_PATH.write_text(json.dumps(pending, indent=2))
+
+
+MAX_RETRY_ATTEMPTS = 3
 
 
 def _retry_pending_syncs(wb, sheet):
-    """Retry any queued Sheets writes from previous failed syncs."""
+    """Retry any queued writes from previous failed syncs.
+
+    Handles both Sheets failures (re-fetch + rewrite) and Supabase failures
+    (read from SQLite + push to Supabase).
+    """
     if not PENDING_SYNC_PATH.exists():
         return
     try:
-        pending = json.loads(PENDING_SYNC_PATH.read_text())
+        raw = json.loads(PENDING_SYNC_PATH.read_text())
+        # Migrate old format
+        if isinstance(raw, list):
+            pending = {d: {"stores": ["sheets"], "attempts": 0} for d in raw}
+        else:
+            pending = raw
     except (json.JSONDecodeError, OSError):
         return
     if not pending:
         return
 
-    print(f"\n  Retrying {len(pending)} pending Sheets sync(s): {pending}")
-    still_pending = []
-    for date_str in pending:
-        try:
-            target_date = date.fromisoformat(date_str)
-            data = _fetch_via_adapter(target_date)
-            sync_single_date(wb, sheet, target_date, data)
-            print(f"    -> {date_str} synced successfully (SQLite + Sheets)")
-        except Exception as e:
-            print(f"    -> {date_str} still failing: {e}")
-            still_pending.append(date_str)
+    total = sum(len(v["stores"]) for v in pending.values())
+    print(f"\n  Retrying {total} pending sync(s) across {len(pending)} date(s)")
+    still_pending = {}
+
+    for date_str, entry in pending.items():
+        stores = entry.get("stores", [])
+        attempts = entry.get("attempts", 0) + 1
+
+        if attempts > MAX_RETRY_ATTEMPTS:
+            print(f"    -> {date_str}: exceeded {MAX_RETRY_ATTEMPTS} attempts, giving up on {stores}")
+            try:
+                from notifications import send_sync_alert
+                send_sync_alert(
+                    "Sync retry exhausted",
+                    f"{date_str}: failed {MAX_RETRY_ATTEMPTS} times for {stores}. Manual intervention needed.",
+                )
+            except Exception:
+                pass
+            continue
+
+        remaining_stores = []
+
+        # Retry Sheets failures — need to re-fetch data
+        if "sheets" in stores:
+            try:
+                target_date = date.fromisoformat(date_str)
+                data = _fetch_via_adapter(target_date)
+                sync_single_date(wb, sheet, target_date, data)
+                print(f"    -> {date_str} Sheets synced successfully")
+            except Exception as e:
+                print(f"    -> {date_str} Sheets still failing: {e}")
+                remaining_stores.append("sheets")
+
+        # Retry Supabase failures — read from SQLite (local source of truth)
+        supa_stores = [s for s in stores if s.startswith("supabase_")]
+        if supa_stores and _supa_client is not None:
+            try:
+                from supabase_sync import backfill_supabase_from_sqlite
+                # Map store names to table names
+                tables = [s.replace("supabase_", "") for s in supa_stores]
+                # Map 'analysis' back to 'overall_analysis'
+                tables = ["overall_analysis" if t == "analysis" else t for t in tables]
+                backfill_supabase_from_sqlite(_supa_client, date_str, tables)
+                print(f"    -> {date_str} Supabase backfilled: {tables}")
+            except Exception as e:
+                print(f"    -> {date_str} Supabase backfill failed: {e}")
+                remaining_stores.extend(supa_stores)
+
+        if remaining_stores:
+            still_pending[date_str] = {
+                "stores": remaining_stores,
+                "attempts": attempts,
+                "last_attempt": datetime.now().isoformat(),
+            }
 
     if still_pending:
-        PENDING_SYNC_PATH.write_text(json.dumps(sorted(set(still_pending))))
+        PENDING_SYNC_PATH.write_text(json.dumps(still_pending, indent=2))
     else:
         PENDING_SYNC_PATH.unlink(missing_ok=True)
         print("  All pending syncs completed.")
@@ -152,11 +220,18 @@ def _retry_pending_syncs(wb, sheet):
 
 # --- Core Sync ---
 
-def sync_single_date(wb, sheet, target_date, data):
-    """Write one date's data to all tabs. SQLite first, then Sheets with retry queue."""
+def sync_single_date(wb, sheet, target_date, data, sync_errors=None):
+    """Write one date's data to all tabs. SQLite first, then Sheets with retry queue.
+
+    Args:
+        sync_errors: Optional list to append error strings to. If provided,
+                     errors are collected for a single summary alert at pipeline end.
+    """
     global _supa_client
     if _supa_client is None:
         _supa_client = _init_supabase()
+    if sync_errors is None:
+        sync_errors = []  # standalone callers get a local list
     date_str = str(target_date)
 
     # Pre-compute sleep analysis score + text so all stores get it
@@ -189,6 +264,7 @@ def sync_single_date(wb, sheet, target_date, data):
         db.commit()
     except Exception as e:
         print(f"  SQLite write warning: {e}\n{traceback.format_exc()}")
+        sync_errors.append(f"SQLite write failed for {date_str}: {e}")
 
     # 1b. Supabase -- mirrors SQLite writes, failures never break pipeline
     try:
@@ -197,8 +273,12 @@ def sync_single_date(wb, sheet, target_date, data):
             _supa_upsert_sleep(_supa_client, date_str, data)
             _supa_upsert_nutrition(_supa_client, date_str, data)
             _supa_upsert_session_log(_supa_client, date_str, data)
+        else:
+            sync_errors.append(f"Supabase unavailable for {date_str}: client not initialized")
     except Exception as e:
         print(f"  Supabase write warning: {e}\n{traceback.format_exc()}")
+        sync_errors.append(f"Supabase write failed for {date_str}: {e}")
+        _queue_pending_sync(date_str, "supabase_garmin")
 
     # 1c. Supabase Daily Log -- push existing Sheets habit data so PWA can read it
     try:
@@ -207,6 +287,7 @@ def sync_single_date(wb, sheet, target_date, data):
             push_daily_log_from_sheets(_supa_client, wb, date_str)
     except Exception as e:
         print(f"  Supabase daily_log sync warning: {e}")
+        sync_errors.append(f"Supabase daily_log failed for {date_str}: {e}")
 
     # 2. Google Sheets -- retry-safe, queues on failure
     #    Feature flags control which optional tabs get written
@@ -232,6 +313,7 @@ def sync_single_date(wb, sheet, target_date, data):
         print(f"  Google Sheets write FAILED for {date_str}: {e}\n{traceback.format_exc()}")
         print(f"  Data saved to SQLite. Queuing {date_str} for Sheets retry.")
         _queue_pending_sync(date_str)
+        sync_errors.append(f"Sheets write failed for {date_str}: {e}")
 
 
 # --- Sleep Notify Mode ---
@@ -522,8 +604,10 @@ def _run_full_sync(target_date, do_backfill=True):
 
     _retry_pending_syncs(wb, sheet)
 
+    sync_errors = []  # Collect errors across the entire pipeline run
+
     data = _fetch_via_adapter(target_date)
-    sync_single_date(wb, sheet, target_date, data)
+    sync_single_date(wb, sheet, target_date, data, sync_errors=sync_errors)
 
     # Auto-backfill: check last 7 days for gaps AND stale data
     if do_backfill:
@@ -537,7 +621,7 @@ def _run_full_sync(target_date, do_backfill=True):
             for missed_date in result["all"]:
                 print(f"  Backfilling {missed_date}...")
                 missed_data = _fetch_via_adapter(missed_date)
-                sync_single_date(wb, sheet, missed_date, missed_data)
+                sync_single_date(wb, sheet, missed_date, missed_data, sync_errors=sync_errors)
                 print(f"    -> {missed_date} done (HRV: {missed_data.get('hrv', 'N/A')}, "
                       f"Steps: {missed_data.get('steps', 'N/A')}, "
                       f"Score: {missed_data.get('sleep_score', 'N/A')})")
@@ -588,8 +672,10 @@ def _run_full_sync(target_date, do_backfill=True):
                 })
             except Exception as e:
                 print(f"  Supabase overall_analysis write warning: {e}\n{traceback.format_exc()}")
+                sync_errors.append(f"Supabase analysis write failed: {e}")
     except Exception as e:
         print(f"\n  Overall Analysis skipped (non-fatal): {e}\n{traceback.format_exc()}")
+        sync_errors.append(f"Overall Analysis failed: {e}")
 
     try:
         sys.path.insert(0, str(Path(__file__).parent / "dashboard"))
@@ -598,6 +684,7 @@ def _run_full_sync(target_date, do_backfill=True):
         export_dashboard()
     except Exception as e:
         print(f"\n  Dashboard export skipped (non-fatal): {e}")
+        sync_errors.append(f"Dashboard export failed: {e}")
 
     try:
         from verify_formatting import verify_and_repair
@@ -683,6 +770,63 @@ def _run_full_sync(target_date, do_backfill=True):
                             pass
         except Exception as e:
             print(f"\n  Validation check skipped (non-fatal): {e}")
+
+    # --- Phase 3: Post-write verification ---
+    if _supa_client is not None:
+        try:
+            from supabase_sync import verify_supabase_sync, backfill_supabase_from_sqlite
+            missing = verify_supabase_sync(_supa_client, str(target_date))
+            if missing:
+                print(f"\n  Supabase verification: MISSING tables {missing} for {target_date}")
+                print(f"  Auto-repairing from SQLite...")
+                backfill_supabase_from_sqlite(_supa_client, str(target_date), missing)
+                # Re-verify
+                still_missing = verify_supabase_sync(_supa_client, str(target_date))
+                if still_missing:
+                    sync_errors.append(f"Supabase still missing {still_missing} after auto-repair")
+                else:
+                    print(f"  Auto-repair successful — all tables verified.")
+            else:
+                print(f"\n  Supabase verification: OK (garmin, sleep, overall_analysis)")
+        except Exception as e:
+            print(f"\n  Supabase verification skipped: {e}")
+            sync_errors.append(f"Supabase verification failed: {e}")
+
+    # --- Phase 5: Write sync status to Supabase _meta ---
+    if _supa_client is not None:
+        try:
+            from datetime import timezone
+            now_iso = datetime.now(timezone.utc).isoformat()
+            _supa_client.table("_meta").upsert({
+                "key": "last_sync_status",
+                "value": json.dumps({
+                    "date": str(target_date),
+                    "timestamp": now_iso,
+                    "success": len(sync_errors) == 0,
+                    "errors": sync_errors[:10],  # cap at 10 to avoid huge payloads
+                }),
+            }).execute()
+            _supa_client.table("_meta").upsert({
+                "key": "last_pwa_sync",
+                "value": now_iso,
+            }).execute()
+        except Exception as e:
+            print(f"\n  Sync status write skipped: {e}")
+
+    # --- Phase 1D: Pipeline summary alert ---
+    if sync_errors:
+        print(f"\n  *** SYNC ERRORS ({len(sync_errors)}): ***")
+        for err in sync_errors:
+            print(f"    - {err}")
+        try:
+            from notifications import send_sync_alert
+            summary = "\n".join(f"- {e}" for e in sync_errors[:5])
+            send_sync_alert(
+                f"Sync issues for {target_date}",
+                f"{len(sync_errors)} error(s):\n{summary}",
+            )
+        except Exception:
+            pass  # Don't let alert failure crash the pipeline
 
     print(f"\nDone! Data written for {target_date}")
     print(f"  HRV:   {data.get('hrv', 'N/A')} ms  |  7-day avg: {data.get('hrv_7day', 'N/A')} ms")

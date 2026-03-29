@@ -503,6 +503,7 @@ function _getDayMode() {
 
 function _deriveTrustNote(ds) {
   if (!ds) return null;
+  if (ds.sync_stale && ds.sync_error) return ds.sync_error;
   if (ds.sync_stale) return 'Data may be outdated \u2014 last sync missed';
   if (ds.quality_flags && ds.quality_flags.length > 0)
     return 'Partial data: ' + ds.quality_flags.join(', ');
@@ -661,6 +662,12 @@ function _parseTodayRpc(rpc, dateStr) {
     weight: _num(s.weight_lbs), reps: _num(s.reps), rpe: _num(s.rpe), notes: s.notes || '',
   }));
 
+  // Build sync error message from _meta status if available
+  var _syncErrorMsg = null;
+  if (_syncStatus && !_syncStatus.success && _syncStatus.errors && _syncStatus.errors.length > 0) {
+    _syncErrorMsg = 'Sync error: ' + _syncStatus.errors[0];
+  }
+
   var _ds = {
     has_garmin: !!g.date, has_analysis: readinessScore > 0,
     analysis_pending: !!g.date && readinessScore === 0,
@@ -668,6 +675,7 @@ function _parseTodayRpc(rpc, dateStr) {
     last_sync: g.updated_at || g.date || null,
     data_quality: dataQuality, quality_flags: qualityFlags,
     sync_stale: _isSyncStale(g.date),
+    sync_error: _syncErrorMsg,
   };
 
   return {
@@ -818,11 +826,12 @@ async function fetchToday(overrideDate, _depth = 0) {
     supabaseQuery('nutrition', { date: `eq.${today}`, limit: '1' }),
     supabaseQuery('strength_log', { date: `eq.${today}`, order: 'id.asc' }),
     supabaseQuery('illness_state', { resolved_date: 'is.null', order: 'onset_date.desc', limit: '1' }),
+    supabaseQuery('_meta', { key: 'eq.last_sync_status', limit: '1' }),
   ]);
 
-  const _todayTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log', 'nutrition', 'strength_log', 'illness_state'];
+  const _todayTables = ['garmin', 'sleep', 'overall_analysis', 'daily_log', 'session_log', 'nutrition', 'strength_log', 'illness_state', '_meta'];
   _todayResults.forEach((r, i) => {
-    if (r.status === 'rejected') console.error('[data-loader] fetch failed:', r.reason);
+    if (r.status === 'rejected') console.error('[data-loader] fetch failed:', _todayTables[i], r.reason);
   });
 
   const garminRows = _todayResults[0].status === 'fulfilled' ? _todayResults[0].value : [];
@@ -833,6 +842,14 @@ async function fetchToday(overrideDate, _depth = 0) {
   const nutritionRows = _todayResults[5].status === 'fulfilled' ? _todayResults[5].value : [];
   const strengthRows = _todayResults[6].status === 'fulfilled' ? _todayResults[6].value : [];
   const illnessRows = _todayResults[7].status === 'fulfilled' ? _todayResults[7].value : [];
+  const metaRows = _todayResults[8].status === 'fulfilled' ? _todayResults[8].value : [];
+
+  // Parse sync status from _meta
+  var _syncStatus = null;
+  try {
+    const metaRow = metaRows[0] || {};
+    if (metaRow.value) _syncStatus = JSON.parse(metaRow.value);
+  } catch(e) { /* ignore parse errors */ }
 
   const g = garminRows[0] || {};
   const sl = sleepRows[0] || {};

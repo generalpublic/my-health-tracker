@@ -105,6 +105,15 @@ def fetch_via_chrome(date_str):
         evaluate_js("window.location.href = 'https://connect.garmin.com/app/daily-summary'")
         time.sleep(8)  # Wait for page load + possible redirects
 
+    # Check if session expired (redirected to SSO login)
+    current_url = evaluate_js("window.location.href")
+    if "sso.garmin.com" in str(current_url) or "sign-in" in str(current_url):
+        ws.close()
+        raise RuntimeError(
+            "Garmin session expired in Chrome. "
+            "Open connect.garmin.com in Chrome and log in, then sync will resume."
+        )
+
     # Get CSRF token — it's a request header set by the Garmin JS app,
     # NOT a cookie. Intercept it by reloading the page and watching network requests.
     csrf = None

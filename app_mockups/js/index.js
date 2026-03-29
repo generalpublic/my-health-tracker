@@ -719,6 +719,7 @@
           stroke="url(#bbGrad)" stroke-width="${sw}"
           stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
           stroke-linecap="round" />`;
+      document.getElementById('bbValue').textContent = bb || 0;
       document.getElementById('bbValue').style.color = bbColor;
 
       // Metrics

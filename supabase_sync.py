@@ -534,3 +534,69 @@ def upsert_illness_daily(client, date_str, data):
         client.table("illness_daily_log").upsert(_with_owner(row), on_conflict="user_id,date").execute()
     except Exception as e:
         print(f"[Supabase] illness_daily_log upsert failed for {date_str}: {e}")
+
+
+def verify_supabase_sync(client, date_str):
+    """Verify that all critical Supabase tables have a row for this date.
+
+    Returns list of missing table names. Empty list = all good.
+    """
+    if client is None:
+        return ["garmin", "sleep", "overall_analysis"]
+    missing = []
+    for table in ["garmin", "sleep", "overall_analysis"]:
+        try:
+            result = client.table(table).select("date").eq("date", date_str).execute()
+            if not result.data:
+                missing.append(table)
+        except Exception:
+            missing.append(table)
+    return missing
+
+
+def backfill_supabase_from_sqlite(client, date_str, missing_tables):
+    """Backfill missing Supabase tables from SQLite for a given date.
+
+    Reads from SQLite (the reliable local store) and pushes to Supabase.
+    Only fills the tables listed in missing_tables.
+    """
+    import sqlite3
+    from pathlib import Path
+
+    db_path = Path(__file__).parent / "health_tracker.db"
+    db = sqlite3.connect(str(db_path))
+    db.row_factory = sqlite3.Row
+
+    # Known Supabase-safe columns per table (avoid schema mismatches)
+    SLEEP_COLS = [
+        "date", "day", "garmin_sleep_score", "total_sleep_hrs", "bedtime",
+        "wake_time", "time_in_bed_hrs", "deep_sleep_min", "light_sleep_min",
+        "rem_min", "awake_during_sleep_min", "deep_pct", "rem_pct",
+        "sleep_cycles", "awakenings", "avg_hr", "avg_respiration",
+        "overnight_hrv_ms", "body_battery_gained", "sleep_feedback",
+        "sleep_analysis_score", "sleep_analysis", "sleep_descriptor",
+        "bedtime_variability_7d", "wake_variability_7d",
+    ]
+
+    for table in missing_tables:
+        try:
+            row = db.execute(f"SELECT * FROM {table} WHERE date = ?", (date_str,)).fetchone()
+            if not row:
+                print(f"  [backfill] {table}: no SQLite data for {date_str}")
+                continue
+
+            data = dict(row)
+            data.pop("id", None)
+            data.pop("rowid", None)
+
+            if table == "sleep":
+                data = {k: v for k, v in data.items() if k in SLEEP_COLS}
+
+            client.table(table).upsert(
+                _with_owner(data), on_conflict="user_id,date"
+            ).execute()
+            print(f"  [backfill] {table}: repaired for {date_str}")
+        except Exception as e:
+            print(f"  [backfill] {table}: repair failed for {date_str}: {e}")
+
+    db.close()
