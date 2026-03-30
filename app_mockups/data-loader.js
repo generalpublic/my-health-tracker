@@ -663,6 +663,8 @@ function _parseTodayRpc(rpc, dateStr) {
   }));
 
   // Build sync error message from _meta status if available
+  // Note: RPC path doesn't fetch _meta, so _syncStatus is not available here
+  var _syncStatus = null;
   var _syncErrorMsg = null;
   if (_syncStatus && !_syncStatus.success && _syncStatus.errors && _syncStatus.errors.length > 0) {
     _syncErrorMsg = 'Sync error: ' + _syncStatus.errors[0];

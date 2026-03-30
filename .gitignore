@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .env
 *.json
+!app_mockups/manifest.json
 *.log
 .DS_Store
 Thumbs.db
